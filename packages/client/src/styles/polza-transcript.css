@@ -127,7 +127,7 @@
   line-height: 1.4;
   color: #73777e;
 }
-.polza-ui .ran-tool-row.status-error .tool-summary,
+.polza-ui .ran-tool-row.is-command-failed .tool-summary,
 .polza-ui .ran-tool-row:has(.tool-result-suffix-rc) .tool-summary {
   color: #a45c50;
 }

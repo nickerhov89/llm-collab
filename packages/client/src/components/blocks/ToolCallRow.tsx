@@ -1099,6 +1099,9 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
         ? "Running command"
         : "Ran command"
     : summary;
+  const polzaCommandFailed =
+    polzaQuietBash &&
+    (showBashExitCode || status === "error" || Boolean(toolResult?.isError));
   const headerCommand = isBashTool
     ? getDisplayBashCommandFromInput(toolInput)
     : "";
@@ -1344,7 +1347,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
       ref={rowRef}
       onPointerEnter={hydrateNow}
       onFocus={hydrateNow}
-      className={`tool-row timeline-item ${expanded ? "expanded" : "collapsed"} status-${status} ${isNonExpandable ? "interactive" : ""} ${shouldHydrateRichContent ? "" : "rich-deferred"} ${isBashTool ? "ran-tool-row" : ""}`}
+      className={`tool-row timeline-item ${expanded ? "expanded" : "collapsed"} status-${status} ${isNonExpandable ? "interactive" : ""} ${shouldHydrateRichContent ? "" : "rich-deferred"} ${isBashTool ? "ran-tool-row" : ""} ${polzaCommandFailed ? "is-command-failed" : ""}`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: interactive header has role, tabIndex, and keyboard handlers when enabled */}
       <div
