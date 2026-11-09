@@ -2,6 +2,10 @@
 
 A team workspace for AI CLI sessions, developed by Polza Agency. This repository is a sanitized source snapshot. It contains no production chats, client files, credentials or deployment configuration. The Auto model selector is an experimental starter policy; benchmark-based price/quality routing requires real language-specific evaluations. See [router design](docs/polza/model-router.md).
 
+To build the LLM Collab interface from this snapshot, set `VITE_POLZA_ADMIN_UI=true`
+for the client build. In a new chat, Auto is the initial model choice; an existing
+chat keeps its provider and manual model selection remains available.
+
 LLM Collab builds on the open-source [Yep Anywhere](https://github.com/kzahel/yepanywhere) project. The original project documentation follows below; its hosted relay, mobile apps and product claims describe upstream and are not guarantees of this fork. See the included license and verify your own deployment settings.
 
 ---
