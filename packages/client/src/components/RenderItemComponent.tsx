@@ -1085,6 +1085,21 @@ function ConversationActivitySummary({
       : undefined,
   );
   const showThinkingPreviews = autoHidePhase !== "hidden";
+  const polzaUi = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
+  const polzaActivityNames = item.tooltipActivities
+    ?.map((activity) => {
+      const name = activity.label.trim();
+      if (/bash|command|shell|terminal/i.test(name)) return "Ran commands";
+      if (/read|view file/i.test(name)) return "Read files";
+      if (/edit|write|patch/i.test(name)) return "Edited files";
+      return name;
+    })
+    .filter(Boolean);
+  const polzaActivityLabel = polzaActivityNames?.length
+    ? [...new Set(polzaActivityNames)].slice(0, 2).join(", ")
+    : item.active
+      ? "Working…"
+      : "Activity";
   const autoHidingThinking = autoHidePhase === "fading";
   const hasExpandedThinkingPreview =
     showThinkingPreviews &&
@@ -1130,10 +1145,11 @@ function ConversationActivitySummary({
           {item.active ? (
             <span className={styles.activityPulse} aria-hidden="true" />
           ) : null}
-          <span className={styles.activityLabel}>{label}</span>
+          <span className={styles.activityLabel}>
+            {polzaUi ? polzaActivityLabel : label}
+          </span>
         </button>
-        {(hasExpandedThinkingPreview ||
-          (import.meta.env.VITE_POLZA_ADMIN_UI === "true" && item.active)) &&
+        {!polzaUi && hasExpandedThinkingPreview &&
         item.recentActivities ? (
           <ul
             ref={activityListRef}
@@ -1142,12 +1158,7 @@ function ConversationActivitySummary({
             }`}
             aria-label={t("conversationRecentActivities")}
           >
-            {(import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-            item.active &&
-            !item.expanded
-              ? item.recentActivities.slice(0, 1)
-              : item.recentActivities
-            ).map((activity, index) => (
+            {item.recentActivities.map((activity, index) => (
               <ConversationRecentActivityName
                 activity={activity}
                 key={`${activity.label}-${index}`}
@@ -1156,7 +1167,7 @@ function ConversationActivitySummary({
           </ul>
         ) : null}
       </div>
-      {showThinkingPreviews
+      {showThinkingPreviews && !(polzaUi && item.active)
         ? item.thinkingPreviews?.map((preview) => (
             <ConversationThinkingPreview
               autoHiding={autoHidingThinking}
@@ -1699,6 +1710,16 @@ export const RenderItemComponent = memo(function RenderItemComponent({
         return null;
     }
   };
+
+  // Polza shows the selected model in the chat header. Repeating a config
+  // acknowledgement as a full-width transcript card adds no useful context.
+  if (
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+    item.type === "system" &&
+    item.subtype === "config_ack"
+  ) {
+    return null;
+  }
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: debug shift-click uses row-level event metadata

@@ -962,7 +962,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
   const [previewExpanded, setPreviewExpanded] = useRememberedDisclosureState(
     id,
     "rich-preview",
-    true,
+    import.meta.env.VITE_POLZA_ADMIN_UI !== "true",
   );
   // Tools with collapsed preview or interactive summary don't expand
   const isNonExpandable =
@@ -1090,6 +1090,15 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
     sessionMetadata?.projectPath,
     prepared,
   ]);
+  const polzaQuietBash =
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true" && isBashTool;
+  const displaySummary = polzaQuietBash
+    ? showBashExitCode || status === "error" || toolResult?.isError
+      ? "Command failed · details"
+      : status === "pending"
+        ? "Running command"
+        : "Ran command"
+    : summary;
   const headerCommand = isBashTool
     ? getDisplayBashCommandFromInput(toolInput)
     : "";
@@ -1102,7 +1111,10 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
     typeof toolInput.description === "string" &&
     toolInput.description.trim().length > 0;
   const showBashCommandTarget =
-    isBashTool && !hasBashDescription && headerCommand.length > 0;
+    isBashTool &&
+    !polzaQuietBash &&
+    !hasBashDescription &&
+    headerCommand.length > 0;
   const bashCommandPreview = useMemo(
     () => getCommandPreview(headerCommand, outputToolPreviewLineCount),
     [headerCommand, outputToolPreviewLineCount],
@@ -1553,7 +1565,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
                 : undefined
             }
           >
-            {summary}
+            {displaySummary}
             {status === "aborted" && (
               <span className="tool-aborted-label"> (interrupted)</span>
             )}
@@ -1569,7 +1581,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
         {noOutputBashResult && (
           <span className="tool-result-suffix">(no output)</span>
         )}
-        {showBashExitCode && (
+        {showBashExitCode && !polzaQuietBash && (
           <span className="tool-result-suffix tool-result-suffix-rc">
             rc={bashExitCode}
           </span>
