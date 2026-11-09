@@ -49,13 +49,13 @@ export function classifyPolzaTask(text: string): { task: PolzaTask; language: Po
   return { task: "general", language };
 }
 
-function pickModel(provider: ProviderInfo, patterns: readonly RegExp[]): ModelInfo | undefined {
+function pickModel(provider: ProviderInfo, patterns: readonly RegExp[], allowDefault = true): ModelInfo | undefined {
   const models = provider.models ?? [];
   for (const pattern of patterns) {
     const found = models.find((model) => pattern.test(model.id));
     if (found) return found;
   }
-  return models.find((model) => model.isDefault) ?? models[0];
+  return allowDefault ? models.find((model) => model.isDefault) ?? models[0] : undefined;
 }
 
 function compatibleEffort(model: ModelInfo, preferred: EffortLevel): EffortLevel {
@@ -89,7 +89,7 @@ export function choosePolzaAutoRoute(
   if (available.length === 0) return null;
 
   const measured = benchmarks
-    .filter((row) => row.task === task && row.language === language && available.some((provider) => provider.name === row.provider && provider.models?.some((model) => model.id === row.model)))
+    .filter((row) => row.task === task && row.language === language && available.some((provider) => provider.name === row.provider && provider.models?.some((model) => model.id === row.model && (!model.supportedReasoningEfforts?.length || model.supportedReasoningEfforts.some((effort) => effort.reasoningEffort === row.effort)))))
     .map((row) => ({ row, cost: benchmarkCostPerAccepted(row) }))
     .filter(({ cost }) => Number.isFinite(cost))
     .sort((a, b) => a.cost - b.cost)[0]?.row;
@@ -122,7 +122,7 @@ export function choosePolzaAutoRoute(
   for (const candidate of starter) {
     const provider = available.find((item) => item.name === candidate.provider);
     if (!provider) continue;
-    const model = pickModel(provider, candidate.models);
+    const model = pickModel(provider, candidate.models, false);
     if (model) return { provider: provider.name, model: model.id, effort: compatibleEffort(model, candidate.effort), task, language, basis: "starter-policy" };
   }
   const fallback = available[0];

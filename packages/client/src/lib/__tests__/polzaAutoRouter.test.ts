@@ -25,6 +25,8 @@ describe("Polza auto routing", () => {
   it("uses a conservative starter route without pretending there is benchmark evidence", () => {
     expect(choosePolzaAutoRoute("Подготовь цепочку писем", providers)).toMatchObject({ provider: "claude", model: "sonnet", basis: "starter-policy" });
     expect(choosePolzaAutoRoute("Исправь код API", providers)).toMatchObject({ provider: "codex", model: "gpt-6.1-sol", basis: "starter-policy" });
+    const withoutSonnet = providers.map((provider) => provider.name === "claude" ? { ...provider, models: [{ id: "haiku", name: "Claude Haiku" }] } : provider);
+    expect(choosePolzaAutoRoute("Подготовь цепочку писем", withoutSonnet)).toMatchObject({ provider: "codex", model: "gpt-6.1-sol" });
   });
 
   it("switches to a cheaper accepted route only with enough matched human evaluations", () => {
