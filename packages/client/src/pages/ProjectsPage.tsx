@@ -383,13 +383,13 @@ export function ProjectsPage() {
         </form>
       </Modal>}
       <PageHeader
-        title={t("pageTitleProjects")}
+        title={polzaUi ? "Проекты" : t("pageTitleProjects")}
         onOpenSidebar={openSidebar}
         isWideScreen={isWideScreen}
       />
 
       <main className="page-scroll-container">
-        <div className="page-content-inner">
+        <div className={`page-content-inner${polzaUi ? " polza-directory-page" : ""}`}>
           {loading && projects.length === 0 && (
             <div role="status">{t("projectsLoading")}</div>
           )}
@@ -429,7 +429,7 @@ export function ProjectsPage() {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                {t("projectsAdd")}
+                {polzaUi ? "Новый проект" : t("projectsAdd")}
               </button>
             ) : (
               <div

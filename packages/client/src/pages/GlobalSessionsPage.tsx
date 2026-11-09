@@ -684,7 +684,7 @@ function SessionSearchPage() {
       isWideScreen={isWideScreen}
       innerClassName={paneOpen ? styles.withDetail : undefined}
     >
-      <div className={`${styles.mobilePageHeader} ${mobileFiltersOpen ? styles.mobileFiltersOpen : ""}`}>
+      <div className={`${styles.mobilePageHeader} ${mobileFiltersOpen ? styles.mobileFiltersOpen : ""}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-header" : ""}`}>
       <PageHeader
         title={t("globalSessionsTitle")}
         onOpenSidebar={openSidebar}
@@ -743,9 +743,9 @@ function SessionSearchPage() {
         }
       />
       </div>
-      <main className="page-scroll-container">
+      <main className={`page-scroll-container${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-session-search" : ""}`}>
         <div
-          className={`${styles.content} ${selected.size ? styles.withBulkBar : ""}`}
+          className={`${styles.content} ${selected.size ? styles.withBulkBar : ""}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-content" : ""}`}
         >
           <div className={`${styles.mobileAdvanced} ${mobileFiltersOpen ? styles.mobileAdvancedOpen : ""}`}>
           <SearchFilters
@@ -918,7 +918,7 @@ function SessionSearchPage() {
               {t("globalSessionsNoResultsTitle")}
             </p>
           )}
-          <ul ref={resultList} className={styles.results}>
+          <ul ref={resultList} className={`${styles.results}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-results" : ""}`}>
             {results.slice(0, renderedCount).map(({ session, matches }) => (
               <SessionListItem
                 key={session.id}

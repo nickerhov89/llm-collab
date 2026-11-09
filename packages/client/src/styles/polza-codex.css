@@ -1355,6 +1355,109 @@
 .modal:has(.polza-create-project) .modal-header {
   font-size: 23px;
 }
+
+/* Directory pages share the same quiet surfaces and spacing as the chat. */
+.polza-ui .polza-directory-page,
+.polza-ui .polza-search-content {
+  width: min(100%, 960px);
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding: clamp(20px, 3vw, 36px);
+}
+
+.polza-ui .polza-directory-page .inbox-toolbar {
+  margin-bottom: 20px;
+}
+
+.polza-ui .polza-directory-page .inbox-refresh-button {
+  min-height: 40px;
+  padding: 8px 15px;
+  border-color: var(--border-input);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 550;
+}
+
+.polza-ui .polza-directory-page .project-list-cards,
+.polza-ui .polza-search-results {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.polza-ui .polza-project-directory-card,
+.polza-ui .polza-search-results .session-list-item {
+  min-width: 0;
+}
+
+.polza-ui .polza-project-directory-card > a,
+.polza-ui .polza-search-results .session-list-item--card .session-list-item__link {
+  min-width: 0;
+  padding: 18px 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  background: var(--bg-surface);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.025);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.polza-ui .polza-project-directory-card > a:hover,
+.polza-ui .polza-search-results .session-list-item--card .session-list-item__link:hover {
+  border-color: #d8d9dc;
+  background: #fafafb;
+}
+
+.polza-ui .polza-project-directory-card > a:focus-visible,
+.polza-ui .polza-search-results .session-list-item--card .session-list-item__link:focus-visible {
+  outline: 2px solid #4b83ef;
+  outline-offset: 2px;
+}
+
+.polza-ui .polza-project-directory-card strong,
+.polza-ui .polza-search-results .session-list-item__title {
+  color: var(--text-primary);
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.polza-ui .polza-project-directory-meta,
+.polza-ui .polza-search-results .session-list-item__meta {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.polza-ui .polza-search-header .session-header-inner {
+  min-width: 0;
+  gap: 16px;
+}
+
+.polza-ui .polza-search-header input[type="search"] {
+  border: 1px solid var(--border-input);
+  border-radius: 11px;
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+
+.polza-ui .polza-search-header input[type="search"]:focus-visible {
+  border-color: #4b83ef;
+  outline: 2px solid rgb(75 131 239 / 0.15);
+}
+
+@media (width <= 700px) {
+  .polza-ui .polza-directory-page,
+  .polza-ui .polza-search-content {
+    padding: 16px;
+  }
+
+  .polza-ui .polza-project-directory-card > a,
+  .polza-ui .polza-search-results .session-list-item--card .session-list-item__link {
+    padding: 15px 16px;
+  }
+}
 .modal:has(.polza-rename-chat) {
   width: min(440px, calc(100vw - 32px));
   max-width: 440px;

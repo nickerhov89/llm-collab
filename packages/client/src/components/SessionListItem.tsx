@@ -556,7 +556,12 @@ export function SessionListItem({
   // Themed mode may enrich every provider-backed list row with a rich preview.
   // Native mode stays browser-owned and falls back to the title only when the
   // rendered row actually clips it.
-  const showHoverCard = !!provider && tooltipMode === "themed";
+  // The compact Polza sidebar already shows the chat title and project. A rich
+  // preview extends over the conversation and makes the two panes collide.
+  const showHoverCard =
+    import.meta.env.VITE_POLZA_ADMIN_UI !== "true" &&
+    !!provider &&
+    tooltipMode === "themed";
 
   // The full first user turn (body) and the most recent agent turn (reply)
   // shown in the replacement tooltip.

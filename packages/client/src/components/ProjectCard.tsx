@@ -99,7 +99,7 @@ export function ProjectCard({
   };
 
   return (
-    <li className={styles.card}>
+    <li className={`${styles.card} polza-project-directory-card`}>
       <Link
         to={`${basePath}/sessions?project=${project.id}&source=projects`}
         className={styles.link}
@@ -263,7 +263,7 @@ export function ProjectCard({
             </svg>
           </button>
         </div>
-        <div className={styles.meta}>
+        <div className={`${styles.meta} polza-project-directory-meta`}>
           <span className={styles.path} title={project.path}>
             <bdi>{shortenPath(project.path)}</bdi>
           </span>
