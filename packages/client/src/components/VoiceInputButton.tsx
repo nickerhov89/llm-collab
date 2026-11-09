@@ -680,12 +680,11 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
   );
 
   useEffect(() => {
-    const inlineWaveformActive = inlineWaveform && waveformVisible;
-    onWaveformActiveChange?.(inlineWaveformActive);
+    onWaveformActiveChange?.(waveformVisible);
     return () => {
-      if (inlineWaveformActive) onWaveformActiveChange?.(false);
+      if (waveformVisible) onWaveformActiveChange?.(false);
     };
-  }, [inlineWaveform, onWaveformActiveChange, waveformVisible]);
+  }, [onWaveformActiveChange, waveformVisible]);
 
   // A disabled setting or a host without speech support removes the control.
   // Provider discovery leaves a disabled Mic in place until it can run.

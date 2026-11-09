@@ -713,6 +713,36 @@ describe("VoiceInputButton", () => {
     expect(onWaveformActiveChange).toHaveBeenCalledWith(true);
   });
 
+  it("reports capture to a separate waveform in the new chat composer", () => {
+    speechState.status = "listening";
+    speechState.isListening = true;
+    const onWaveformActiveChange = vi.fn();
+
+    const view = render(
+      <VoiceInputButton
+        onTranscript={vi.fn()}
+        speechMethod="ya-parakeet"
+        showWaveform
+        onWaveformActiveChange={onWaveformActiveChange}
+      />,
+    );
+
+    expect(onWaveformActiveChange).toHaveBeenCalledWith(true);
+    expect(view.container.querySelector(".composer-speech-waveform")).toBeNull();
+
+    speechState.status = "idle";
+    speechState.isListening = false;
+    view.rerender(
+      <VoiceInputButton
+        onTranscript={vi.fn()}
+        speechMethod="ya-parakeet"
+        showWaveform
+        onWaveformActiveChange={onWaveformActiveChange}
+      />,
+    );
+    expect(onWaveformActiveChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("reserves the full inline microphone touch target before capture", () => {
     render(
       <VoiceInputButton

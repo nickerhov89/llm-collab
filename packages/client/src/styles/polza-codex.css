@@ -1174,6 +1174,24 @@
   background: transparent;
 }
 
+.polza-ui .new-session-voice-meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 2px 8px 5px;
+  color: #797d83;
+  font-size: 13px;
+}
+
+.polza-ui .new-session-voice-meter .composer-speech-waveform {
+  height: 28px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 1;
+}
+
 .polza-ui .new-session-form-toolbar .toolbar-button:hover,
 .polza-ui .new-session-form-toolbar .voice-input-button:hover {
   background: #f0f1f3;

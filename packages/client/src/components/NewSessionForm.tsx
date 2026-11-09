@@ -282,6 +282,7 @@ import { ProviderBadge } from "./ProviderBadge";
 import { ModelSubscriptionUsage } from "./ModelSubscriptionUsage";
 import { RecapAfterSecondsControl } from "./RecapAfterSecondsControl";
 import { SpeechControlMenu } from "./SpeechControlMenu";
+import { SpeechWaveform } from "./SpeechWaveform";
 import {
   VoiceInputButton,
   type SpeechCycleSettlement,
@@ -650,6 +651,7 @@ export function NewSessionForm({
   const mainStackRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceButtonRef = useRef<VoiceInputButtonRef>(null);
+  const [polzaWaveformActive, setPolzaWaveformActive] = useState(false);
   const sharedVoiceRef = useComposerVoiceRef(voiceButtonRef, onVoiceControl);
   const speechTurnIdRef = useRef<string | null>(null);
   const speechInsertionRangeRef = useRef<SpeechInsertionRange | null>(null);
@@ -4340,6 +4342,12 @@ export function NewSessionForm({
             )}
           </div>
           <ProjectFileCompletionMenu completion={fileCompletion} />
+          {polzaSimple && polzaWaveformActive && (
+            <div className="new-session-voice-meter" role="status" aria-label="Идёт запись с микрофона">
+              <span>Запись</span>
+              <SpeechWaveform variant="timeline" />
+            </div>
+          )}
           <div className="new-session-form-toolbar">
             <div className="new-session-form-toolbar-left">
               {allowAttachments && (
@@ -4434,6 +4442,10 @@ export function NewSessionForm({
                     speechMethod={selectedSpeechMethod}
                     getTranscriptionContext={getTranscriptionContext}
                     smartTurn={activeSpeechSmartTurnSettings}
+                    showWaveform={polzaSimple}
+                    onWaveformActiveChange={
+                      polzaSimple ? setPolzaWaveformActive : undefined
+                    }
                   />
                 }
               />
