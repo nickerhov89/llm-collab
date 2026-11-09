@@ -1409,6 +1409,36 @@
   background: #fafafb;
 }
 
+.polza-ui .polza-project-directory-card > a > div:first-child {
+  align-items: center;
+  gap: 8px;
+}
+
+.polza-ui .polza-project-directory-card > a > div:first-child > div {
+  order: -1;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.polza-ui .polza-project-directory-card > a > div:first-child > button {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-color: transparent;
+  border-radius: 9px;
+}
+
+.polza-ui .polza-project-directory-card > a > div:first-child > button:hover,
+.polza-ui .polza-project-directory-card > a > div:first-child > button:focus-visible {
+  border-color: var(--border-input);
+}
+
+.polza-ui .polza-project-directory-card > a > div:first-child > button:last-child {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 .polza-ui .polza-project-directory-card > a:focus-visible,
 .polza-ui .polza-search-results .session-list-item--card .session-list-item__link:focus-visible {
   outline: 2px solid #4b83ef;

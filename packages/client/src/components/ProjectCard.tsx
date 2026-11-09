@@ -55,6 +55,20 @@ function formatRelativeTime(timestamp: string): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
+function formatRussianChatCount(count: number): string {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  const word =
+    lastTwo >= 11 && lastTwo <= 14
+      ? "чатов"
+      : last === 1
+        ? "чат"
+        : last >= 2 && last <= 4
+          ? "чата"
+          : "чатов";
+  return `${count} ${word}`;
+}
+
 /**
  * Card component for displaying a project in the projects list.
  * Matches visual style of SessionListItem card mode.
@@ -76,6 +90,7 @@ export function ProjectCard({
   isDeleting = false,
 }: ProjectCardProps) {
   const { t } = useI18n();
+  const polzaUi = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
   const navigate = useNavigate();
   const [codeNameError, setCodeNameError] = useState<string | null>(null);
   const codeNameErrorId = useId();
@@ -269,8 +284,9 @@ export function ProjectCard({
           </span>
           <span className={styles.stats}>
             <span className={styles.sessions}>
-              {project.sessionCount} session
-              {project.sessionCount !== 1 ? "s" : ""}
+              {polzaUi
+                ? formatRussianChatCount(project.sessionCount)
+                : `${project.sessionCount} session${project.sessionCount !== 1 ? "s" : ""}`}
             </span>
             {thinkingCount > 0 && (
               <span className={styles.thinking}>
@@ -282,7 +298,9 @@ export function ProjectCard({
               <>
                 <span className={styles.separator}>·</span>
                 <span className={styles.time}>
-                  {formatRelativeTime(project.lastActivity)}
+                  {polzaUi
+                    ? new Date(project.lastActivity).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+                    : formatRelativeTime(project.lastActivity)}
                 </span>
               </>
             )}

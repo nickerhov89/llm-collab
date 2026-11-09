@@ -552,7 +552,7 @@ export function ProjectsPage() {
             <ul className="project-list-cards">
               {sortedProjects.map((project) => (
                 <ProjectCard
-                  appEnabled={serverHasCapability(
+                  appEnabled={!polzaUi && serverHasCapability(
                     version,
                     SERVER_CAPABILITIES.projectService.name,
                   )}
