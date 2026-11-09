@@ -209,6 +209,7 @@ function NavigationLayoutFrame({ sessionElement }: NavigationLayoutProps) {
     restoreCollapsedSidebar,
   } = useSidebarPreference(
     forceExpandedSidebar,
+    import.meta.env.VITE_POLZA_ADMIN_UI !== "true" &&
     /^(?:\/-\/relay\/[^/]+)?\/settings(?:\/|$)/.test(location.pathname)
       ? "collapsed"
       : null,
