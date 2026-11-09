@@ -250,10 +250,12 @@ export function ProjectCard({
                 {codeNameError}
               </span>
             )}
-            <ProjectCaptionEditor
-              project={project}
-              onUpdateCaption={onUpdateCaption}
-            />
+            {!polzaUi && (
+              <ProjectCaptionEditor
+                project={project}
+                onUpdateCaption={onUpdateCaption}
+              />
+            )}
           </div>
           <button
             type="button"
