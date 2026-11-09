@@ -3003,7 +3003,7 @@ export function NewSessionForm({
         templateProjectBusy ||
         isStarting ||
         displayDefaultsPending ||
-        !hasSelectedProviderModel ||
+        (!hasSelectedProviderModel && !submitAutoRoute) ||
         projectPending
       ) {
         if (propagateFailure) throw new Error(t("composerMemoCannotStart"));
@@ -3030,7 +3030,7 @@ export function NewSessionForm({
         ) ||
           launch ||
           !["codex", "claude", "claude-gateway", "claude-ollama"].includes(
-            selectedProvider ?? "",
+            launchProvider ?? "",
           ))
       ) {
         showToast(t("turnEffortUnavailable"), "error");
