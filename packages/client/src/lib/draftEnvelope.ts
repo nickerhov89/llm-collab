@@ -1,0 +1,272 @@
+import type { StagedAttachmentRef } from "@yep-anywhere/shared";
+
+export const DRAFT_ENVELOPE_VERSION = 1;
+
+export interface DraftAttachmentState {
+  batchId: string;
+  refs: StagedAttachmentRef[];
+  updatedAt: string;
+}
+
+export interface DraftEnvelopeV1 {
+  version: typeof DRAFT_ENVELOPE_VERSION;
+  text: string;
+  attachments?: DraftAttachmentState;
+  /**
+   * Server-clock milliseconds at which the composer cleared this text
+   * optimistically on submit, keeping it only as a recovery copy. It stays
+   * visible like any other draft — a send that never landed must remain
+   * recoverable from a reload or a second tab — but it is the only kind of
+   * draft eligible for automatic discard, and only on proof of that same text
+   * dated no earlier than this send (see `lib/draftSendReconcile.ts`). A draft
+   * the user typed or recalled carries no marker and is never discarded
+   * automatically.
+   */
+  pendingSendAt?: number;
+}
+
+export interface DraftEnvelopeReadResult {
+  envelope: DraftEnvelopeV1 | null;
+  legacy: boolean;
+  invalidEnvelope: boolean;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function optionalFiniteNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function normalizeAttachmentRef(value: unknown): StagedAttachmentRef | null {
+  if (!isRecord(value)) return null;
+
+  const id = nonEmptyString(value.id);
+  const batchId = nonEmptyString(value.batchId);
+  const originalName = nonEmptyString(value.originalName);
+  const name = nonEmptyString(value.name);
+  const mimeType = nonEmptyString(value.mimeType);
+  const createdAt = nonEmptyString(value.createdAt);
+  const updatedAt = nonEmptyString(value.updatedAt);
+  const size = optionalFiniteNumber(value.size);
+
+  if (
+    !id ||
+    !batchId ||
+    !originalName ||
+    !name ||
+    !mimeType ||
+    !createdAt ||
+    !updatedAt ||
+    size === undefined
+  ) {
+    return null;
+  }
+
+  const width = optionalFiniteNumber(value.width);
+  const height = optionalFiniteNumber(value.height);
+
+  return {
+    id,
+    batchId,
+    originalName,
+    name,
+    size,
+    mimeType,
+    ...(width !== undefined ? { width } : {}),
+    ...(height !== undefined ? { height } : {}),
+    createdAt,
+    updatedAt,
+  };
+}
+
+function normalizeAttachmentState(value: unknown): DraftAttachmentState | null {
+  if (!isRecord(value)) return null;
+
+  const batchId = nonEmptyString(value.batchId);
+  const updatedAt = nonEmptyString(value.updatedAt);
+  if (!batchId || !updatedAt || !Array.isArray(value.refs)) {
+    return null;
+  }
+
+  const refs = value.refs
+    .map(normalizeAttachmentRef)
+    .filter((ref): ref is StagedAttachmentRef => ref !== null);
+  if (refs.length === 0) {
+    return null;
+  }
+
+  return { batchId, refs, updatedAt };
+}
+
+function normalizeEnvelope(value: unknown): DraftEnvelopeV1 | null {
+  if (!isRecord(value)) return null;
+  if (value.version !== DRAFT_ENVELOPE_VERSION) return null;
+  if (typeof value.text !== "string") return null;
+
+  const attachments = normalizeAttachmentState(value.attachments);
+  // A bare `pendingSend: true` from an older client carries no send time, so
+  // nothing could prove it sent; it reads as an ordinary draft.
+  const pendingSendAt = optionalFiniteNumber(value.pendingSendAt);
+  return {
+    version: DRAFT_ENVELOPE_VERSION,
+    text: value.text,
+    ...(attachments ? { attachments } : {}),
+    ...(pendingSendAt !== undefined ? { pendingSendAt } : {}),
+  };
+}
+
+function looksLikeDraftEnvelope(raw: string): boolean {
+  return /^\s*\{\s*"version"\s*:/.test(raw);
+}
+
+export function readDraftEnvelopeValue(
+  raw: string | null | undefined,
+): DraftEnvelopeReadResult {
+  if (!raw) {
+    return { envelope: null, legacy: false, invalidEnvelope: false };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    const envelope = normalizeEnvelope(parsed);
+    if (envelope) {
+      return { envelope, legacy: false, invalidEnvelope: false };
+    }
+
+    if (isRecord(parsed) && "version" in parsed) {
+      return { envelope: null, legacy: false, invalidEnvelope: true };
+    }
+  } catch {
+    if (looksLikeDraftEnvelope(raw)) {
+      return { envelope: null, legacy: false, invalidEnvelope: true };
+    }
+  }
+
+  return {
+    envelope: { version: DRAFT_ENVELOPE_VERSION, text: raw },
+    legacy: true,
+    invalidEnvelope: false,
+  };
+}
+
+export function hasDraftEnvelopeContent(
+  envelope: DraftEnvelopeV1 | null | undefined,
+): boolean {
+  return Boolean(
+    envelope &&
+      (envelope.text.trim() || (envelope.attachments?.refs.length ?? 0) > 0),
+  );
+}
+
+export function hasDraftContentValue(raw: string | null | undefined): boolean {
+  return hasDraftEnvelopeContent(readDraftEnvelopeValue(raw).envelope);
+}
+
+export function readDraftTextValue(raw: string | null | undefined): string {
+  return readDraftEnvelopeValue(raw).envelope?.text ?? "";
+}
+
+export function readDraftAttachmentStateValue(
+  raw: string | null | undefined,
+): DraftAttachmentState | null {
+  return readDraftEnvelopeValue(raw).envelope?.attachments ?? null;
+}
+
+/** True when the stored draft is an unconfirmed post-submit recovery copy. */
+export function readDraftPendingSendValue(
+  raw: string | null | undefined,
+): boolean {
+  return readDraftEnvelopeValue(raw).envelope?.pendingSendAt !== undefined;
+}
+
+export function serializeDraftEnvelope(
+  envelope: DraftEnvelopeV1,
+): string | null {
+  if (!hasDraftEnvelopeContent(envelope)) {
+    return null;
+  }
+  return JSON.stringify(envelope);
+}
+
+/** Any text write is deliberate composer content, so it drops `pendingSend`. */
+export function draftStorageValueForText(
+  text: string,
+  existingRaw?: string | null,
+): string | null {
+  const existing = readDraftEnvelopeValue(existingRaw).envelope;
+  return serializeDraftEnvelope({
+    version: DRAFT_ENVELOPE_VERSION,
+    text,
+    ...(existing?.attachments ? { attachments: existing.attachments } : {}),
+  });
+}
+
+/**
+ * Mark the stored text as a post-submit recovery copy sent at `sentAtMs`
+ * (server clock) without changing it. Returns null when there is no text to
+ * mark; callers fall back to the previous raw value so an empty composer's
+ * storage is left untouched rather than deleted.
+ */
+export function draftStorageValueForPendingSend(
+  existingRaw: string | null | undefined,
+  sentAtMs: number,
+): string | null {
+  const existing = readDraftEnvelopeValue(existingRaw).envelope;
+  if (!existing?.text.trim()) {
+    return null;
+  }
+  return serializeDraftEnvelope({ ...existing, pendingSendAt: sentAtMs });
+}
+
+function sameAttachmentState(
+  next: DraftAttachmentState,
+  existing: DraftAttachmentState,
+): boolean {
+  const normalized = normalizeAttachmentState(next);
+  return (
+    normalized?.batchId === existing.batchId &&
+    JSON.stringify(normalized.refs) === JSON.stringify(existing.refs)
+  );
+}
+
+/**
+ * Re-stating the stored attachments returns the stored value unchanged, so a
+ * composer hydrating from a sibling tab's write does not write back a fresh
+ * timestamp. Each such write reached the other tab as a change, which
+ * hydrated and wrote again, carrying a sent draft's recovery copy back into
+ * both composers.
+ */
+export function draftStorageValueForAttachments(
+  attachments: DraftAttachmentState | null | undefined,
+  existingRaw?: string | null,
+): string | null {
+  const { envelope: existing, legacy } = readDraftEnvelopeValue(existingRaw);
+  const nextAttachments =
+    attachments && attachments.refs.length > 0 ? attachments : undefined;
+  if (
+    existingRaw &&
+    !legacy &&
+    nextAttachments &&
+    existing?.attachments &&
+    sameAttachmentState(nextAttachments, existing.attachments)
+  )
+    return existingRaw;
+  return serializeDraftEnvelope({
+    version: DRAFT_ENVELOPE_VERSION,
+    text: existing?.text ?? "",
+    ...(nextAttachments ? { attachments: nextAttachments } : {}),
+    // Attachment bookkeeping runs after an optimistic submit clear; it must not
+    // strip the recovery marker off text it did not touch.
+    ...(existing?.pendingSendAt !== undefined
+      ? { pendingSendAt: existing.pendingSendAt }
+      : {}),
+  });
+}

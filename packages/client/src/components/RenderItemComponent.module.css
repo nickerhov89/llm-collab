@@ -1,0 +1,310 @@
+/*
+ * Conversation activity controls and thinking-preview header additions.
+ *
+ * The rest of `.conversation-thinking-preview-*` still lives in the legacy
+ * global sheet; `pnpm css:touched` defers extracting it (359 owned lines over
+ * two stylesheets, 18 coupled rules), so only bounded rules are owned here.
+ */
+
+/*
+ * The label absorbs the header's free space, which parks the age and the
+ * controls after it against the trailing edge. Deliberately flex-grow rather
+ * than an auto margin on the age: growth resolves before auto margins, so the
+ * chevron's existing global `margin-left: auto` is left with nothing to claim
+ * and stays put next to the age.
+ *
+ * The label is also what yields when the header is tight — the age and
+ * controls are fixed-size and carry state, while the label repeats what the
+ * card's own position already shows.
+ */
+.thinkingPreviewLabel {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/*
+ * Where this thought sits in the turn, not how long it took: a quiet sibling
+ * of the activity summary's elapsed pill. Tabular figures so a live-updating
+ * age on an active turn does not jitter its neighbours.
+ */
+.thinkingPreviewAge {
+  flex: 0 0 auto;
+  padding-left: 0.5rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.activityChevron {
+  display: inline-flex;
+  width: 0.8rem;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(1em + 1px);
+  line-height: 1;
+  opacity: 0.8;
+  transform: translateY(-0.25px);
+}
+
+.activityChevronExpanded {
+  transform: translateY(0.25px);
+}
+
+.activityPulse {
+  width: 4px;
+  height: 4px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--app-yep-green) 14%, transparent);
+  transform: translateY(-0.25px);
+}
+
+.activityLabel {
+  position: relative;
+  top: 0.25px;
+}
+
+/*
+ * Held height for the conversation activity row.
+ *
+ * A long streaming thinking block grows the row; when a shorter block replaces
+ * it, the row would hand that height straight back and — under follow mode —
+ * drag everything the reader was reading down the viewport. The row therefore
+ * keeps its high-water height until it has wanted less for a full cooling-off
+ * period. RenderItemComponent publishes the value (see
+ * lib/sessionDetail/activityHeightReserve.ts); no descendant sizes itself
+ * against it, which is what keeps the measurement from feeding back into the
+ * reserve.
+ */
+.activityHeightReserve {
+  min-height: var(--conversation-activity-reserved-height, 0);
+}
+
+/*
+ * Auto-hide rollup of the activity+thinking extras down to the compact
+ * summary. Height is set inline from the measured row to the summary height;
+ * overflow clips from the bottom. The mask keeps the summary solid and fades
+ * only the clipping edge. Duration comes from
+ * --conversation-thinking-rollup-ms (1.5s).
+ */
+.thinkingRollingUp {
+  overflow: hidden;
+  min-height: 0;
+  transition: height var(--conversation-thinking-rollup-ms, 1.5s) ease-in-out;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 2.75rem,
+    #000 max(2.75rem, calc(100% - 2.5rem)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0,
+    #000 2.75rem,
+    #000 max(2.75rem, calc(100% - 2.5rem)),
+    transparent
+  );
+}
+
+.thinkingAutoHiding {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--conversation-thinking-rollup-ms, 1.5s) ease-in;
+}
+
+/*
+ * Vertical budget for a previous thinking card that wrapped below the current
+ * one.
+ *
+ * Beside the current card the previous one is free: it caps to the current
+ * card's height, which already owns the row. Below it, its height adds to the
+ * row, and the current card is then the one that leaves the top of the viewport
+ * under follow. RenderItemComponent measures the room left once the row still
+ * fits the transcript viewport with two lines of the preceding paragraph
+ * showing, and publishes it as --conversation-previous-thinking-budget. The
+ * current-height cap still applies, so the card takes whichever is smaller.
+ */
+.activityHeightReserve[data-previous-thinking="stacked"]
+  :global(.conversation-thinking-preview[data-preview-slot="previous"])
+  :global(.conversation-thinking-preview-content) {
+  max-height: min(
+    var(--conversation-thinking-height, min(40vh, 24rem)),
+    var(--conversation-previous-thinking-budget, min(40vh, 24rem))
+  );
+}
+
+/*
+ * Not even a two-line thought fits that budget, so the superseded card is
+ * dropped. It keeps its box in the flex layout at zero height rather than
+ * leaving the layout: removing the item would change the wrap the budget was
+ * measured from, and the drop decision would flap on and off.
+ */
+.activityHeightReserve[data-previous-thinking="dropped"]
+:global(.conversation-thinking-preview[data-preview-slot="previous"]) {
+  height: 0;
+  border-width: 0;
+  visibility: hidden;
+}
+
+/*
+ * Compact chips are always expandable — outline them so the chevron affordance
+ * is obvious even when the provider retained no summary body.
+ *
+ * Order-independent against the global `.system-message` (equal specificity):
+ * that rule sets only `border-left`, and this rule re-declares it to the same
+ * value, so whichever wins the cascade the chip looks the same. The `border`
+ * shorthand's other three sides have no global competitor.
+ */
+.compactBoundaryOutline {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-left: 3px solid var(--accent-secondary, #6b7280);
+}
+
+.compactBoundaryOutline pre {
+  background: var(--bg-code);
+  color: var(--text-primary);
+}
+
+.compactSummaryMarkdown {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+}
+
+/*
+ * Provider tool output is primary transcript content even when its call is
+ * unavailable. Keep its expanded body readable instead of inheriting the
+ * quieter metadata treatment used by local-command details.
+ */
+.toolOutputDetails pre {
+  color: var(--text-primary);
+}
+
+/*
+ * Rewound-group header (topics/session-rewind.md). A whole-row button so the
+ * collapsed group reads like the other outline chips and stays a touch
+ * target.
+ */
+.rewoundGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.rewoundGroupToggleButton {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.rewoundGroupToggleButton:hover,
+.rewoundGroupToggleButton:focus-visible {
+  background: var(--bg-hover);
+  outline: none;
+}
+
+.rewoundItem {
+  opacity: 0.85;
+  /* Expanded group rows hang off a vertical bar under the header's marker. */
+  margin-left: 0.75rem;
+  border-left: 3px solid var(--accent-secondary, #6b7280);
+  padding-left: 0.75rem;
+  border-radius: 0;
+}
+
+.rewoundGroupToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 0.35em;
+  border: 1px solid var(--accent-secondary, #6b7280);
+  border-radius: 3px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rewoundGroupCopy {
+  margin-left: auto;
+}
+
+.contentFilterBlock {
+  display: block;
+  max-width: min(100%, 980px);
+}
+
+.contentFilterBlockTitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.contentFilterBlockGuidance {
+  margin: 6px 0 0;
+  /* Align the guidance under the title text, past the icon and its gap. */
+  padding-left: calc(1ch + 8px);
+  color: var(--text-secondary, var(--text-primary));
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.contentFilterBlockLabel {
+  color: var(--text-muted);
+}
+
+.systemDetails {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-left: 30px;
+}
+
+.systemDetail {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-primary, #1a1a1a) 55%, transparent);
+  color: var(--text-muted);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.82em;
+  font-style: normal;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.systemErrorDetails {
+  min-width: 0;
+  flex: 1;
+}
+
+.systemErrorDetails summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.systemErrorDetails pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 9px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}

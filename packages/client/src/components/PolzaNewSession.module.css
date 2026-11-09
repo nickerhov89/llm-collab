@@ -1,0 +1,239 @@
+.simple {
+  width: min(100%, 1160px);
+  margin-inline: auto;
+}
+
+.simple :global(.new-session-header) {
+  margin-bottom: auto;
+  padding-top: clamp(80px, 19vh, 210px);
+}
+
+.simple :global(.new-session-subtitle) {
+  font-size: clamp(30px, 3.1vw, 45px);
+  color: var(--text-primary);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+
+.heroIcon {
+  display: grid;
+  place-items: center;
+  margin: 0 auto 30px;
+  color: #b8b9bc;
+}
+
+.composerDock {
+  width: 100%;
+  margin-top: 32px;
+}
+
+.card {
+  width: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 28px;
+  background: var(--bg-surface);
+  box-shadow: 0 10px 36px rgba(25, 27, 32, 0.045);
+}
+
+.card :global(.speech-draft-field) {
+  border: 0;
+  box-shadow: none;
+}
+
+.contextBar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 56px;
+  padding: 7px 14px;
+  border-radius: 24px 24px 0 0;
+  background: #f3f3f4;
+}
+
+.projectPicker { position: relative; min-width: 0; max-width: min(45%, 350px); }
+.projectTrigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 24px;
+  background: #e9e9eb;
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+}
+.projectTrigger span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projectTrigger:hover, .projectTrigger[aria-expanded="true"] { background: #e2e3e5; }
+.projectMenu {
+  position: absolute;
+  z-index: 30;
+  left: 0;
+  bottom: calc(100% + 12px);
+  width: min(390px, calc(100vw - 32px));
+  padding: 8px;
+  border: 1px solid #dedee1;
+  border-radius: 18px;
+  background: var(--bg-surface);
+  box-shadow: 0 20px 55px rgba(0, 0, 0, .14);
+}
+.projectSearch { display: flex; align-items: center; gap: 9px; height: 42px; padding: 0 10px; border-bottom: 1px solid #e8e8eb; color: #888b90; }
+.projectSearch input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 15px; }
+.projectList { max-height: min(340px, 42vh); overflow-y: auto; padding: 6px 0; }
+.projectRow { display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 8px 10px; border: 0; border-radius: 11px; background: transparent; color: var(--text-primary); cursor: pointer; text-align: left; font: inherit; font-size: 15px; }
+.projectRow:hover, .projectRowSelected { background: #f2f2f3; }
+.projectRow span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.projectRow:disabled { opacity: .5; cursor: default; }
+.projectCheck { margin-left: auto; font-size: 18px; }
+.projectMenuActions { border-top: 1px solid #e8e8eb; padding-top: 5px; }
+.projectActionIcon { display: inline-flex; justify-content: center; width: 19px; font-size: 23px; font-weight: 300; line-height: 1; }
+.projectEmpty { padding: 10px; color: var(--text-muted); }
+
+.card :global(.new-session-input-area) {
+  padding: 14px 18px 10px;
+}
+
+.contextBar :global(.new-session-project-panel) {
+  width: min(350px, calc(100vw - 24px));
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.serverLocation {
+  color: var(--text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.serverLocation::before {
+  content: "▱";
+  margin-right: 9px;
+  font-size: 18px;
+}
+
+.environment {
+  position: relative;
+  margin-left: auto;
+}
+
+.environment summary {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.environment summary::-webkit-details-marker {
+  display: none;
+}
+.environment summary:hover {
+  background: var(--bg-hover);
+}
+
+.environmentPanel {
+  position: absolute;
+  z-index: 10;
+  top: auto;
+  bottom: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  gap: 10px;
+  width: min(350px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--bg-surface);
+  box-shadow: 0 12px 32px rgba(25, 27, 32, 0.16);
+}
+
+.environmentPath {
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.card :global(.new-session-form-toolbar) {
+  gap: 8px;
+  padding: 0 4px 3px;
+}
+
+.card :global(.new-session-form-toolbar-left),
+.card :global(.new-session-form-toolbar-actions) {
+  min-width: 0;
+  gap: 6px;
+}
+
+.card :global(.new-session-form-toolbar-actions) {
+  margin-left: auto;
+}
+
+.card :global(button[aria-label="Filter by Model"]),
+.card :global(button[aria-label="Filter by Thinking"]),
+.card :global(button[aria-label="Filter by Permission Mode"]) {
+  min-height: 36px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  box-shadow: none;
+}
+.card :global(button[aria-label="Filter by Model"]:hover),
+.card :global(button[aria-label="Filter by Thinking"]:hover),
+.card :global(button[aria-label="Filter by Permission Mode"]:hover) {
+  background: #f1f1f2;
+}
+.card :global(button[aria-label="Filter by Model"] .provider-badge) { display: none; }
+
+.card :global(.new-session-form-toolbar .new-session-mode-section),
+.card :global(.new-session-form-toolbar .new-session-model-section),
+.card :global(.new-session-form-toolbar .new-session-helper-section) {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.card :global(.new-session-form-toolbar h3),
+.card :global(.new-session-form-toolbar p) {
+  display: none;
+}
+
+@media (width <= 700px) {
+  .simple :global(.new-session-header) {
+    margin-bottom: auto;
+    padding-top: clamp(48px, 14vh, 110px);
+  }
+  .simple :global(.new-session-subtitle) { font-size: clamp(25px, 7vw, 34px); }
+  .heroIcon { margin-bottom: 20px; transform: scale(.8); }
+  .composerDock { margin-top: 24px; }
+  .card {
+    border-radius: 22px;
+  }
+  .contextBar { min-height: 50px; gap: 8px; padding: 5px 8px; }
+  .projectPicker { max-width: 55%; }
+  .projectTrigger { min-height: 38px; padding-inline: 9px; font-size: 13px; }
+  .projectMenu { max-height: 58vh; overflow-y: auto; }
+  .serverLocation { font-size: 12px; }
+  .card :global(.new-session-form-toolbar) {
+    flex-wrap: wrap;
+  }
+  .card :global(.new-session-form-toolbar-actions) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (width <= 700px), (pointer: coarse) {
+  .card :global(.new-session-form-toolbar .toolbar-button),
+  .card :global(.new-session-submit-button),
+  .projectTrigger,
+  .environment summary {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

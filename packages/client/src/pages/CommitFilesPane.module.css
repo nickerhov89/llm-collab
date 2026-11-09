@@ -1,0 +1,104 @@
+.body {
+  display: block;
+  width: 100%;
+  margin: 0 0 var(--space-2, 8px);
+  padding: 8px;
+  color: var(--text-secondary, #8b949e);
+  font-family: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  white-space: pre-wrap;
+  user-select: text;
+  background: var(--bg-secondary);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.body:hover {
+  color: var(--text-primary, #e6edf3);
+}
+
+.body:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--accent-color));
+  outline-offset: -2px;
+}
+
+.selected {
+  background: var(--bg-selected, rgba(56, 139, 253, 0.15));
+  border-color: var(--border-subtle, #21262d);
+}
+
+.mobile {
+  padding-block: 6px;
+  color: var(--text-secondary, #8b949e);
+  white-space: normal;
+}
+
+.selectedPath {
+  position: sticky;
+  z-index: 3;
+  top: 0;
+  display: flex;
+  width: calc(100% - 8px);
+  justify-content: flex-end;
+  margin: 0 4px 6px;
+  pointer-events: none;
+}
+
+.selectedPathBox {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  padding: 5px 7px;
+  overflow-wrap: anywhere;
+  color: var(--tooltip-foreground);
+  background: var(--tooltip-background);
+  border: 1px solid var(--tooltip-border);
+  border-radius: 4px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  font-family: var(--font-mono, monospace);
+  font-size: calc(var(--font-size-xs) + 1px);
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: normal;
+}
+
+@media (width >= 1100px) {
+  .selectedPath {
+    width: calc(
+      100% +
+      var(--source-revision-column-width, 300px) +
+      var(--space-3, 12px) -
+      8px
+    );
+    margin-left: calc(
+      4px -
+      var(--source-revision-column-width, 300px) -
+      var(--space-3, 12px)
+    );
+  }
+
+  .desktopColumn {
+    display: flex;
+    overflow: visible;
+    flex-direction: column;
+  }
+
+  .desktopColumn > :global(.source-detail-banner),
+  .desktopColumn > .selectedPath {
+    flex-shrink: 0;
+  }
+
+  .desktopColumn > .body {
+    min-height: 0;
+    max-height: 40%;
+    overflow-y: auto;
+  }
+
+  .desktopColumn > :global(.commit-file-list) {
+    min-height: 0;
+    flex: 1 1 auto;
+    overflow-y: auto;
+  }
+}

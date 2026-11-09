@@ -1,0 +1,149 @@
+import {
+  SOURCE_OFFSET_END_ATTR,
+  SOURCE_OFFSET_START_ATTR,
+} from "./sourceOffsetDom";
+
+function compactShikiLineBreaks(html: string): string {
+  return html.replace(/<\/span>\r?\n(?=<span class="line(?:\s|"))/g, "</span>");
+}
+
+interface SourceLineSlice {
+  start: number;
+  end: number;
+  text: string;
+}
+
+function splitSourceLineSlices(source: string): SourceLineSlice[] {
+  const lines: SourceLineSlice[] = [];
+  let start = 0;
+  const newlinePattern = /\r\n|\r|\n/g;
+  for (
+    let match = newlinePattern.exec(source);
+    match;
+    match = newlinePattern.exec(source)
+  ) {
+    const end = match.index;
+    lines.push({ start, end, text: source.slice(start, end) });
+    start = match.index + match[0].length;
+  }
+  lines.push({ start, end: source.length, text: source.slice(start) });
+  return lines;
+}
+
+function setSourceOffsets(element: Element, start: number, end: number): void {
+  element.setAttribute(SOURCE_OFFSET_START_ATTR, String(start));
+  element.setAttribute(SOURCE_OFFSET_END_ATTR, String(end));
+}
+
+function annotateLineTokens(
+  lineElement: HTMLElement,
+  line: SourceLineSlice,
+): void {
+  const elementOffsets = new Map<HTMLElement, { start: number; end: number }>();
+  const walker = lineElement.ownerDocument.createTreeWalker(
+    lineElement,
+    NodeFilter.SHOW_TEXT,
+  );
+  let cursor = 0;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const textNode = node as Text;
+    const text = textNode.data;
+    if (line.text.slice(cursor, cursor + text.length) !== text) {
+      return;
+    }
+    const textStart = line.start + cursor;
+    const textEnd = textStart + text.length;
+    for (
+      let element = textNode.parentElement;
+      element && element !== lineElement;
+      element = element.parentElement
+    ) {
+      const offsets = elementOffsets.get(element);
+      elementOffsets.set(element, {
+        start: offsets ? Math.min(offsets.start, textStart) : textStart,
+        end: offsets ? Math.max(offsets.end, textEnd) : textEnd,
+      });
+    }
+    cursor += text.length;
+  }
+  if (cursor !== line.text.length) return;
+
+  for (const [element, offsets] of elementOffsets) {
+    setSourceOffsets(element, offsets.start, offsets.end);
+  }
+}
+
+/**
+ * Prepare server Shiki HTML for display: remove the newline text between line
+ * spans, and when the source text is known, carry exact source offsets through
+ * the resulting block-per-line DOM. Line separators become layout, not text,
+ * so selections spanning lines need these offsets to recover source newlines
+ * and stable comment anchors.
+ *
+ * The output is only correct inside `ShikiHtml`, whose styles put each line
+ * back on its own row; render it there. Preparing prepared HTML again changes
+ * nothing.
+ */
+export function prepareShikiHtml(html: string, source?: string): string {
+  const compacted = compactShikiLineBreaks(html);
+  if (source === undefined || typeof document === "undefined") {
+    return compacted;
+  }
+  return annotateShikiSourceOffsets(compacted, source);
+}
+
+function annotateShikiSourceOffsets(html: string, source: string): string {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const renderedLines = Array.from(
+    template.content.querySelectorAll<HTMLElement>("code .line"),
+  );
+  const sourceLines = splitSourceLineSlices(source);
+  for (let index = 0; index < renderedLines.length; index += 1) {
+    const lineElement = renderedLines[index];
+    const line = sourceLines[index];
+    if (!lineElement || !line || lineElement.textContent !== line.text) {
+      continue;
+    }
+    setSourceOffsets(lineElement, line.start, line.end);
+    annotateLineTokens(lineElement, line);
+  }
+  return template.innerHTML;
+}
+
+/**
+ * Split one highlighted source document after its absolute `data-line` row
+ * while retaining Shiki's outer theme and code attributes in both halves.
+ */
+export function splitHighlightedSourceAfterLine(
+  html: string,
+  afterLine: number,
+): { before: string; after: string } | null {
+  if (typeof document === "undefined") return null;
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const sourceLines = Array.from(
+    template.content.querySelectorAll<HTMLElement>("code .line[data-line]"),
+  );
+  if (!sourceLines.some((line) => Number(line.dataset.line) === afterLine)) {
+    return null;
+  }
+
+  const renderHalf = (keep: (lineNumber: number) => boolean) => {
+    const clone = template.content.cloneNode(true) as DocumentFragment;
+    for (const line of clone.querySelectorAll<HTMLElement>(
+      "code .line[data-line]",
+    )) {
+      const lineNumber = Number(line.dataset.line);
+      if (!Number.isInteger(lineNumber) || !keep(lineNumber)) line.remove();
+    }
+    const wrapper = document.createElement("div");
+    wrapper.append(clone);
+    return wrapper.innerHTML;
+  };
+
+  return {
+    before: renderHalf((lineNumber) => lineNumber <= afterLine),
+    after: renderHalf((lineNumber) => lineNumber > afterLine),
+  };
+}

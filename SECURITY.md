@@ -1,0 +1,108 @@
+# Security
+
+Yep Anywhere is a single-user, self-hosted remote UI for local agent
+processes. It can expose shell, file, and tool-approval capabilities of the
+underlying provider CLIs, so deployments should treat the server as sensitive
+developer infrastructure.
+
+This document describes security features that are present in upstream
+`kzahel/main`.
+
+## Default Exposure
+
+- The server binds to `127.0.0.1` by default.
+- Remote access is opt-in. When enabled, remote clients authenticate through
+  the SRP-based secure WebSocket transport described below.
+- Debug or recovery settings such as `AUTH_DISABLED=true` and
+  `ALLOWED_HOSTS=*` intentionally reduce protection and should be used only in
+  controlled environments.
+
+## HTTP API Protections
+
+- API requests pass through Host validation unless `ALLOWED_HOSTS=*` is set.
+- CORS allows only configured/recognized origins and sends credentials only
+  for accepted origins.
+- Mutating API requests require the `X-Yep-Anywhere: true` header, adding a
+  simple CSRF barrier for browser-originated forms and simple requests.
+
+## Local Password Auth
+
+- Optional local password auth uses bcrypt password hashes.
+- Browser sessions use high-entropy server-generated session IDs stored in
+  HTTP-only cookies with `SameSite=Lax`; cookies are marked `Secure` when the
+  request is HTTPS.
+- Auth state is stored in `auth.json`; on POSIX platforms the server attempts
+  to enforce owner read/write-only file permissions.
+- A desktop auth token can act as an additional local app auth path when the
+  desktop integration provides one.
+
+## Remote Access Transport
+
+- Remote access uses SRP-6a so the password is not sent to the server or relay.
+- The server stores SRP verifier material, not the plaintext remote-access
+  password.
+- After SRP succeeds, client/server traffic is encrypted with NaCl secretbox
+  using keys derived from the SRP session key.
+- Relay mode forwards opaque SRP and encrypted traffic; the relay is not meant
+  to read application payloads.
+- SRP handshakes include per-connection and per-username throttling plus a
+  handshake timeout.
+
+## Rendered Content
+
+- Server-rendered markdown disables raw HTML passthrough and sanitizes output
+  through an allowlist of tags, attributes, and URL schemes.
+- Markdown links and images are limited to supported URL schemes; local media
+  links are rewritten through a server endpoint rather than exposed directly as
+  arbitrary browser URLs.
+- KaTeX rendering is configured with `trust: false`.
+
+Markdown parsing, rendering plugins, KaTeX, sanitization, and the browser DOM
+are still part of YA's exposure surface. Agent- or project-authored text can be
+misleading, and unusually large documents can consume synchronous server CPU.
+A rendered preview is a presentation aid, not proof that its links or visible
+text are trustworthy.
+
+## Agent and Project Code
+
+YA does not turn the underlying coding agent into a sandbox. With the user's
+approval and provider permissions, agents can fetch, inspect, build, and
+execute open-source or other third-party code. That execution surface is much
+broader than Markdown display risk. Review agent commands and dependency
+changes with the same care as local developer shell activity; use provider or
+host sandboxing where untrusted projects require a stronger boundary.
+
+## Local Media and Static Files
+
+- Local media serving is restricted to configured allowed path prefixes and
+  recognized media extensions, and resolves symlinks before checking the
+  allowed prefixes.
+- Production static HTML responses include a `frame-ancestors` Content Security
+  Policy for the web app and supported desktop origins.
+
+## Maintenance Practice
+
+- The runtime dependency surface is kept deliberately narrow. Additions must
+  justify their long-term update and audit cost; established cryptography,
+  authentication, frameworks, and official provider SDKs are preferred where
+  hand-rolled code would create more risk.
+- Published release installs use the committed lockfile in frozen mode, so
+  resolved dependency versions do not float during the build. Dependency
+  additions and version changes remain explicit, reviewable manifest and
+  lockfile diffs in release review.
+- The maintainers regularly audit authentication, transport and relay
+  boundaries, rendered content, local file access, dependencies, packaging,
+  and provider integrations as those surfaces change. These are
+  maintainer-led reviews, not independent security certification.
+- The two core maintainers are
+  [Jonathan Graehl (@graehl)](https://github.com/graehl) and
+  [Kyle Graehl (@kzahel)](https://github.com/kzahel).
+
+## Reporting
+
+Email [graehlarts@gmail.com](mailto:graehlarts@gmail.com) for private disclosure
+of suspected vulnerabilities. Do not open a public issue containing exploit
+details, credentials, or other sensitive evidence. Use
+[GitHub Issues](https://github.com/kzahel/yepanywhere/issues) for non-sensitive
+bugs and support requests. Publish a minimal public summary only after a fix or
+mitigation is available upstream.

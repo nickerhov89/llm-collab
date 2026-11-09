@@ -1,0 +1,127 @@
+import { describe, expect, it } from "vitest";
+import { getToolSummary } from "../summaries";
+
+describe("getToolSummary", () => {
+  it("prefers linked file name for write_stdin summaries", () => {
+    const summary = getToolSummary(
+      "WriteStdin",
+      {
+        session_id: 37863,
+        chars: "",
+        linked_file_path: "packages/client/src/hooks/useGlobalSessions.ts",
+        linked_tool_name: "Read",
+        linked_command:
+          "sed -n '1,260p' packages/client/src/hooks/useGlobalSessions.ts",
+      },
+      {
+        content:
+          'Chunk ID: 6dceb3\nWall time: 0.0522 seconds\nProcess exited with code 0\nOutput:\nimport { useCallback } from "react";\n',
+        isError: false,
+      },
+      "complete",
+    );
+
+    // Exit 0 stays silent per the command-metadata contract
+    // (topics/provider-output-contract.md § Command execution metadata);
+    // the runtime always shows.
+    expect(summary).toBe("Read via PTY: useGlobalSessions.ts → 1 lines · 0.1s");
+  });
+
+  it("uses raw write_stdin content when structured result is absent", () => {
+    const summary = getToolSummary(
+      "WriteStdin",
+      {
+        session_id: 70073,
+        chars: "",
+        linked_command:
+          "sed -n '1,140p' packages/client/src/layouts/NavigationLayout.tsx",
+      },
+      {
+        content:
+          'Chunk ID: fefaef\nWall time: 0.0520 seconds\nProcess exited with code 0\nOutput:\nimport { useEffect } from "react";\n',
+        isError: false,
+      },
+      "complete",
+    );
+
+    expect(summary).toBe(
+      "sed -n '1,140p' packages/client/src/layouts/NavigationLayout.tsx → 1 lines · 0.1s",
+    );
+  });
+
+  it("includes linked command for completed write_stdin rows with no output", () => {
+    const summary = getToolSummary(
+      "WriteStdin",
+      {
+        session_id: 70073,
+        chars: "",
+        linked_command:
+          "sed -n '1,140p' packages/client/src/layouts/NavigationLayout.tsx",
+      },
+      {
+        content:
+          "Chunk ID: d73b4e\nWall time: 1.0001 seconds\nProcess running with session ID 70073\nOutput:\n",
+        isError: false,
+      },
+      "complete",
+    );
+
+    expect(summary).toBe(
+      "sed -n '1,140p' packages/client/src/layouts/NavigationLayout.tsx → No output · 1s",
+    );
+  });
+
+  it("uses canonical renderer names for aliased bash rows", () => {
+    const summary = getToolSummary(
+      "exec_command",
+      { command: "npm test" },
+      {
+        content: "ok\n",
+        structured: { stdout: "ok\n", stderr: "" },
+        isError: false,
+      },
+      "complete",
+    );
+
+    expect(summary).toBe("npm test");
+  });
+
+  it("keeps Windows file paths compact in default summaries", () => {
+    const projectPath = "C:\\Users\\user\\Documents\\code\\playbox";
+    const summary = getToolSummary(
+      "Read",
+      {
+        file_path: `${projectPath}\\docs\\tactical\\note.md`,
+      },
+      undefined,
+      "pending",
+      { projectPath },
+    );
+
+    expect(summary).toBe("note.md");
+  });
+
+  it("uses project-relative Windows paths for grep summaries", () => {
+    const projectPath = "C:\\Users\\user\\Documents\\code\\playbox";
+    const summary = getToolSummary(
+      "Grep",
+      {
+        pattern: "needle",
+        path: `${projectPath}\\src\\renderer`,
+      },
+      {
+        content: "",
+        isError: false,
+        structured: {
+          mode: "files_with_matches",
+          filenames: [],
+          numFiles: 3,
+        },
+      },
+      "complete",
+      { projectPath },
+    );
+
+    expect(summary).toBe("needle in src/renderer → 3 files");
+  });
+});

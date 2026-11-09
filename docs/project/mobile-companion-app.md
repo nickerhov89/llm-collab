@@ -1,0 +1,382 @@
+# Mobile Companion App
+
+## Status
+
+Approved product direction with the first-class Android shell complete. The
+local-bundled and hosted-`latest` Android asset channels, exact-origin native
+host, App Link, and minimal FCM registration/receive probe exist. The
+Gradle/Kotlin replacement has landed and Tauri Mobile has been removed; its
+validation evidence and CI contract are recorded in
+[`080-first-class-android-shell.md`](../tactical/080-first-class-android-shell.md).
+Native pairing, host management, concurrent native connections and relay-mux/fallback
+behavior have since landed and passed Pixel validation in
+[`084-android-native-multi-host-runtime.md`](../tactical/084-android-native-multi-host-runtime.md).
+Broker installation registration also exists; server-specific push enrollment,
+and notification presentation remain later slices.
+
+The foreground direction selected on 2026-09-30 is the full bundled web UI,
+with native login, saved-server selection, secure SRP/session storage, transport,
+reconnect and notifications. Existing native pairing and connection code is
+reused. The duplicate Compose dashboard and Conversation renderer are retired
+by the authenticated WebView migration. The experimental Simple
+Client API and native projection demos remain reusable work, but are not mobile
+release prerequisites. Android implementation is tracked in
+[the WebView app plan](../tactical/083-android-bundled-web-native-transport.md);
+iOS follows this shell boundary in a later scoped effort.
+
+The initial mobile release supports server-owner login. Native limited-user
+login is explicitly deferred by the maintainer on 2026-10-01.
+
+The Android notification path is specified separately in
+[`topics/android-fcm-push.md`](../../topics/android-fcm-push.md).
+Local paired-server profiles, paired-device ownership, native credentials,
+resume-authenticated direct/relay selection, LAN discovery, and the bundled
+WebView's logical lease on native transport are specified in
+[`topics/mobile-server-pairing.md`](../../topics/mobile-server-pairing.md).
+The current packaged app's password-manager association is specified in
+[`topics/android-credential-sharing.md`](../../topics/android-credential-sharing.md).
+The shared semantic boundary and current web-only compiler checkpoint are in
+[`topics/portable-transcript-compiler.md`](../../topics/portable-transcript-compiler.md),
+and the selected compact session presentation is specified in
+[`topics/conversation-view.md`](../../topics/conversation-view.md).
+
+## Motivation
+
+Yep Anywhere already supports browser push notifications through Web Push/VAPID,
+but mobile browser delivery can be delayed when the device is locked, idle, or in
+a pocket. For time-sensitive agent events such as pending input or task
+completion, the desired user experience is closer to a native messaging app:
+install, authenticate to a YA server, grant notification permission, and receive
+reliable alerts without thinking about browser power-management behavior.
+
+The companion app should also provide a small mobile surface for checking agent
+activity across one or more YA servers without reimplementing the full web UI.
+
+## Default User Journey
+
+The primary path should optimize for users who do not want to understand mobile
+push infrastructure.
+
+1. Install the YA desktop/server app.
+2. Install the YA mobile app.
+3. Add a YA server in native onboarding and authenticate with its existing SRP
+   username/password flow.
+4. Enable native notifications for that authenticated server.
+5. Grant notification permission.
+6. Use the full web UI on the authenticated native connection and receive
+   native mobile notifications once server push enrollment is implemented.
+
+An optional QR may carry route hints and the SRP username so the user does not
+type URLs, while Android still asks for the SRP password. A future passwordless
+grant requires step-up authorization and a separate security and compatibility
+review.
+
+Source builds and `adb install` should remain possible for advanced users, but
+they are not the product-defining path.
+
+For WebView credential discovery, the Android app declares a
+Digital Asset Links association with `yepanywhere.com`. This lets compatible
+password managers recognize the app's SRP login as the same credential surface
+as the hosted Remote Access login. The initial association covers the
+maintainer-signed debug APK for device testing; a public app needs its official
+distribution certificate added before release.
+
+## Bundled And Hosted Web UI
+
+The complete web interface is Android's main foreground presentation. Ordinary
+production builds package release-approved client assets inside the signed APK
+and serve them through Android's app-assets HTTPS origin. Native host selection
+and login hand it a source-scoped authenticated transport lease.
+
+A separate testing build may load a fixed YA-hosted client instead of packaging
+the assets. Hosted `latest` is a transitional distribution/testing mechanism,
+not the trust model for the permanent full-web presentation.
+
+Any hosted build uses a fixed HTTPS URL rather than a runtime-selected origin.
+A future stable hosted channel could use a path such as
+`https://yepanywhere.com/mobile/`, with an independent cache scope, release
+policy, headers, and later mobile-specific behavior. The ordinary production
+channel remains bundled.
+
+Local Android development and debug APKs bundle the current checkout's client
+assets. They do not depend on a website deployment, so locally edited
+JavaScript can be tested immediately. A separate release-channel build may use
+`https://latest.yepanywhere.com/` for Play internal or closed testing, where
+each successful main-branch push should reach installed test builds without a
+new APK. Selecting that mutable channel for an early public release is a
+deliberate release decision, not a consequence of building in debug or release
+mode. A later stable hosted release uses `yepanywhere.com` or bundled assets.
+
+Benefits:
+
+- The login form has a real `yepanywhere.com` web origin, which should give
+  password managers the most direct path to matching website credentials.
+  This remains a physical-device acceptance test rather than an assumption.
+- Client fixes can ship with a website release instead of waiting for a new app
+  store review.
+- The APK does not duplicate the web client assets.
+- Native FCM receipt and notification display remain independent of the
+  WebView. The app does not need to create a WebView while its UI is closed.
+- The same full web UI is shared with the bundled channel, keeping the
+  foreground independent of native presentation development.
+
+The bandwidth cost is bounded but real. When this option was recorded, the
+current core JavaScript and CSS entry assets were approximately 0.83 MiB
+compressed. Hashed assets should normally be reused from the WebView HTTP cache
+until a website release changes them; fonts and locale bundles are loaded as
+needed rather than on every launch. Cache eviction and the first launch after a
+release can still require a network download.
+
+Constraints:
+
+- Hosted JavaScript is part of the login trust boundary. A compromise of the
+  hosted origin could read an SRP password or resume credential before the
+  protocol protects it. This has the weaker trust model described in
+  [`topics/trusted-client-packaging.md`](../../topics/trusted-client-packaging.md).
+- The official app must not accept an arbitrary remote UI URL by default. A
+  source or development build may expose an explicit build-time override.
+- Hosted content must not inherit general Android native privileges. The
+  implemented web/native channel is exact-origin, main-frame-only, versioned, and
+  limited to explicit high-level operations; ordinary browsers receive no
+  native host.
+- An HTTPS page cannot connect directly to an insecure `ws://` YA endpoint
+  without weakening mixed-content protections. Relay or other `wss://`
+  connections work naturally. Do not enable production-wide mixed content to
+  recover insecure direct connections; use a native transport bridge or a
+  source-built bundled client if that use case becomes necessary.
+- A cold launch can fail when the host is unavailable or the cache has been
+  evicted. The app should present an honest retry/offline state.
+- Hosted client releases must preserve the stable-server capability gates and
+  fallbacks documented in
+  [`topics/remote-hosted-compatibility.md`](../../topics/remote-hosted-compatibility.md).
+- The published app must deliver meaningful companion functionality rather
+  than relying on a generic website wrapper. Native authentication, secure storage, transport, server selection,
+  notifications and deep-link handling provide that product value.
+
+A conservative rollout keeps the low-memory native notification path, uses the
+full bundled web interface in the foreground, and uses
+hosted `latest` only in an explicitly selected testing channel. Before any
+hosted channel is adopted beyond testing, verify on a physical device that
+website credentials are offered, repeat launches reuse cached assets, no
+unintended native IPC is exposed, and background FCM delivery does not start a
+WebView.
+
+The first-class shell and WebView host are implemented in
+[`080-first-class-android-shell.md`](../tactical/080-first-class-android-shell.md).
+The subsequent notification lifecycle and foreground-activity staging remain
+in
+[`071-android-wrapper-notification-integration.md`](../tactical/071-android-wrapper-notification-integration.md).
+
+## Product Shape
+
+The app is a native shell around the existing full web client.
+
+- Native: saved hosts, login, reauthentication, host selection/removal, protected
+  credentials, connection ownership, notification permissions and delivery.
+- WebView: projects, session lists/detail, composer, rich tools, settings and
+  the existing mobile interactions.
+
+Native host management does not acquire hidden summary/activity subscriptions.
+The WebView receives a document-scoped source handle and source operations; it
+never receives saved passwords or SRP keys. Its Switch Host action opens native
+management, and selecting a host creates a web document bound to that profile.
+
+## Non-Goals
+
+- Reimplementing transcripts, session dashboards or the composer in native UI.
+- Requiring the experimental Simple Client API to publish the mobile app.
+- Requiring a WebView for notification receipt while the UI is closed.
+- Making Android foreground service behavior mandatory or always on.
+- Moving the relay or server authentication trust boundary into JavaScript.
+
+## Native And Full-Web Session Direction
+
+The native Conversation experiment is no longer an active foreground product.
+Its connection and projection helpers remain reusable, while the existing web
+client supplies complete session behavior. iOS should adopt the same narrow
+shell boundary, with its own platform transport and secure storage; a second
+SwiftUI session renderer is not a release requirement.
+
+## Hosted Push Model
+
+For the published app, YA should own one mobile app identity and one hosted push
+path. The normal model is not "each relay owns an FCM project". It is:
+
+- The published Android app belongs to the YA Firebase project.
+- The app maintains an FCM delivery registration with a YA-hosted push broker.
+- After native SRP login and durable device pairing, the app creates a
+  server-specific device push subscription and gives its send capability to
+  the trusted YA server over the encrypted connection.
+- A YA server sends a small push intent to the broker when a subscribed device
+  should be notified.
+- The broker sends an FCM notification to the Android device. Exact Android
+  priority and wake behavior remain live-device validation work.
+- The app displays a notification or wakes briefly and fetches details from the
+  paired YA server.
+
+The credential-free broker service is implemented as a separate package and
+runtime at `https://push.yepanywhere.com`. A physical Android build has
+registered through Firebase's current FID API, received a direct Firebase
+Console test message, and received a temporary generic notification through
+the deployed broker. Android now owns a Keystore-backed broker installation
+whose target follows FID replacement. Server-specific subscription enrollment
+and user-visible native presentation remain unimplemented. The broker may
+share physical hosting with the relay, but it does not share the relay's
+process, event loop, database, or delivery credentials. The relay is encrypted
+transport, while the broker is a token registry and notification dispatcher.
+
+Payloads should be generic by default. A user may explicitly opt into bounded
+notification text passing in plaintext through the YA push broker and Google
+FCM. End-to-end-encrypted rich notification bodies remain possible future work,
+not a first-release requirement.
+
+## Server Pairing And Push Enrollment
+
+The existing SRP login authorizes creation of a durable relationship between
+one mobile app installation and one YA server. Android gives the relationship
+an app-local profile id; the server later gives the device relationship its own
+opaque id. The paired-device record is distinct from an expiring SRP resume
+session, and native push is an optional child rather than its definition.
+
+Likely relationship data:
+
+- App-local profile id and user-visible server label.
+- A set of relay and direct connection routes.
+- Server-issued mobile device id, display name, and revocation metadata.
+- Expiring native SRP resume credentials stored under Android Keystore.
+- Optional broker device push subscription id and send secret.
+
+While the resume credential remains valid, its challenge-bound server proof is
+sufficient to attach direct and relay routes to the same local profile. Without
+resume, the app requires explicit SRP reauthentication and profile selection;
+it does not infer installation equality. Public/fingerprinted installation ids
+and the relay-ownership `installId` are not part of the mobile contract. A
+discovery-only QR may bootstrap routes, but manual SRP password authentication
+remains the initial authorization. The complete model and current
+resume-session limits are in
+[`topics/mobile-server-pairing.md`](../../topics/mobile-server-pairing.md).
+
+## Multi-Server Navigation
+
+Native management lists saved servers and their connection/authentication state.
+Opening a server enters its complete bundled web UI. Switching hosts releases
+the old web consumer and returns to native selection. The web runtime, drafts,
+requests and subscriptions are scoped to that profile's source key.
+
+The connection core supports concurrent native consumers for several hosts,
+without making selection a transport singleton. A later aggregated native
+notification/inbox surface may use that core, but it is not required for this
+foreground release and must not recreate an always-running dashboard scanner.
+
+## Android-First Capabilities
+
+Android is the first target because it enables the behavior that motivated this
+idea:
+
+- FCM high-priority native push for time-sensitive notifications.
+- A foreground service for explicitly enabled persistent activity subscription.
+- A Kotlin connection core for Compose and foreground-service use without a
+  WebView or JavaScript runtime.
+- Optional bounded local-network discovery for direct-route candidates.
+- A complete bundled web foreground using native authentication and transport,
+  plus native login/host management without browser-owned session credentials.
+
+Foreground service mode should be default-off and clearly user controlled. It is
+useful for "keep activity live" behavior, but it carries battery and notification
+surface costs.
+
+LAN discovery is an auxiliary candidate source, not authentication. mDNS or an
+equivalent scan must be bounded to a visible owner, advertise no credentials,
+sessions, or installation identity, and attach a route automatically only after
+resume proves continuity with the selected profile. Without resume, full SRP
+and explicit user selection establish the route. Native direct traffic may use
+that authenticated route; the bundled web client normally consumes it through
+an independent WebView lease on the Kotlin connection manager.
+
+## iOS Compatibility
+
+The core companion concept is compatible with a future iOS app:
+
+- Native push notifications.
+- Pairing and server status.
+- Native secure SRP/session storage and transport.
+- Native login and host selection, with the complete web UI in a WKWebView.
+- Source operations scoped to a trusted bundled document; no new transcript or
+  composer design is required.
+
+The Android foreground-service activity subscriber is not portable to iOS in the
+same form. A future iOS implementation would likely rely on APNs-backed push,
+background refresh where available, and foreground app activity rather than a
+persistent background service.
+
+The initial iOS delivery direction is to use the same hosted push broker through
+FCM's Apple-platform integration, which forwards notifications through APNs.
+This avoids a second public notification service and preserves the same
+YA-server device push subscription model. Direct APNs delivery may later be
+added as a broker-internal adapter without changing that public contract.
+
+To keep that path open, shared backend concepts should be platform-neutral:
+
+- Device registration.
+- Pairing records.
+- Push intents.
+- Inbox snapshots.
+- Event freshness and acknowledgement metadata.
+- Transcript projection nodes, stable identities, coverage, and pagination.
+- Generic fallback and action-eligibility meanings.
+
+Platform-specific delivery details can live below that shared model.
+
+## Self-Hosted and Source Builds
+
+The primary product should assume the published YA app and YA-hosted broker.
+Advanced paths can be supported later:
+
+- Build from source and install with `adb`.
+- Use the standard YA-hosted broker with a source-built compatible app.
+- Bring a custom FCM project/service account for a fully independent build.
+- Run without broker push and rely only on foreground-service subscription.
+
+These should be documented as advanced modes. They should not be required for
+the normal desktop-plus-phone setup.
+
+## Security and Privacy Notes
+
+The broker should not become a transcript service.
+
+Default broker-visible data should be limited to routing and delivery metadata:
+
+- Mobile registration tokens.
+- Device/server association ids.
+- Push intent type.
+- Timing and delivery attempts.
+
+The phone should fetch sensitive details from the authenticated YA server over the
+normal authenticated/encrypted path in generic mode. In descriptive mode, the
+user explicitly accepts that bounded notification text is processed in
+plaintext by the YA push broker and Google FCM.
+
+Revocation must be first-class:
+
+- Server can remove a mobile device.
+- Mobile app can forget a server.
+- Device push subscriptions can be revoked or replaced.
+- Lost phones should be removable from the desktop/server UI.
+
+## Open Questions
+
+- What native notification/inbox aggregation is useful after the full-web
+  foreground ships?
+- What exact capability-gated protocol advertises authenticated public server
+  identity and creates/revokes durable paired-device records?
+- Do representative measurements ever justify offering an independently
+  authenticated bundled-WebView transport alongside the native proxy, and if
+  so should it be automatic or an explicit advanced mode?
+- Should notification acknowledgement be recorded by the app, the server, the
+  broker, or all three?
+- Beyond the verified clean-install and cleared-app-data FID callbacks, what
+  refresh and invalidation behavior is required against the live broker?
+- How much local page-open/event handoff is worth building before there is a
+  concrete use case?
+- What is the minimum source-build story that is acceptable without making it
+  look like the supported mainstream path?

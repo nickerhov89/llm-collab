@@ -1,0 +1,265 @@
+import type { SlashCommand } from "./types.js";
+
+const INVOCATION_NAME_SOURCE = "[A-Za-z0-9][A-Za-z0-9._:-]*";
+const INVOCATION_TOKEN_RE = new RegExp(
+  `(^|\\s)([/\\$])(${INVOCATION_NAME_SOURCE})(?=\\s|$)`,
+  "g",
+);
+const INVOCATION_NAME_RE = new RegExp(`^${INVOCATION_NAME_SOURCE}$`);
+const LEADING_SLASH_COMMAND_RE = new RegExp(
+  `^/(${INVOCATION_NAME_SOURCE})(?=\\s|$)`,
+);
+
+export interface SkillInvocationMatch {
+  command: SlashCommand;
+  start: number;
+  end: number;
+  authoredToken: string;
+  canonicalToken: string;
+}
+
+export interface InvocationCandidate {
+  start: number;
+  end: number;
+  sigil: "/" | "$";
+  name: string;
+  token: string;
+}
+
+export interface InvocationCompletionQuery {
+  start: number;
+  end: number;
+  sigil: "/" | "$";
+  query: string;
+  leading: boolean;
+}
+
+/**
+ * The provider's canonical spelling, trimmed and stripped of any authored
+ * sigil but with case preserved. Providers such as Codex recognize exact
+ * skill names, so this is what belongs in emitted tokens and identity/dedup
+ * paths. Use {@link normalizeInvocationName} only for permissive user-facing
+ * matching.
+ */
+export function canonicalInvocationName(name: string): string {
+  return name.trim().replace(/^[/\\$]+/, "");
+}
+
+export function normalizeInvocationName(name: string): string {
+  return canonicalInvocationName(name).toLowerCase();
+}
+
+export function hasInvocationCandidate(text: string): boolean {
+  return /(^|\s)[/$][A-Za-z0-9]/.test(text);
+}
+
+/**
+ * The command name when `text` opens with a `/name` token, else null. Providers
+ * only recognize a slash command at offset 0, so any prefix — even a leading
+ * space or a wrapper line — turns the same text into ordinary prose. A path
+ * such as `/local/graehl` is not a command: the name stops at the second slash
+ * rather than at whitespace or end of text.
+ */
+export function getLeadingSlashCommandName(text: string): string | null {
+  return LEADING_SLASH_COMMAND_RE.exec(text)?.[1] ?? null;
+}
+
+export function startsWithSlashCommand(text: string): boolean {
+  return getLeadingSlashCommandName(text) !== null;
+}
+
+export function getCanonicalInvocationToken(command: SlashCommand): string {
+  return `${command.invocation?.prefix ?? "/"}${canonicalInvocationName(command.name)}`;
+}
+
+/** Case-preserving canonical name + aliases (for exact provider matching). */
+export function getCanonicalInvocationNames(command: SlashCommand): string[] {
+  return [
+    canonicalInvocationName(command.name),
+    ...(command.invocation?.aliases ?? []).map(canonicalInvocationName),
+  ].filter((name, index, names) => !!name && names.indexOf(name) === index);
+}
+
+/** Lowercased name + aliases (for permissive user-facing matching). */
+export function getInvocationNames(command: SlashCommand): string[] {
+  return [
+    normalizeInvocationName(command.name),
+    ...(command.invocation?.aliases ?? []).map(normalizeInvocationName),
+  ].filter((name, index, names) => !!name && names.indexOf(name) === index);
+}
+
+function findSkillCommand(
+  commands: readonly SlashCommand[],
+  authoredName: string,
+): SlashCommand | undefined {
+  const skillCommands = commands.filter(
+    (command) =>
+      command.invocation?.kind === "skill" &&
+      command.invocation.inventoryState !== "stale",
+  );
+  // An exact (case-sensitive) spelling always wins so a live skill named
+  // `BuildDocs` resolves to itself even when a distinct `builddocs` also
+  // exists.
+  const canonicalName = canonicalInvocationName(authoredName);
+  const exact = skillCommands.find((command) =>
+    getCanonicalInvocationNames(command).includes(canonicalName),
+  );
+  if (exact) return exact;
+  // Permissive case-insensitive fallback, but only when it is unambiguous:
+  // a case-collision with no exact spelling is left for the user to resolve
+  // rather than silently selecting one of the colliding skills.
+  const normalizedName = normalizeInvocationName(authoredName);
+  const normalizedMatches = skillCommands.filter((command) =>
+    getInvocationNames(command).includes(normalizedName),
+  );
+  return normalizedMatches.length === 1 ? normalizedMatches[0] : undefined;
+}
+
+function leadingSlashIsNative(
+  commands: readonly SlashCommand[],
+  normalizedName: string,
+): boolean {
+  return commands.some(
+    (command) =>
+      getInvocationNames(command).includes(normalizedName) &&
+      command.invocation?.kind !== "skill",
+  );
+}
+
+export function findInvocationCandidates(text: string): InvocationCandidate[] {
+  const candidates: InvocationCandidate[] = [];
+  INVOCATION_TOKEN_RE.lastIndex = 0;
+  for (const match of text.matchAll(INVOCATION_TOKEN_RE)) {
+    const whitespace = match[1] ?? "";
+    const sigil = match[2];
+    const name = match[3];
+    if ((sigil !== "/" && sigil !== "$") || !name) continue;
+    const start = (match.index ?? 0) + whitespace.length;
+    const token = `${sigil}${name}`;
+    candidates.push({
+      start,
+      end: start + token.length,
+      sigil,
+      name,
+      token,
+    });
+  }
+  return candidates;
+}
+
+export function findSkillInvocations(
+  text: string,
+  commands: readonly SlashCommand[] | null | undefined,
+): SkillInvocationMatch[] {
+  if (!commands?.length) return [];
+
+  const matches: SkillInvocationMatch[] = [];
+  for (const candidate of findInvocationCandidates(text)) {
+    const normalizedName = normalizeInvocationName(candidate.name);
+    if (
+      candidate.start === 0 &&
+      candidate.sigil === "/" &&
+      leadingSlashIsNative(commands, normalizedName)
+    ) {
+      continue;
+    }
+
+    const command = findSkillCommand(commands, candidate.name);
+    if (!command) continue;
+    matches.push({
+      command,
+      start: candidate.start,
+      end: candidate.end,
+      authoredToken: candidate.token,
+      canonicalToken: getCanonicalInvocationToken(command),
+    });
+  }
+  return matches;
+}
+
+export function findUnrecognizedInvocations(
+  text: string,
+  commands: readonly SlashCommand[],
+): InvocationCandidate[] {
+  return findInvocationCandidates(text).filter((candidate) => {
+    const normalizedName = normalizeInvocationName(candidate.name);
+    if (
+      commands.some(
+        (command) =>
+          command.invocation?.kind === "skill" &&
+          getInvocationNames(command).includes(normalizedName),
+      )
+    ) {
+      return false;
+    }
+    return !(
+      candidate.start === 0 &&
+      candidate.sigil === "/" &&
+      commands.some((command) =>
+        getInvocationNames(command).includes(normalizedName),
+      )
+    );
+  });
+}
+
+export function canonicalizeSkillInvocations(
+  text: string,
+  commands: readonly SlashCommand[] | null | undefined,
+): { text: string; matches: SkillInvocationMatch[] } {
+  const matches = findSkillInvocations(text, commands);
+  let canonicalText = text;
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const match = matches[index];
+    if (!match || match.authoredToken === match.canonicalToken) continue;
+    canonicalText =
+      canonicalText.slice(0, match.start) +
+      match.canonicalToken +
+      canonicalText.slice(match.end);
+  }
+  return { text: canonicalText, matches };
+}
+
+export function getInvocationCompletionQuery(
+  text: string,
+  cursor = text.length,
+): InvocationCompletionQuery | null {
+  const boundedCursor = Math.max(0, Math.min(cursor, text.length));
+
+  let start = boundedCursor;
+  while (start > 0 && !/\s/.test(text[start - 1] ?? "")) start -= 1;
+  if (start === boundedCursor) return null;
+
+  if (text.slice(0, start).trim()) return null;
+
+  const sigil = text[start];
+  if (sigil !== "/" && sigil !== "$") return null;
+
+  // The token being completed ends at the caret, so a root invocation typed
+  // in front of existing text (paste, then Home, then `/cl`) still completes
+  // and selection inserts before that text rather than consuming it.
+  const query = text.slice(start + 1, boundedCursor);
+  if (query && !INVOCATION_NAME_RE.test(query)) return null;
+
+  return {
+    start,
+    end: boundedCursor,
+    sigil,
+    query: query.toLowerCase(),
+    leading: true,
+  };
+}
+
+export function commandMatchesInvocationQuery(
+  command: SlashCommand,
+  query: InvocationCompletionQuery,
+): boolean {
+  if (
+    (query.sigil === "$" || !query.leading) &&
+    command.invocation?.kind !== "skill"
+  ) {
+    return false;
+  }
+  return getInvocationNames(command).some((name) =>
+    name.startsWith(query.query),
+  );
+}

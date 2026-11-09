@@ -1,0 +1,249 @@
+import { describe, expect, it } from "vitest";
+import { CodexSessionEntrySchema } from "../src/codex-schema/session.js";
+
+describe("CodexSessionEntrySchema", () => {
+  it.each([
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "world_state",
+      payload: { full: true, state: { agents_md: {} } },
+    },
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "event_msg",
+      payload: {
+        type: "patch_apply_end",
+        call_id: "exec-1",
+        success: true,
+        changes: { "/repo/a.txt": { type: "add", content: "hello" } },
+      },
+    },
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "event_msg",
+      payload: { type: "thread_settings_applied", thread_settings: {} },
+    },
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "event_msg",
+      payload: { type: "thread_rolled_back", num_turns: 1 },
+    },
+    {
+      timestamp: "2026-07-27T00:00:00Z",
+      type: "event_msg",
+      payload: {
+        type: "sub_agent_activity",
+        event_id: "activity-1",
+        occurred_at_ms: 1_785_000_000_000,
+        agent_thread_id: "thread-1",
+        agent_path: "explore",
+        kind: "started",
+      },
+    },
+    {
+      timestamp: "2026-07-27T00:00:00Z",
+      type: "inter_agent_communication_metadata",
+      payload: { trigger_turn: true },
+    },
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: null,
+        rate_limits: { primary: null },
+      },
+    },
+    {
+      ordinal: 12,
+      timestamp: "2026-09-04T00:00:00Z",
+      type: "token_usage_record",
+      payload: {
+        thread_id: "thread-1",
+        turn_id: "turn-1",
+        session_id: "session-1",
+        root_turn_id: "turn-1",
+        response_id: "response-1",
+        usage: {
+          input_tokens: 10,
+          cached_input_tokens: 2,
+          cache_write_input_tokens: 0,
+          output_tokens: 4,
+          reasoning_output_tokens: 1,
+          total_tokens: 14,
+        },
+        turn_token_usage: {
+          input_tokens: 10,
+          cached_input_tokens: 2,
+          cache_write_input_tokens: 0,
+          output_tokens: 4,
+          reasoning_output_tokens: 1,
+          total_tokens: 14,
+        },
+        thread_token_usage: {
+          input_tokens: 110,
+          cached_input_tokens: 22,
+          cache_write_input_tokens: 0,
+          output_tokens: 44,
+          reasoning_output_tokens: 11,
+          total_tokens: 154,
+        },
+      },
+    },
+    {
+      timestamp: "2026-07-10T00:00:00Z",
+      type: "response_item",
+      payload: {
+        type: "tool_search_call",
+        call_id: "search-1",
+        execution: "list tools",
+        arguments: {},
+      },
+    },
+  ])("accepts a current persisted %# entry", (entry) => {
+    expect(CodexSessionEntrySchema.safeParse(entry).success).toBe(true);
+  });
+
+  it("preserves response item and turn identity used by server fork resolution", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-08-01T07:38:02.999Z",
+      type: "response_item",
+      payload: {
+        id: "msg-provider-1",
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "done" }],
+        internal_chat_message_metadata_passthrough: {
+          turn_id: "turn-provider-1",
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("response_item");
+    if (parsed.type !== "response_item") return;
+    expect(parsed.payload).toMatchObject({
+      id: "msg-provider-1",
+      internal_chat_message_metadata_passthrough: {
+        turn_id: "turn-provider-1",
+      },
+    });
+  });
+
+  it("accepts standalone named function outputs", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-08-26T00:00:00.000Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        name: "notifications",
+        namespace: "slack",
+        output: "new message",
+      },
+    });
+
+    expect(parsed.type).toBe("response_item");
+    if (parsed.type !== "response_item") return;
+    expect(parsed.payload).toMatchObject({
+      name: "notifications",
+      namespace: "slack",
+      output: "new message",
+    });
+  });
+
+  it("preserves the client id persisted with a user message event", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-08-24T12:00:00.000Z",
+      type: "event_msg",
+      payload: {
+        type: "user_message",
+        message: "wait 10 minutes",
+        client_id: "ya-user-1",
+      },
+    });
+
+    expect(parsed.type).toBe("event_msg");
+    if (parsed.type !== "event_msg") return;
+    expect(parsed.payload).toMatchObject({ client_id: "ya-user-1" });
+  });
+
+  it("preserves terminal errors persisted on task completion", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-09-27T10:02:55.915Z",
+      type: "event_msg",
+      payload: {
+        type: "task_complete",
+        turn_id: "turn-1",
+        last_agent_message: null,
+        error: {
+          message: "The selected model is unavailable",
+          codex_error_info: "other",
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("event_msg");
+    if (parsed.type !== "event_msg") return;
+    expect(parsed.payload).toMatchObject({
+      type: "task_complete",
+      error: {
+        message: "The selected model is unavailable",
+        codex_error_info: "other",
+      },
+    });
+  });
+
+  it("preserves asynchronous question metadata on completed agent items", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-09-04T00:00:00.000Z",
+      type: "event_msg",
+      payload: {
+        type: "item_completed",
+        item: {
+          type: "AgentMessage",
+          id: "async-message-1",
+          content: [{ type: "Text", text: "Choose a mode\n- Safe\n- Fast" }],
+          delivery: "async",
+          questions: [
+            { title: "Choose a mode", options: ["Safe", "Fast"] },
+            { title: "Anything else?", options: null },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.type).toBe("event_msg");
+    if (parsed.type !== "event_msg") return;
+    expect(parsed.payload).toMatchObject({
+      item: {
+        id: "async-message-1",
+        delivery: "async",
+        questions: [
+          { title: "Choose a mode", options: ["Safe", "Fast"] },
+          { title: "Anything else?", options: null },
+        ],
+      },
+    });
+  });
+
+  it("preserves turn and root-turn identity from current turn contexts", () => {
+    const parsed = CodexSessionEntrySchema.parse({
+      timestamp: "2026-09-04T00:00:00.000Z",
+      type: "turn_context",
+      payload: {
+        cwd: "/repo",
+        approval_policy: "never",
+        turn_id: "turn-child",
+        root_turn_id: "turn-root",
+        provider_extension: true,
+      },
+    });
+
+    expect(parsed.type).toBe("turn_context");
+    if (parsed.type !== "turn_context") return;
+    expect(parsed.payload).toMatchObject({
+      turn_id: "turn-child",
+      root_turn_id: "turn-root",
+      provider_extension: true,
+    });
+  });
+});

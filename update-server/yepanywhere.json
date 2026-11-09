@@ -1,0 +1,45 @@
+[
+  {
+    "id": "yepanywhere",
+    "displayName": "Yep Anywhere",
+    "hostnames": ["updates.yepanywhere.com"],
+    "githubRepo": "kzahel/yepanywhere",
+    "tagPrefix": "v",
+    "tauriUpdates": false
+  },
+  {
+    "id": "yepanywhere-desktop",
+    "displayName": "Yep Anywhere Desktop",
+    "hostnames": ["updates.yepanywhere.com"],
+    "githubRepo": "kzahel/yepanywhere",
+    "tagPrefix": "desktop-v",
+    "tauriUpdates": true,
+    "pathPrefix": "/desktop",
+    "channels": {
+      "stable": {
+        "displayName": "Stable",
+        "tagPrefix": "desktop-v",
+        "releaseKind": "release"
+      },
+      "latest": {
+        "displayName": "Latest",
+        "tagPrefix": "desktop-latest-v",
+        "releaseKind": "prerelease"
+      }
+    },
+    "downloads": {
+      "macos-arm64": { "asset": "YepAnywhere_*_aarch64.dmg" },
+      "macos-x64": { "asset": "YepAnywhere_*_x64.dmg" },
+      "windows-x64": { "asset": "YepAnywhere_*_x64-setup.exe" }
+    }
+  },
+  {
+    "id": "yep-bridge",
+    "displayName": "Yep Bridge",
+    "hostnames": ["updates.yepanywhere.com"],
+    "githubRepo": "kzahel/yepanywhere",
+    "tagPrefix": "bridge-v",
+    "tauriUpdates": false,
+    "pathPrefix": "/bridge"
+  }
+]

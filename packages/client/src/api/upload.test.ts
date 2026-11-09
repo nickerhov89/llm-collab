@@ -1,0 +1,534 @@
+import type {
+  UploadCompleteMessage,
+  UploadErrorMessage,
+  UploadProgressMessage,
+  UploadedFile,
+} from "@yep-anywhere/shared";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  UploadError,
+  type WebSocketFactory,
+  type WebSocketLike,
+  buildStagedUploadUrl,
+  buildUploadUrl,
+  fileToChunks,
+  uploadChunks,
+  uploadStagedChunks,
+} from "./upload";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+/** Mock WebSocket for testing */
+class MockWebSocket implements WebSocketLike {
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  readyState = MockWebSocket.CONNECTING;
+  bufferedAmount = 0;
+  sentMessages: (string | ArrayBuffer | Uint8Array)[] = [];
+  onSend?: (data: string | ArrayBuffer | Uint8Array) => void;
+
+  // biome-ignore lint/suspicious/noExplicitAny: Test helper needs flexibility
+  private listeners = new Map<string, Set<(ev: any) => void>>();
+  private sendWaiters = new Set<{ count: number; resolve: () => void }>();
+
+  constructor(public url: string) {
+    // Simulate async open
+    setTimeout(() => {
+      this.readyState = MockWebSocket.OPEN;
+      this.emit("open", new Event("open"));
+    }, 0);
+  }
+
+  send(data: string | ArrayBuffer | Uint8Array): void {
+    this.sentMessages.push(data);
+    this.onSend?.(data);
+    for (const waiter of this.sendWaiters) {
+      if (this.sentMessages.length >= waiter.count) {
+        this.sendWaiters.delete(waiter);
+        waiter.resolve();
+      }
+    }
+  }
+
+  /**
+   * Resolve once at least `count` messages have been sent. Event-driven wait
+   * for the open/start handshake; a fixed sleep raced CI-loaded event loops.
+   */
+  waitForSentMessages(count: number): Promise<void> {
+    if (this.sentMessages.length >= count) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.sendWaiters.add({ count, resolve });
+    });
+  }
+
+  close(_code?: number, _reason?: string): void {
+    this.readyState = MockWebSocket.CLOSED;
+  }
+
+  addEventListener<K extends keyof WebSocketEventMap>(
+    type: K,
+    listener: (ev: WebSocketEventMap[K]) => void,
+  ): void {
+    if (!this.listeners.has(type)) {
+      this.listeners.set(type, new Set());
+    }
+    this.listeners.get(type)?.add(listener);
+  }
+
+  removeEventListener<K extends keyof WebSocketEventMap>(
+    type: K,
+    listener: (ev: WebSocketEventMap[K]) => void,
+  ): void {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  // Test helpers
+  emit(type: string, event: unknown): void {
+    for (const fn of this.listeners.get(type) || []) {
+      fn(event);
+    }
+  }
+
+  simulateMessage(data: unknown): void {
+    this.emit("message", { data: JSON.stringify(data) } as MessageEvent);
+  }
+
+  simulateError(): void {
+    this.emit("error", new Event("error"));
+  }
+
+  simulateClose(code?: number, reason?: string): void {
+    this.readyState = MockWebSocket.CLOSED;
+    this.emit("close", { code, reason } as CloseEvent);
+  }
+}
+
+describe("uploadChunks", () => {
+  let mockWs: MockWebSocket;
+  const createMockWebSocket: WebSocketFactory = (url) => {
+    mockWs = new MockWebSocket(url);
+    return mockWs;
+  };
+
+  const testMetadata = {
+    name: "test.txt",
+    size: 100,
+    mimeType: "text/plain",
+  };
+
+  const testFile: UploadedFile = {
+    id: "uuid-123",
+    name: "uuid-123_test.txt",
+    originalName: "test.txt",
+    path: "/uploads/uuid-123_test.txt",
+    size: 100,
+    mimeType: "text/plain",
+  };
+
+  const testStagedRef = {
+    id: "staged-123",
+    batchId: "batch-123",
+    name: "staged-123_test.txt",
+    originalName: "test.txt",
+    size: 100,
+    mimeType: "text/plain",
+    createdAt: "2026-06-28T00:00:00.000Z",
+    updatedAt: "2026-06-28T00:00:00.000Z",
+  };
+
+  async function* testChunks(): AsyncGenerator<Uint8Array> {
+    yield new Uint8Array([1, 2, 3]);
+    yield new Uint8Array([4, 5, 6]);
+  }
+
+  it("sends start message with metadata on open", async () => {
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    // Wait for the full start/chunks/end handshake
+    await mockWs.waitForSentMessages(4);
+
+    // Verify start message
+    expect(mockWs.sentMessages.length).toBeGreaterThan(0);
+    const startMsg = JSON.parse(mockWs.sentMessages[0] as string);
+    expect(startMsg).toEqual({
+      type: "start",
+      name: "test.txt",
+      size: 100,
+      mimeType: "text/plain",
+    });
+
+    // Complete the upload
+    mockWs.simulateMessage({
+      type: "complete",
+      file: testFile,
+    } as UploadCompleteMessage);
+
+    await uploadPromise;
+  });
+
+  it("sends binary chunks after start", async () => {
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    // Should have: start, chunk1, chunk2, end
+    expect(mockWs.sentMessages.length).toBe(4);
+    expect(mockWs.sentMessages[1]).toBeInstanceOf(Uint8Array);
+    expect(mockWs.sentMessages[2]).toBeInstanceOf(Uint8Array);
+
+    // Verify end message
+    const endMsg = JSON.parse(mockWs.sentMessages[3] as string);
+    expect(endMsg).toEqual({ type: "end" });
+
+    mockWs.simulateMessage({
+      type: "complete",
+      file: testFile,
+    });
+
+    await uploadPromise;
+  });
+
+  it("waits for websocket backpressure before sending later chunks", async () => {
+    let binarySends = 0;
+
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      { maxBytesPerSecond: 0 },
+      createMockWebSocket,
+    );
+
+    mockWs.onSend = (data) => {
+      if (!(data instanceof Uint8Array)) return;
+      binarySends += 1;
+      if (binarySends === 1) {
+        mockWs.bufferedAmount = 1024 * 1024;
+        setTimeout(() => {
+          mockWs.bufferedAmount = 0;
+        }, 35);
+      }
+    };
+
+    // Pin to the chunk-1 send so the 15ms probe sits well inside the mock's
+    // 35ms buffered window regardless of how slowly the handshake started.
+    await mockWs.waitForSentMessages(2);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    expect(
+      mockWs.sentMessages.filter((msg) => msg instanceof Uint8Array),
+    ).toHaveLength(1);
+
+    await mockWs.waitForSentMessages(4);
+    expect(
+      mockWs.sentMessages.filter((msg) => msg instanceof Uint8Array),
+    ).toHaveLength(2);
+
+    mockWs.simulateMessage({
+      type: "complete",
+      file: testFile,
+    });
+
+    await uploadPromise;
+  });
+
+  it("calls onProgress callback with progress messages", async () => {
+    const onProgress = vi.fn();
+
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      { onProgress },
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    // Simulate progress
+    mockWs.simulateMessage({
+      type: "progress",
+      bytesReceived: 50,
+    } as UploadProgressMessage);
+    mockWs.simulateMessage({
+      type: "progress",
+      bytesReceived: 100,
+    } as UploadProgressMessage);
+
+    expect(onProgress).toHaveBeenCalledWith(50);
+    expect(onProgress).toHaveBeenCalledWith(100);
+
+    mockWs.simulateMessage({
+      type: "complete",
+      file: testFile,
+    });
+
+    await uploadPromise;
+  });
+
+  it("resolves with UploadedFile on complete", async () => {
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    mockWs.simulateMessage({ type: "complete", file: testFile });
+
+    const result = await uploadPromise;
+    expect(result).toEqual(testFile);
+  });
+
+  it("sends batch id and resolves with staged ref for staged uploads", async () => {
+    const uploadPromise = uploadStagedChunks(
+      "ws://test/staging",
+      { ...testMetadata, batchId: "batch-123" },
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    const startMsg = JSON.parse(mockWs.sentMessages[0] as string);
+    expect(startMsg).toEqual({
+      type: "start",
+      batchId: "batch-123",
+      name: "test.txt",
+      size: 100,
+      mimeType: "text/plain",
+    });
+
+    mockWs.simulateMessage({
+      type: "complete",
+      batchId: "batch-123",
+      stagedRef: testStagedRef,
+    });
+
+    await expect(uploadPromise).resolves.toEqual(testStagedRef);
+  });
+
+  it("rejects with UploadError on error message", async () => {
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    mockWs.simulateMessage({
+      type: "error",
+      message: "File too large",
+      code: "SIZE_LIMIT",
+    } as UploadErrorMessage);
+
+    await expect(uploadPromise).rejects.toThrow(UploadError);
+    await expect(uploadPromise).rejects.toMatchObject({
+      message: "File too large",
+      code: "SIZE_LIMIT",
+    });
+  });
+
+  it("sends cancel message when abort signal fires", async () => {
+    const controller = new AbortController();
+
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      { signal: controller.signal },
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    controller.abort();
+
+    await expect(uploadPromise).rejects.toThrow("Upload aborted");
+
+    // Verify cancel message was sent
+    const sentStrings = mockWs.sentMessages.filter(
+      (m) => typeof m === "string",
+    );
+    const cancelMsg = sentStrings.find(
+      (m) => JSON.parse(m as string).type === "cancel",
+    );
+    expect(cancelMsg).toBeDefined();
+  });
+
+  it("rejects immediately if already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      uploadChunks(
+        "ws://test/upload",
+        testMetadata,
+        testChunks(),
+        { signal: controller.signal },
+        createMockWebSocket,
+      ),
+    ).rejects.toThrow("Upload aborted");
+  });
+
+  it("rejects on WebSocket error", async () => {
+    const errorLog = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    mockWs.simulateError();
+
+    await expect(uploadPromise).rejects.toThrow("WebSocket error");
+    expect(errorLog).toHaveBeenCalledWith(
+      "[Upload] WebSocket error:",
+      expect.any(Event),
+    );
+  });
+
+  it("rejects on unexpected WebSocket close", async () => {
+    const uploadPromise = uploadChunks(
+      "ws://test/upload",
+      testMetadata,
+      testChunks(),
+      {},
+      createMockWebSocket,
+    );
+
+    await mockWs.waitForSentMessages(4);
+
+    mockWs.simulateClose(1006, "Connection lost");
+
+    await expect(uploadPromise).rejects.toThrow("Connection lost");
+  });
+});
+
+// Note: fileToChunks is tested via E2E tests since jsdom doesn't support Blob.arrayBuffer()
+describe("fileToChunks", () => {
+  it("handles empty file", async () => {
+    const file = new File([], "empty.txt", { type: "text/plain" });
+
+    const chunks: Uint8Array[] = [];
+    for await (const chunk of fileToChunks(file)) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.length).toBe(0);
+  });
+});
+
+describe("buildUploadUrl", () => {
+  // Store original window.location
+  const originalLocation = window.location;
+
+  beforeEach(() => {
+    // Reset to original after each test
+    Object.defineProperty(window, "location", {
+      value: originalLocation,
+      writable: true,
+    });
+  });
+
+  it("builds correct WebSocket URL with https base", () => {
+    const url = buildUploadUrl("proj-123", "sess-456", "https://example.com");
+    expect(url).toBe(
+      "wss://example.com/api/projects/proj-123/sessions/sess-456/upload/ws",
+    );
+  });
+
+  it("builds correct WebSocket URL with http base", () => {
+    const url = buildUploadUrl("proj-123", "sess-456", "http://localhost:3000");
+    expect(url).toBe(
+      "ws://localhost:3000/api/projects/proj-123/sessions/sess-456/upload/ws",
+    );
+  });
+
+  it("handles URL-encoded project IDs", () => {
+    const url = buildUploadUrl(
+      "L2hvbWUvdXNlci9wcm9qZWN0",
+      "sess-456",
+      "https://example.com",
+    );
+    expect(url).toBe(
+      "wss://example.com/api/projects/L2hvbWUvdXNlci9wcm9qZWN0/sessions/sess-456/upload/ws",
+    );
+  });
+
+  it("uses window.location when no base URL provided", () => {
+    // Mock window.location
+    Object.defineProperty(window, "location", {
+      value: {
+        protocol: "https:",
+        host: "myapp.com:8080",
+      },
+      writable: true,
+    });
+
+    const url = buildUploadUrl("proj-123", "sess-456");
+    expect(url).toBe(
+      "wss://myapp.com:8080/api/projects/proj-123/sessions/sess-456/upload/ws",
+    );
+  });
+
+  it("builds staged upload URLs", () => {
+    expect(buildStagedUploadUrl("https://example.com")).toBe(
+      "wss://example.com/api/attachments/staging/drafts/upload/ws",
+    );
+    expect(buildStagedUploadUrl("http://localhost:3000")).toBe(
+      "ws://localhost:3000/api/attachments/staging/drafts/upload/ws",
+    );
+  });
+});
+
+describe("UploadError", () => {
+  it("has correct name and properties", () => {
+    const error = new UploadError("Test error", "TEST_CODE");
+    expect(error.name).toBe("UploadError");
+    expect(error.message).toBe("Test error");
+    expect(error.code).toBe("TEST_CODE");
+  });
+
+  it("works without code", () => {
+    const error = new UploadError("Test error");
+    expect(error.name).toBe("UploadError");
+    expect(error.message).toBe("Test error");
+    expect(error.code).toBeUndefined();
+  });
+
+  it("is instanceof Error", () => {
+    const error = new UploadError("Test error");
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(UploadError);
+  });
+});

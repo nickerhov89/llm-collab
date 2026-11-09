@@ -1,0 +1,555 @@
+/* A muted composer holds a draft the launch will not send — a fork copies the
+   provider transcript instead. It stays readable so it can still inform the
+   choice, but reads as inert and gives its height back to the options below. */
+.mutedComposer textarea {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.mutedComposer textarea:focus {
+  outline: none;
+}
+
+.fullPaneToggle[aria-pressed="true"] {
+  color: var(--app-yep-green);
+  border-color: color-mix(
+    in srgb,
+    var(--app-yep-green) 62%,
+    var(--border-input)
+  );
+  background: color-mix(in srgb, var(--app-yep-green) 10%, transparent);
+}
+
+.projectControlsSlot,
+.secondaryOptions {
+  display: grid;
+  align-content: start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.secondaryOptions {
+  grid-area: secondary;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.secondaryOptions[hidden] {
+  display: none;
+}
+
+.advancedSection {
+  grid-area: advanced;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.65rem;
+}
+
+.advancedSummary {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+}
+
+.advancedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-code);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.advancedToggle:hover,
+.advancedToggle[aria-expanded="true"] {
+  border-color: var(--app-yep-green);
+  color: var(--text-primary);
+}
+
+.selectedChoice {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  text-align: left;
+}
+
+.leftAlignedTrigger {
+  text-align: left;
+}
+
+.selectedChoice :global(.mode-option-dot),
+.selectedChoice :global(.model-switch-indicator-dot) {
+  width: 10px;
+  height: 10px;
+}
+
+.selectedChoiceText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.selectedChoiceText > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.choiceStatus {
+  color: var(--warning-color);
+  font-size: var(--font-size-xs);
+  line-height: 1.2;
+}
+
+.effortSection {
+  grid-column: auto;
+}
+
+.optionPlaceholder {
+  visibility: hidden;
+}
+
+/* Authentication state occupies a second line without resizing this control. */
+.providerTrigger {
+  min-block-size: calc(2lh + 2 * var(--space-2) + 2px);
+}
+
+.optionLayout :global(.new-session-provider-slot) {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.optionLayout :global(.new-session-provider-slot) .compactProviderSection {
+  grid-column: auto;
+}
+
+.secondaryOptions > * {
+  min-width: 0;
+}
+
+.secondaryOptions > :global(.new-session-helper-section),
+.secondaryOptions > :global(.new-session-mode-section) {
+  margin-bottom: 0;
+}
+
+.secondaryOptionsHidden {
+  visibility: hidden;
+}
+
+.templateProjectSlot {
+  grid-area: template;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.templateProjectSlot[hidden] {
+  display: none;
+}
+
+.projectSearchAnchor {
+  position: relative;
+}
+.newProject {
+  grid-area: newproject;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-input);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+/* The row spans the page; a path field that wide would be hard to scan. */
+.newProjectField,
+.newProjectTarget {
+  max-width: 36rem;
+}
+.newProjectField {
+  display: grid;
+  gap: 4px;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+}
+.newProjectField input {
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 10px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-md);
+  font: inherit;
+  font-family: var(--font-mono);
+}
+.newProjectTarget {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.newProjectGit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.newProjectPlan {
+  margin: 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--border-color);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+@media (width < 900px) {
+  /* Optional grid areas otherwise leave blank rows between the project and
+     model controls on narrow screens. */
+  .optionLayout > * {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .optionLayout :global(.new-session-provider-slot) {
+    gap: 12px;
+  }
+
+  .optionLayout .optionPlaceholder {
+    display: none;
+  }
+
+  .optionLayout.optionLayout {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+    grid-template-areas:
+      "main"
+      "project"
+      "newproject"
+      "template"
+      "provider"
+      "advanced"
+      "secondary";
+  }
+
+  .optionLayoutWithoutProvider.optionLayoutWithoutProvider {
+    grid-template-areas:
+      "main"
+      "project"
+      "newproject"
+      "template"
+      "advanced"
+      "secondary";
+  }
+
+  .secondaryOptions {
+    grid-area: secondary;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  }
+}
+
+@media (width <= 600px) {
+  .optionLayout :global(.new-session-form-textarea),
+  .optionLayout :global(.speech-draft-field) textarea {
+    min-height: 108px;
+  }
+
+  .optionLayout :global(.new-session-project-chooser) {
+    padding: 0;
+  }
+
+  .optionLayout :global(.new-session-provider-slot) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .secondaryOptions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (width >= 900px) {
+  .optionLayout.optionLayout {
+    grid-template-areas:
+      "main project"
+      "newproject newproject"
+      "template template"
+      "provider provider"
+      "advanced advanced"
+      "secondary secondary";
+  }
+
+  .optionLayoutWithoutProject.optionLayoutWithoutProject {
+    grid-template-areas:
+      "main main"
+      "provider provider"
+      "advanced advanced"
+      "secondary secondary";
+  }
+
+  /* A limited user's fixed launch can leave no provider picker in this slot. */
+  .optionLayoutWithoutProvider.optionLayoutWithoutProvider {
+    grid-template-areas:
+      "main project"
+      "newproject newproject"
+      "template template"
+      "advanced advanced"
+      "secondary secondary";
+  }
+
+  .optionLayoutWithoutProject.optionLayoutWithoutProvider {
+    grid-template-areas:
+      "main main"
+      "advanced advanced"
+      "secondary secondary";
+  }
+}
+
+.captionToggle {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  margin-inline-start: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.captionToggle:hover,
+.captionToggle[aria-pressed="true"] {
+  border-color: var(--app-yep-green);
+  color: var(--app-yep-green);
+  background: color-mix(in srgb, var(--app-yep-green) 9%, var(--bg-surface));
+}
+
+.optionCaption {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+/* A risk the selected option carries; shown whether or not captions are. */
+.optionWarning {
+  composes: optionCaption;
+  color: var(--warning-color);
+}
+
+.captionedRecapDuration {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.captionedRecapDuration :global(.recap-after-seconds-label) {
+  white-space: normal;
+}
+
+/* The page or modal header remains visible. Everything below it yields to the
+   editing surface until this mode is restored. */
+:global(.page-scroll-container):has(.fullPane) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+:global(.page-content-inner):has(.fullPane) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+  width: 100%;
+}
+
+:global(.modal):has(.fullPane) > :global(.modal-content) {
+  overflow: hidden;
+}
+
+:global(.modal):has(.fullPane) {
+  height: calc(100dvh - 1.5rem);
+  max-height: calc(100dvh - 1.5rem);
+}
+
+:global(.model-switch-content):has(.fullPane) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+:global(.model-switch-content):has(.fullPane) > :not(:has(.fullPane)) {
+  display: none;
+}
+
+:global(.model-switch-content):has(.fullPane) > :has(.fullPane) {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+
+.fullPane {
+  display: flex;
+  align-self: center;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+
+.fullPane > :global(.new-session-header),
+.fullPane :global(.new-session-project-slot),
+.fullPane .newProject,
+.fullPane :global(.new-session-provider-slot),
+.fullPane .advancedSection,
+.fullPane .secondaryOptions {
+  display: none;
+}
+
+.fullPane :global(.new-session-top-layout),
+.fullPane :global(.new-session-main-stack) {
+  display: block;
+  min-height: 0;
+  width: 100%;
+}
+
+.fullPane :global(.new-session-input-area) {
+  min-height: 0;
+}
+
+.fullPane :global(.speech-draft-field textarea) {
+  max-height: 100%;
+}
+
+.fullPaneWide {
+  width: 100%;
+  max-width: none;
+}
+
+:global(.main-content-constrained)
+  :global(.page-content-inner.new-session-page-shell):has(.fullPaneWide) {
+  max-width: none;
+}
+
+:global(.model-switch-content):has(.fullPaneWide) {
+  width: 100%;
+  max-width: none;
+}
+
+@media (width <= 600px) {
+  :global(.modal):has(.fullPane) {
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+}
+
+.pendingFilesList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* Model list provenance under the model picker: muted while the list is live
+   and current, warning-toned when it is the built-in fallback or a refresh
+   failed. */
+.catalogStatus,
+.catalogStatusMuted {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+  color: var(--text-muted);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.catalogStatus {
+  border-color: color-mix(
+    in srgb,
+    var(--warning-color) 38%,
+    var(--border-color)
+  );
+  background: color-mix(in srgb, var(--warning-color) 8%, var(--bg-code));
+}
+
+.catalogStatusMuted {
+  color: var(--text-dimmed);
+}
+
+/* Reserve the notice's wrapping height before its catalog arrives. */
+.catalogMessage {
+  display: grid;
+}
+
+.catalogMessage::before {
+  content: attr(data-sizing-text);
+  visibility: hidden;
+}
+
+.catalogMessage::before,
+.catalogMessage > span {
+  grid-area: 1 / 1;
+}
+
+.catalogAction {
+  flex: none;
+  min-height: 2rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.catalogStatusMuted .catalogAction {
+  border-color: transparent;
+  background: none;
+  color: inherit;
+  font-weight: inherit;
+  text-decoration: underline;
+}
+
+.catalogAction:hover:not(:disabled) {
+  border-color: var(--text-dimmed);
+  background: var(--bg-hover);
+}
+
+.catalogStatusMuted .catalogAction:hover:not(:disabled) {
+  background: none;
+  color: var(--text-primary);
+}
+
+.catalogAction:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}

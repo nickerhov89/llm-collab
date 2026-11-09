@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+.pixi/
+
+# Build outputs
+packages/browser-extension/dist-dev/
+dist/
+build/
+*.tsbuildinfo
+.astro/
+__pycache__/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Test coverage
+coverage/
+
+# Test artifacts
+test-results/
+.playwright-artifacts-*/
+scripts/perf-suite/results/
+scripts/perf-suite/work/
+
+# Temp files
+.tmp/
+.temp/
+docs/tasks/schema-report.json
+docs/investigations/
+tasks/
+
+# Yep Anywhere local data
+.yep-anywhere/
+.artifacts/
+.attachments/
+/.codex
+.handoff*
+.snapshots/
+/last-session.md
+/AGENTS.local.md
+# Checkout-local topic notes (personal/maintainer policy that must not ship)
+/topics/*.local.md
+/ui-report/
+
+# Agent session/run state (local, any depth: root + packages/*)
+.agentctl/
+
+# Codex sample sessions (local dev data)
+codex-sample-sessions/
+
+# Large local Codex protocol dumps (script now keeps only provider subset)
+packages/server/generated/codex-app-server/
+
+# Text files in repo root
+/*.txt
+
+packages/client/dist-remote
+packages/client/dist-stable
+packages/server/client-dist/
+packages/server/bundled/
+
+# Reference repos (cloned for source reading)
+references/
+
+# Local software factories research
+/research/software-factories/
+start.sh
+scripts/reyep-detached.sh
+scripts/publish-pages.sh

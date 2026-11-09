@@ -1,0 +1,445 @@
+/* Settings → Users: topics/limited-users.md § Delivery v1. Ordinary settings
+   list-and-editor shape; nothing here is sidebar-sized. */
+
+/* One wrapped row of usernames; the pressed one's editor opens below it. */
+.userBar {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 var(--space-2);
+}
+
+.directoryHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0 14px;
+}
+.directoryHeader h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.roleNotice {
+  border: 1px solid #e9ddbc;
+  border-radius: 12px;
+  background: #fffaf0;
+  padding: 15px 17px;
+  color: #5e4d2c;
+  line-height: 1.45;
+}
+.roleNotice strong {
+  font-size: 14px;
+}
+.roleNotice p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+.userRow {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  min-height: 62px;
+  padding: 9px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+.userRow:hover,
+.userRow[aria-pressed="true"] {
+  background: var(--bg-surface);
+  border-color: var(--accent-color);
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  border-radius: 50%;
+  background: #e9f0ec;
+  color: #2c7955;
+  font-weight: 600;
+}
+.userInfo {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.userInfo strong,
+.userInfo small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.userInfo small {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.userState {
+  flex: none;
+  color: #28784d;
+  font-size: 12px;
+}
+.userState.disabled {
+  color: var(--text-secondary);
+}
+@media (max-width: 600px) {
+  .userRow {
+    padding: 9px;
+    gap: 9px;
+  }
+  .userState {
+    display: none;
+  }
+}
+
+.userChip[aria-pressed="true"] {
+  border-color: var(--accent-color, currentColor);
+  font-weight: 600;
+}
+
+/* A disabled account stays listed, visibly out of service. */
+.userChipDisabled {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.userMeta {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Title and status on one line; account actions wrap beneath on a phone. */
+.editorHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.editorHeading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.userActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.enabledToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--font-size-sm);
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.editorTitle {
+  margin: 0;
+  font-size: var(--font-size-base);
+}
+
+.account {
+  margin-bottom: var(--space-2);
+}
+.account summary {
+  cursor: pointer;
+  min-height: 40px;
+  align-content: center;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+.accountFields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-block: var(--space-2);
+}
+
+.editorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+
+.input,
+.select {
+  min-width: 0;
+  /* Mobile-first: every control stays a real touch target. */
+  min-height: 36px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-input, var(--border-color));
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+/* The open list is drawn by the browser, which paints it from the element's
+   color scheme and its own defaults, not from the closed control's colors.
+   Under the default "auto" theme on a light desktop that is a white popup
+   with grey text hanging off a dark control. Naming the option colors and
+   the accent pins all three themes to YA's own palette. */
+.select {
+  accent-color: var(--accent-color, var(--app-yep-green));
+}
+
+.select option {
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.select option:disabled {
+  color: var(--text-muted);
+}
+
+.inputRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.inputRow > input {
+  flex: 1;
+  min-width: 0;
+}
+
+.inputRow > button {
+  flex: none;
+  white-space: nowrap;
+}
+
+.subhead {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.projectList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 40vh;
+  padding: 0;
+  margin: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.polzaProjectAccess {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  background: var(--bg-surface);
+}
+
+.polzaProjectAccess h4,
+.polzaProjectAccess p {
+  margin: 0;
+}
+
+.polzaProjectAccess p {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.polzaProjectAccess .projectList {
+  max-height: none;
+}
+
+/* One column for the name, one for its control, so every access select shares
+   a left edge instead of stepping with the project name's width. */
+.projectRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12rem;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.projectName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Path, level and remove on one line; the path takes the slack. */
+.directoryRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 12rem auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+@media (width <= 600px) {
+  .directoryRow {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .directoryRow > input {
+    grid-column: 1 / -1;
+  }
+}
+
+.projectExpand {
+  align-self: flex-start;
+}
+
+/* Three lock selects side by side where there is room, stacked on a phone. */
+.lockRow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-2);
+}
+
+.grants {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-1) var(--space-3);
+  margin: 0 0 var(--space-3);
+}
+
+.grants dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.grants dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (width <= 600px) {
+  .projectRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Usage: one row per principal, one column per window. */
+.usage {
+  margin-top: var(--space-4, 1rem);
+}
+
+/* Wide tables scroll inside their own box on a narrow screen. */
+.usageScroll {
+  overflow-x: auto;
+  margin-top: var(--space-3);
+}
+
+.usageTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-sm);
+}
+
+.usageCaption {
+  caption-side: top;
+  padding-bottom: var(--space-2);
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: start;
+}
+
+/* Figures align on their right edge so rows compare at a glance. */
+.usageTable .usageNumber {
+  padding-inline: var(--space-3) 0;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@media (width < 700px) {
+  .usageTable .usageNumber {
+    padding-inline-start: var(--space-2);
+  }
+
+  .usageTable {
+    font-size: var(--font-size-xs);
+  }
+}
+
+.usageWindow {
+  display: inline-flex;
+  gap: 0;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.usageWindowLegend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.usageWindowOption {
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.usageWindowOption:first-of-type {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.usageWindowOption:last-of-type {
+  border-left: 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.usageWindowSelected {
+  background: var(--bg-code);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.usageTable th,
+.usageTable td {
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  text-align: start;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.usageTable thead th {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Names wrap at their hyphens, never mid-word; the table scrolls instead. */
+.usageUser {
+  overflow-wrap: normal;
+}

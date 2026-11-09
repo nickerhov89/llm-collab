@@ -1,0 +1,1026 @@
+# Media Rendering and Routing
+
+> YA shows images, video, and file previews from many places in the UI. Every
+> ordinary file/media surface must pull bytes *over the active connection* and
+> display them from an object URL unless the transport declares its `/api` URLs
+> addressable — never point an `<img>`/`<a>` straight at an `/api/...` URL
+> without that check — or it silently 404s in relay mode. Separately, each file is served by the route
+> that matches where it lives (in-project, allow-listed local path, uploaded
+> attachment, or public share).
+
+See also:
+- [`active-content-security.md`](active-content-security.md) — why HTML, SVG,
+  and other active files must remain source/download data or execute only in
+  an isolated origin, regardless of which transport fetched their bytes.
+- [`ui-architecture.md`](ui-architecture.md) — the render-boundary principle
+  these surfaces are supposed to share instead of each re-solving fetching.
+- [`rich-text-rendering.md`](rich-text-rendering.md) — how rendered Markdown/HTML
+  produces the local-resource links that several of these surfaces consume.
+- [`relative-filenames.md`](relative-filenames.md) — how the same paths are
+  *displayed* (compacted to project-relative) across these surfaces.
+- [`attachment-storage.md`](attachment-storage.md) — where uploaded attachments
+  live and the allow-list behind `/api/local-image` and `/api/local-file`.
+- [`session-media-handles.md`](session-media-handles.md) — materialized
+  tool-result media and transcript media handles that are fetched lazily
+  instead of retained as inline base64.
+- [`relay-origin-and-share-gating.md`](relay-origin-and-share-gating.md) — why
+  the relay origin has no API, and the public-share serving path.
+- `docs/project/server-message-routing.md` — how relayed responses are
+  framed, encrypted, and chunked on the wire.
+- `docs/tactical/009-local-resource-link-routing.md` — the working log of the
+  local-resource link/parser/modal build-out.
+
+Topic: media-rendering-and-routing
+
+## The connection rule (why media is different)
+
+The client reaches the server two ways:
+
+- **Direct** (`DirectConnection`) — localhost/LAN/Tailscale. The page origin
+  *is* the YA server, so a plain `fetch("/api/...")` or `<img src="/api/...">`
+  reaches it.
+- **Relay** (`RelayProtocol` / `SecureConnection`) — the page is loaded from the
+  hosted relay client (e.g. a static site), and the real server is on the far
+  end of a WebSocket tunnel. **The page origin has no `/api` backend.** A native
+  browser request to `/api/...` (an `<img src>`, an anchor navigation, a raw
+  `fetch`) hits the static origin and 404s.
+
+So in relay mode bytes can only arrive through `connection.fetchBlob(path)` over
+the tunnel. The relay-safe pattern is therefore: **fetch the bytes as a `Blob`
+through the connection, wrap in `URL.createObjectURL`, render that object
+URL.** A `Blob` holds the whole file in the browser's Blob storage for as long
+as anything references it, so a direct transport, whose
+`capabilities.sameOriginUrls` says the browser can address `/api` URLs, should
+hand the browser the URL instead and let it stream (the raw routes answer
+`Range`, so players seek): `useRemoteImage`, downloads, the file viewer's
+images, PDFs, audio, video and fonts, and `LocalMediaModal` and inline
+transcript videos do. The viewer's URL carries the file's modification time
+and size, so a reload after an edit refetches it. Local images in
+`LocalMediaModal` and inline previews still fetch a `Blob` on every transport,
+because SVG sizing and image actions read their bytes, as does any surface
+whose media source supplies its own bytes. Helpers:
+
+- `fetchMediaBlob` / `fetchLocalResourceBlob` (`components/LocalMediaModal.tsx`) —
+  `transport.fetchBlob`, which returns the whole body as a `Blob` on every
+  transport; a direct fetch reads it with `response.blob()`.
+- `useFetchedImage` / `useRemoteImage` (`hooks/useRemoteImage.ts`) — the hook
+  form, returns an object URL.
+- `RelayProtocol.fetchBlob` normalizes the `/api` prefix, so callers can pass
+  either `/api/...` or `/...`.
+
+The recurring bug is any surface that skips this and emits a bare API URL: it
+works on the developer's own machine (direct mode) and 404s for everyone on a
+phone through the relay. The base64 `data:` surfaces are immune (no network).
+
+### Relay transfer size
+
+On an encrypted (SRP) relay connection, a file or binary-media body streams:
+`RelayProtocol.fetchStream` asks for it with `stream: true`, and the server
+answers a successful body with `response_stream_start` (status, headers,
+length when known), raw body chunks of at most 128 KiB, and
+`response_stream_end`. The chunks are not base64 and the body has no size
+limit.
+
+- **Integrity.** Each chunk is its own encrypted envelope (format `0x06`)
+  carrying the connection's outbound sequence number, so the client's replay
+  check covers chunks and JSON messages alike. The client handles inbound
+  messages strictly in arrival order.
+- **Flow control.** The client reports body bytes its reader has consumed
+  (`response_stream_ack`), and the server stays within 1 MiB of that report.
+  Neither end buffers more than that window plus one read per stream. A slow
+  reader slows the transfer. One stream stays under the relay's 2 MiB
+  per-circuit queue, which closes an overflowing circuit; concurrent streams
+  each have their own window, so many at once on a slow link can still
+  approach it, though far less than whole single-message files did.
+- **Deadline.** `RELAY_RESPONSE_STREAM_IDLE_TIMEOUT_MS` (120 s) replaces the
+  single request deadline. It bounds a gap without progress, not the whole
+  transfer. A server whose client stops consuming ends the stream with an
+  error; a client that hears nothing fails the body and cancels.
+- **Cancellation.** A reader that cancels, or a request abandoned before its
+  stream starts, sends `response_stream_cancel`, and the server stops reading
+  the file. Closing the connection releases every stream.
+- **Failure after the start.** The status has already been delivered, so a
+  read failure arrives as `response_stream_end` with `error`, and the
+  client's body read rejects with it.
+- **What is not streamed.** Error statuses, JSON and text responses, plaintext
+  direct WebSocket connections, and unauthenticated public-share reads keep
+  the single `response` message.
+
+Native beta peers select `stream: "connection"` instead of `true`. This is a
+coordinated native/server update without an echo negotiation or old-beta mode.
+All such responses on one authenticated connection share a single 1 MiB body
+window, with FIFO send admission so a large stream cannot repeatedly take
+credit ahead of waiting small streams. Each of the eight native reader slots reserves one
+64 KiB piece of progress space. A stream can borrow unused space beyond that
+floor while preserving the other current/future slots' reservations; a lone
+stream can send 576 KiB before an ACK. This avoids a one-chunk stop-and-wait
+limit while leaving room for other readers when one is paused. A stream blocked
+on these reservations leaves the connection FIFO head and wakes when credit
+or producer lifecycle changes. Browser `true` requests retain the
+per-response window above; their login, framing and stall deadlines are unchanged.
+
+The shared window includes completed and cancelled tails until the client
+acknowledges bytes actually consumed or received and discarded. Native
+cancellation receives an end marker even though the file producer stops.
+Up to 128 started/retained native stream records are allowed per connection,
+plus the native reader slots' eight not-yet-started requests;
+duplicate live/retained IDs are refused. Unknown late starts after a caller
+abandons its response head acquire bounded discard-only records, never a new
+consumer. A native reader's 120-second idle deadline cancels/discards its body;
+a native server sender's wait deadline is 135 seconds without its own progress;
+a completed server tail's receipt deadline is 135 seconds since completion or
+its last advancing ACK. That margin allows native idle discard to settle first.
+If receipt never arrives, the server closes that logical connection rather
+than freeing credit for bytes that might remain in the relay. Source closure
+releases waiters, receipt timers, retained records and producers. These are
+body-byte bounds, not a claim about total process memory or non-body traffic.
+
+Consumers:
+
+- **Downloads** (`useSaveResourceDownload`) on a transport with `fetchStream`
+  hand the streamed body to the service worker (`lib/streamedDownload.ts`,
+  `public/sw.js`). The worker serves it at a one-time
+  `__ya-download/<id>/<name>` URL that the page opens in a hidden frame,
+  pulling each piece from the page only as the browser writes the last, so the
+  file goes to disk without a page `Blob`. A page that no service worker
+  controls, or a browser that does not request the worker's URL within 60 s,
+  falls back to collecting a `Blob`.
+- **`fetchBlob`** (images, viewers, `LocalMediaModal`) reads the same stream
+  into its `Blob`, which removes the base64 copy and the size limit. The
+  viewer still holds the whole file while it is open; streaming viewer media
+  is a sketch:
+  [relay streamed viewer media](../gaps/sketches/relay-streamed-viewer-media.md).
+
+Single-message responses keep their limits. A server that predates streaming
+ignores `stream: true` and answers with one `response`, which the client
+accepts in its place. A plaintext connection also gets one `response`. Such a
+message must fit the 64 MiB transport reassembly limit and arrive within the
+request deadline (`API_REQUEST_DEADLINE_MS`):
+
+- A file or binary-media body larger than 64 MiB is refused with `413` before
+  the server reads it (`RELAY_BINARY_RESPONSE_MAX_BYTES` in
+  `routes/ws-relay-handlers.ts`), which also bounds what the server buffers.
+- A smaller body whose encoded message still exceeds the limit fails with the
+  same `413`. Base64 makes that roughly 48 MiB for incompressible bytes;
+  encrypted connections that negotiate compression can carry larger
+  compressible files.
+- Either refusal fails only its own request. The relay connection, its other
+  requests, and its live subscriptions continue; the error message tells the
+  reader to open YA directly, and a download reports it in its error toast.
+
+Interactive HTML artifacts have an explicit separate-origin delivery contract:
+grant creation/revocation uses the active authenticated transport, while the
+browser loads original HTML and neighboring assets directly from the configured
+artifact host. See [interactive HTML artifacts](active-content-security.md#interactive-html-artifacts).
+This exception does not permit embedding a raw YA API URL.
+
+## Mutable path freshness
+
+Filesystem paths are mutable coordinates, not content identities. Raw bytes
+from `/api/local-image`, `/api/local-file`, and
+`/api/projects/:id/files/raw` use `Cache-Control: private, no-cache` with a
+weak stat validator (`ETag`) and `Last-Modified`. Every direct-client access
+therefore reaches the server to revalidate the current file: unchanged bytes
+may return `304 Not Modified`, while a changed size, mtime, or ctime returns the
+new body. Each response opens the file once, derives its validator and length
+from that descriptor, and streams that same descriptor, so a pathname
+replacement cannot pair metadata for one file with bytes from another. The
+localhost transport also requests `cache: "no-cache"` for these routes so an
+older positive-TTL browser entry cannot hide the new policy after an upgrade.
+
+The same three routes advertise `Accept-Ranges: bytes` and answer one
+`bytes=` range with `206` (or `416` when it starts past the end), so a
+URL-backed `<video>` or `<audio>` seeks without downloading the whole file.
+Multiple ranges, malformed ranges, and an `If-Range` other than the current
+`Last-Modified` date receive the whole file; the weak stat `ETag` never
+satisfies `If-Range`. `createMutableFileResponse`
+(`routes/mutable-file-cache.ts`) owns this for all three.
+
+Rendered `/api/local-file` Markdown documents are `private, no-store` rather
+than stat-validated because their HTML also depends on the running renderer,
+not only on source-file metadata. Relay fetches continue to request the source
+server on every access; the relay protocol does not maintain a browser HTTP
+cache. Opaque transient session-media handles remain `no-store`, while
+content-addressed preserved media may remain explicitly immutable.
+
+## Where media appears in the UI
+
+Each surface below is named by *what the user is looking at*, then the component
+and the route it pulls from.
+
+### Inline in the transcript
+
+- **Image-bearing tool result** — `Read`, `ViewImage`, and provider-neutral
+  image-bearing results converge on the shared outline media row. Its `+ / -`
+  toggle controls a lazy object-URL preview. Route:
+  `/api/projects/:id/sessions/:sid/media/:mediaId`. Relay-safe. Legacy
+  unmaterialized `Read` results retain their base64 renderer as a compatibility
+  fallback. The same handle and row play Grok session `videos/*.mp4`
+  tool results as `<video>` when the stored mime is `video/mp4`.
+- **`Read` image result without inline bytes** — inline bytes are optional in
+  the `Read` display contract, because a materialized result keeps its metadata
+  and path and drops the provider's base64. `ReadRenderer` prefers inline bytes
+  when present and otherwise reads the file back through `/api/local-image`,
+  so the row shows the image instead of falling back to raw JSON. Requiring
+  `base64` there was the reason a stripped result printed "Rich preview
+  unavailable".
+- **Images inside a grouped exploration** — `ExploredImageStrip`
+  (`blocks/ExploredImageStrip.tsx`) lists the image reads a collapsed
+  "Explored" group would otherwise show only by filename. It sits below the
+  entry list rather than inside it, since that list is a short scrolling box.
+  Its `+ / -` toggle takes its initial state from Expand Inline Media by
+  Default; thumbnails load lazily and open `LocalMediaModal` with prev/next
+  across the strip. A read whose bytes the server stored loads that copy
+  through the session media route: it is the image the model saw, it is
+  readable by anyone who may read the session, including a limited user, and
+  it exists even when the path was a sandbox's private `/tmp`. Several reads
+  of one path show one entry with the latest read's bytes. Only a read with
+  no stored copy falls back to `/api/local-image` by path.
+- **Embedded media inside rendered Markdown/HTML** — an `![](...)` image or
+  video that appears inline within an assistant/user message body.
+  `useLocalMediaInlinePreviews` (`components/LocalMediaModal.tsx`) hydrates the
+  `local-media-inline-preview` placeholders emitted by the server Markdown
+  augment; it's wired from `blocks/TextBlock.tsx` and
+  `renderers/blocks/TextRenderer.tsx`. Route: `/api/local-image`. Relay-safe.
+  Within one mounted renderer and file version, repeated placeholders for the
+  same path and media type share one in-flight or loaded blob and object URL.
+  Replacing generated Markdown HTML, including glossary annotation, remounts
+  those previews from the loaded entry without an empty or zero-height frame;
+  changing the renderer source tears the entry down and revokes its URL. This
+  narrow renderer-lifetime reuse does not extend to modals, downloads, or
+  other media surfaces.
+- **Legacy path-backed ViewImage result** — a historical result without a
+  media handle still opens its path through `LocalMediaModal` and
+  `/api/local-image`. New live and durable results snapshot permitted paths
+  into the session media store before rendering.
+
+### Modals opened by clicking a link
+
+- **File viewer modal (tool-result filename links)** — click a filename in a
+  `Read`/`Edit`/`Grep`/`Write` row and a modal opens showing the file: code with
+  highlighting, a Markdown preview, or — for images — the picture in the modal
+  body. `SessionFilePathLink` → `FilePathLink` → `FileViewer` (in
+  `FileViewerModal`). Routes: `/api/projects/:id/files` (metadata) and
+  `/files/raw` (bytes). Relay-safe **as of the `fetchRawFileBlob` fix**; before
+  that the image `<img src>` used the raw URL directly and 404'd in relay mode.
+  Authenticated rendered local-file links also converge here whenever an
+  active session project exists, including allowed absolute files outside that
+  project. App-data project attachments
+  (`<data-dir>/projects/<key>/attachments/`) stay in that allow-set even when
+  the uploads toggle is off. Public-share viewers use the share-scoped file
+  route and only open attachments named in that share. The project supplies
+  viewer/glossary context; the shared file-access allow-set remains the
+  authorization boundary.
+- **Local media modal (rendered-text media links)** — click an image, video, or
+  audio link *inside* rendered Markdown/HTML and a modal shows it.
+  `useLocalResourceClick` → `LocalMediaModal` → `/api/local-image`. Relay-safe.
+  Audio (WAV, MP3, OGG/OGA/Opus, M4A, AAC, FLAC) is a third local media type
+  alongside image and video: the link is labelled `(audio)`, its `+` expands
+  an inline `<audio>` player, and the modal plays it. Like video, a direct
+  transport hands the player the range-seekable server URL rather than a
+  `Blob`. Audio is never an image-gallery candidate.
+- **Local file modal (rendered-text file links without project context)** —
+  click a non-media local file link on a surface with no active project; a modal
+  renders text/JSON/log inline, PDFs from a blob URL, and an explicitly selected
+  HTML/Markdown preview in a sandboxed iframe.
+  `LocalFileModal` → `/api/local-file`. Relay-safe. HTML defaults to source;
+  Markdown keeps its established preview default. The sandboxed modal is the
+  only permitted HTML preview shape; open/new-tab actions must not escape it to
+  an inline raw active response. See
+  [`active-content-security.md`](active-content-security.md).
+
+File-viewer modals own one same-URL browser-history entry: Back dismisses the
+viewer without leaving the underlying session, while opening or React effect
+replay must never traverse pre-modal history.
+
+The project file metadata/content endpoint includes complete HTML documents
+(`.html` and `.htm`) up to 200 MiB, including embedded assets. The ordinary
+source/preview viewer can display them without enabling an artifact service;
+the active-content delivery contract governs Preview, including managed
+  first-party relay delivery when qualified. Source highlighting
+uses at most the first 1 MiB and reports truncation independently of the complete
+preview content. Other text files retain their 1 MiB inline limit and bounded
+line-target windows. Above the HTML limit, metadata and the download remain
+available. The document limit does not enlarge transport message limits;
+particularly large relay responses remain subject to transport reassembly.
+
+**Separate document and highlighting limits** (vs. applying the source-preview
+limit to embedded assets): a self-contained paper must arrive intact for HTML
+layout, while tokenizing its full asset payload adds work without helping source
+inspection.
+
+The visible file-viewer body is the document's normal scroll owner at every
+supported width. When an input, textarea, select, or editable region does not
+own focus, wheel/trackpad input and ordinary keyboard navigation scroll that
+body at native browser speed. Selection and quote-reply handlers may observe
+the document, but they must not retain hidden composer focus, consume
+navigation keys, or turn a click in unselected viewer content into a composer
+transfer.
+
+An authenticated FileViewer modal can be parked without discarding loaded
+content, presentation mode, scroll position, or quoteable source registration.
+Its persistent session-level controller lets the user move between document and
+live session without recovering the original transcript link. Presentation,
+responsive allocation, and the alternative session-list drawer design live in
+[`parked-file-viewer.md`](parked-file-viewer.md). Public-share viewers do not
+offer parking because they have no authenticated session composer.
+
+### PDFs in the file viewer
+
+By default the file viewer frames a PDF for the browser's built-in viewer:
+the raw file URL when the server origin is addressable, so the viewer reads
+the response directly, otherwise a `blob:` URL of the relayed bytes.
+Chromium refuses that viewer in some framings and when it is set to download
+PDFs rather than open them, and substitutes a "This content is blocked" page.
+`FileViewerEmbeddedMedia` treats a loaded frame that exposes no PDF document as
+refused and shows the binary card plus an **Open in new tab** link. A new
+tab has no framing ancestry, but a browser set to download PDFs downloads
+there too.
+
+**Draw PDFs with pdf.js** (Appearance, off by default) replaces the browser
+viewer with pages drawn on canvases by pdf.js. YA does not bundle pdf.js:
+`/api/pdfjs/<version>/` serves a pinned release that the server downloads on
+first demand, verifies against the npm integrity hash before extracting, and
+caches under `<data-dir>/pdfjs/<version>/` (`PdfjsAssetCache`;
+the trust decision is in
+[`active-content-security.md`](active-content-security.md)). The client
+imports it only when a PDF is shown, from the same origin, so the app's
+script policy is unchanged. The view is its own two-axis scroll area in the
+same box as the frame it replaces. Pages are laid out at their own aspect
+ratio when the document opens; a canvas is drawn while its page is within a
+screen of view and released beyond that, so memory stays bounded on long
+documents, and no canvas exceeds 16 megapixels. If pdf.js fails to load or
+render, the browser viewer is tried next.
+
+YA's viewport disables page-level pinch zoom app-wide, and that default
+stays. The pdf.js view owns zoom instead (50–500%): a two-finger pinch,
+ctrl+wheel (how trackpads report a pinch; a mouse notch is one 1.25× step),
+or its −/percentage/+ buttons, where the percentage resets to fit-width.
+A gesture previews with a transform about its focal point and redraws the
+pages sharp at the new width when it settles, keeping the focal point in
+place. pdf.js has no reflow, so a two-column paper on a phone is read by
+zooming into a column.
+
+Current pdf.js limits: it needs the same-origin server, so the relay client
+and public shares keep the browser viewer; pages are images, with no text
+selection, find, or links; and `LocalFileModal` still frames its PDFs
+directly. These are tracked in `gaps/file-viewer-relay-pdf.md`.
+
+### Resource actions and file presentation choice
+
+Project-file links and rendered local-file links share one client context-menu
+vocabulary even though their authorization routes remain distinct:
+
+- Files with meaningful source and static preview representations use a
+  touch-selectable **Open > Source / Preview** panel. Other files keep a direct
+  **Open** action. This is an initial-presentation choice, not a different file
+  permission or serving route.
+- On a fine hover-capable pointer, hovering **Open** opens an adjacent flyout
+  and highlights that branch. Click opens the same flyout. Coarse pointers and
+  narrow viewports use the compact replacement panel with an explicit **Back**
+  action, so hover is never the only route to the presentation choice.
+- HTML defaults to a rendered Preview, a client-owned `srcdoc`
+  document under an `allow-same-origin`-only iframe sandbox (scripts stay
+  denied by both the sandbox and the CSP; see
+  [active-content security](active-content-security.md)), no-referrer policy,
+  and restrictive meta CSP. Markdown remains preview-first and may be opened as source. Both
+  representations remain toggleable inside the project `FileViewer` through
+  one **Raw source** icon button whose pressed state means the source is
+  showing; the local-file modal takes its initial representation from the
+  context menu in this first convergence step.
+- The viewer does not watch the file, deliberately: a reader chooses when the
+  view changes. A **Reload from disk** refresh button beside the mode toggles
+  refetches the file in source and preview modes and remounts a running
+  interactive frame on its existing grant so the document is fetched again.
+  The loaded copy stays on screen until the fresh read arrives; a read that
+  answers after the viewer has moved to another file, line range or view, or
+  after a later reload, is discarded rather than shown under the new name.
+  The session-opened artifact viewer and the session right pane carry the
+  same reload among their window actions; the artifact origin serves from
+  disk per request, so a remount is a fresh read and nothing refreshes
+  without that click. In the right pane a running app's frame reloads the
+  same way, labelled **Reload app** because nothing is read from disk.
+  Hovering or focusing the button probes current metadata without reading
+  content (`metadata=only`) and the tooltip reports whether the loaded copy
+  is unchanged or was changed on disk at a given time; the icon takes the
+  warning color when stale. Servers without `modifiedAt` in file metadata
+  keep the plain tooltip.
+- A file that cannot be loaded shows its error in the project `FileViewer`
+  body beneath the normal header, so Back, close, minimize and **Reload from
+  disk** stay reachable; an error never strands the right pane.
+- **Find in this view.** The project `FileViewer`, the local-file modal, the
+  session artifact viewer and artifact frames in the session right pane carry
+  an isearch-style find field in their header. It searches only what that
+  viewer shows: rendered source, text, Markdown or diff; the scriptless HTML
+  preview, searched directly because it is same-origin; or a running artifact,
+  through the shared find agent added by its artifact server or managed content
+  worker. After the
+  reader clicks or focuses inside the viewer's content, Ctrl/Cmd+F opens the
+  field instead of the browser's page-wide find, which still owns every other
+  part of the page; a proxied live app and PDFs keep the browser's own find.
+  The idle field is shown only when the header has room for it on its first
+  row; Ctrl+F shows it regardless. Matching is smart-case, lets any
+  whitespace match any whitespace, and never spans two blocks. Enter or
+  Ctrl+S steps forward, Shift+Enter or Ctrl+R back, and Escape clears the
+  highlights and returns focus to the content. Matches are painted with the
+  CSS Custom Highlight API, so the searched document is never modified. One
+  engine, `packages/shared/src/find/documentFind.ts`, serves every host; the
+  agent is generated from it (`pnpm find-agent:generate`, checked by a shared
+  test).
+- Authenticated ordinary file and artifact viewers offer
+  [source editing](file-source-editing.md). HTML Edit mode selects producer-mapped
+  original file locations; without mappings it edits HTML directly. Editing
+  temporarily covers the session and sidebar, and saving leaves HTML at its
+  pre-rebuild revision.
+- When isolated artifact serving is enabled, the HTML preview offers an
+  explicit square play toggle, **Run interactive preview**, beside the square
+  Edit pencil in the viewer header. Both expose pressed state and real mode
+  links: Shift-click or middle-click opens a new tab without changing the
+  original viewer. Both static and interactive
+  frames fill the file viewer's available document area beneath its controls;
+  longer documents scroll inside the frame. The preview owns its internal
+  toolbar/frame layout, so host placement styles must preserve that layout.
+- The project `FileViewer` toolbar's **Open in new tab** action is a real link
+  to the stable viewer route. Ordinary activation, middle-click, browser
+  context-menu opening, and native modifier-click therefore keep their normal
+  browser meanings instead of depending on a left-click handler.
+- Copy actions are direct root-menu rows with a copy glyph and a full command
+  label: **Copy project-relative path**, **Copy absolute file path**, **Copy
+  file path** when the client cannot classify it more strongly, **Copy viewer
+  link**, **Copy contents**, and, for files with a static preview, **Copy
+  rendered contents**. **Copy contents** writes the authored source bytes as
+  plain text. **Copy rendered contents** runs the existing static render path
+  without navigating or mounting active content, then writes semantic
+  `text/html` plus the same result's visible `text/plain`. Presentation-only
+  attributes, scripts, stylesheet elements, and event handlers are absent from
+  that clipboard HTML. Only available, non-duplicate coordinates appear;
+  copying never requires entering a second panel.
+- **Viewer link** means a stable YA application viewer route. A raw
+  `/api/local-file` or project raw-file response is never presented as a
+  viewer link. Relay and direct clients therefore use the same meaning rather
+  than changing the label according to transport.
+- **Download** is a direct root-menu action for every local-file and
+  project-file link, saving the original bytes under the path basename;
+  opening a viewer is not a prerequisite. On a direct transport, whose `/api`
+  URLs the browser can address, the browser's own download receives the
+  attachment URL and streams it to disk, so file size is bounded by the
+  browser's download path rather than by an in-page buffer; a failure (file
+  gone, outside the allow-set, connection lost) appears in the browser's
+  download list and the page is not navigated. Over relay, and for public
+  shares, the client fetches the bytes through the active source transport,
+  and when they cannot be fetched nothing is saved and an error toast names
+  the file and the reason. The project `FileViewer`'s download controls
+  follow the same rule, and a viewer whose download fails keeps showing the
+  file. Image menus' **Download** always saves fetched bytes with the same
+  error toast.
+- Public shares may expose their share-scoped viewer link and project-relative
+  path, but the file action menu does not derive or copy the host's absolute
+  project path.
+
+This convergence is client-only and uses existing fetch contracts. The server
+still needs separate future work to provide a stable viewer route for an
+arbitrary allow-listed file, resolve a rendered path to another scanned
+project's owner, and broker relative preview assets across direct and relay
+transports. Until those contracts exist, an outside-project local file has no
+copyable Viewer link, and static preview assets are limited to data/blob
+resources admitted by the client preview CSP.
+
+Interactive artifact-domain links also expose **Download** beside **Open** in
+their transcript context menu. The action requests the linked artifact entry
+as an attachment from the isolated artifact origin, without first opening its
+managed viewer, a modal, or a new tab.
+
+Images use the same callback-driven resource menu without pretending that
+every byte source is a file:
+
+- Ordinary activation of an image link, name, thumbnail, or expanded preview
+  opens the shared full image viewer. The adjacent `+ / -` control changes
+  inline disclosure only; it is not a second copy or open gesture.
+- Right-click on rendered Markdown/local-media links and hydrated pixels,
+  normalized tool-result filenames and previews, legacy path-backed
+  `ViewImage` and image `Read` results, compact-gallery thumbnails, project
+  viewer images, and the full image viewer opens the same resource menu.
+- **Open** is direct. **Download** appears when the client has a byte source.
+  **Copy image** and the available semantic-coordinate actions are direct
+  root-menu rows: **Copy project-relative path**, **Copy absolute file path**,
+  **Copy file path**, and **Copy viewer link**. An unavailable coordinate is
+  omitted rather than disabled or inferred.
+- Clipboard and download actions fetch through the active source transport.
+  Copy image starts `ClipboardItem.write()` during the selecting gesture and
+  supplies relay-delivered bytes as a pending PNG, so a slow relay round trip
+  does not normally outlive browser user activation.
+- A single normalized `ViewImage`, `ImageView`, or image `Read` result may use
+  its unambiguous tool-input path as semantic source identity. Multi-image
+  results and other image-producing tools do not inherit one guessed path.
+- A semantic path inside the active project may derive the existing stable
+  project `FileViewer` route and expose it as **Viewer link**. An allow-listed
+  path outside that project still has no stable application viewer coordinate;
+  its raw byte URL is not relabeled.
+- JSONL-embedded data, opaque session-media handles, object URLs, and
+  content-addressed preserved blobs are byte sources, not filesystem
+  coordinates. Their menus still support Open, Download, and Copy image but
+  do not manufacture path or viewer-link actions.
+- Public shares may retain a safe project-relative coordinate and their
+  share-scoped viewer URL. They never expose a host absolute path through an
+  **Absolute file path** or fallback **File path** item.
+
+Markdown image references remain compact prose while tool images remain
+ordered activity rows with tool identity and status. Their disclosure control
+uses the same compact, status-colored gutter `+`/`−` as Ran and other tool
+rows. Each stored image owns its own expansion state; an unavailable image
+does not show an expand control. Filename/suffix treatment, preview
+border/background/containment, and full-screen viewer behavior remain aligned
+with Markdown image references without flattening those two roles.
+
+### Composer and new-session
+
+- **Attachment chips** — image thumbnails on a sent user message, in the
+  composer's pending-attachment row, and on the new-session form's pending
+  files. `components/AttachmentChip.tsx` prefers a local object URL or the
+  IndexedDB preview cache, including files just pasted or just uploaded, and
+  does not fetch from the server while those bytes are already on the client.
+  Only an upload still in flight is held in memory; once stored, an image lives
+  under the cache's eviction budget alone, and its persisted path holds a
+  blob-free pointer to the entry so a sent chip that knows only that path still
+  resolves locally, including after a reload. Showing a cached chip records
+  its access time without rewriting the stored image: the cache keeps blobs
+  apart from the blob-free records it touches and evicts by, because
+  Chromium writes a new file for every Blob in a put. Remote fallback is
+  `useRemoteImage` →
+  `/api/projects/:id/sessions/:sid/upload/:filename`. The project coordinate
+  comes from logical session metadata because app-data project keys are
+  intentionally irreversible. The session coordinate comes from the
+  attachment path's physical directory, which remains stable when a
+  provisional or forked session id differs from the viewed session. Legacy
+  `.attachments` and central-upload paths retain path-based fallback routing
+  when no current session context exists. Rendered from `MessageInput.tsx`,
+  `MessageList.tsx`, `NewSessionForm.tsx`, and `blocks/UserPromptBlock.tsx`.
+  Relay-safe.
+- **Anchored full-size hover preview** — after a brief linger
+  (`HOVER_PREVIEW_LINGER_MS = 450`), an image chip shows the full image
+  anchored to the thumbnail, scaled to the remaining viewport with a small
+  margin. Placement prefers below, then above, then left/right, and never
+  creates page scrollbars or crops the image. It follows resize and scroll so
+  it stays anchored to a thumbnail that moves under a resting pointer. Touch
+  keeps the click-to-modal path; hover enlargement is a desktop affordance.
+  Just-sent and still-pending chips reuse the local preview bytes rather than
+  fetching. The remove control on every chip uses the localized
+  `attachmentRemove` label.
+
+### Read-only shares
+
+- **Public-share transcript media** — live responses and newly captured frozen
+  revisions carry the safe server-rendered Markdown augment, without private
+  project-path discovery. The public client rewrites its semantic local-media
+  links to share-scoped file routes before activation. Recognized assets cover
+  the supported image set (APNG, AVIF, BMP, GIF, ICO, JPEG, PNG, SVG, TIFF,
+  and WebP) and video set (AVI, MKV, MOV, MP4, OGV, and WebM); authorization
+  and served MIME types must remain aligned with Markdown recognition.
+- **Public-share file viewer** — on a shared session page, clicking a file opens
+  the same `FileViewer`, but backed by a share-scoped source
+  (`publicShareFileViewerSource.ts`) that fetches `/public-api/shares/:secret/
+  files/raw` through the relay+secret path. Relay-safe.
+
+## Compact turn image galleries
+
+Status: implemented.
+
+When **Expand Inline Media by Default** is enabled, several tall images in one
+assistant turn can consume the visible transcript and push the turn's
+informative text above the viewport. A completed final response can then look
+like an interrupted response on return: the visible tail is mostly screenshots,
+while the actual completion text is offscreen.
+
+Appearance exposes **Compact Multi-Image Galleries** beside **Expand Inline
+Media by Default**. The gallery setting enables one gallery capability for
+completed assistant turns with two or more eligible linked images. **Expand
+Inline Media by Default** controls only its initial visibility: with inline
+expansion enabled, the gallery starts open; otherwise the ordinary compact
+image links remain and a small **+ Gallery** action follows the final eligible
+link in source order. While open, that action remains visible as **− Gallery**.
+Disabling the gallery setting removes that action and restores the existing
+independent inline-preview behavior.
+
+The gallery setting defaults on by explicit maintainer approval (graehl,
+2026-07-29). This is a deliberate default-on exception under
+[`vanilla-defaults.md`](vanilla-defaults.md): a gallery does not open unless the
+user already requested automatic inline expansion, and the closed-state action
+appears only where a turn has multiple images. It adds no provider behavior or
+transcript content and avoids another global preference merely to govern that
+one affordance.
+
+The compact presentation is owned by the whole assistant turn, not by one text
+block or the position of an image link within it. Eligible images are linked
+images in rendered Markdown text items across that turn. Image-bearing
+`ViewImage`, `Read`, and provider-neutral tool-result rows retain their own
+independent media controls and are not gallery candidates. One eligible image
+retains the existing inline presentation. With two or more eligible images and
+the gallery setting enabled, every per-image `+` control opens the same turn
+gallery centered on that image. While the gallery is open, all of those
+controls become `−`; activating any one collapses the whole gallery. The
+generic **+ Gallery** action opens it at the last featured image, or the first
+source image when none has yet been featured, and becomes **− Gallery** while
+open. With the gallery setting disabled, manual and automatic per-image
+expansion retain their ordinary full inline presentation.
+
+### Proposed: galleries for adjacent image-producing activities
+
+Status: proposal only; the implemented gallery still has the eligibility
+boundary above.
+
+Adjacent `ViewImage` actions and provider-neutral tool-result image rows should
+eventually receive the same compact gallery and full-screen viewer treatment as
+image links embedded in assistant text. This is not merely a matter of adding
+their URLs to the turn-level image collector. A linked image is a reference
+inside prose whose source position remains visible; a tool image is itself an
+ordered activity row, with tool identity, status, disclosure state, and result
+semantics that must not disappear when its preview moves into a gallery.
+
+The proposed owner is therefore an outline-level image-activity group created
+at the render-item/segment projection boundary:
+
+- A contiguous run of completed image-bearing activities within one assistant
+  turn forms one group when it contains at least two eligible images. One tool
+  result may contribute several images. A single-image run keeps its ordinary
+  row. Eligibility comes from normalized image media or an explicit
+  `ViewImage` result, not filename or tool-name guessing.
+- The group retains a source-ordered outline entry for every contributing
+  activity and owns one gallery over their images. A non-image activity or
+  prose boundary ends the run; the grouping must not pull separated actions
+  together merely because they occurred in the same turn.
+- Gallery packing may reorder thumbnails under the existing compact-layout
+  rules, but it must never reorder the activity outline. Each thumbnail keeps a
+  stable mapping to its source render item, tool/media identity, and original
+  position. Captions and return-to-source navigation target that outline entry,
+  while viewer previous/next order remains the original image order.
+- Collapsing the gallery restores the source-ordered activity presentation and
+  its normal media controls. Expanding it may relocate previews, but entering
+  or leaving Conversation View must not erase user-selected disclosure state;
+  keyed state restoration is sufficient and retaining the same mounted DOM
+  instances is only a possible optimization.
+- Conversation View treats the image-activity group as one activity-outline
+  unit. Expanding that unit reveals both its ordered action entries and the
+  related gallery rather than regenerating an unrelated collection of image
+  rows.
+
+This preserves the semantic trace while allowing the same compact visual
+treatment for consecutive screenshot/view operations. The grouping and stable
+image-to-action mapping need to land before broadening the gallery candidate
+collector; scraping tool-result rows directly into the existing text-image
+gallery would make ordering and disclosure behavior accidental.
+
+The original image links remain at their original positions in the turn text.
+Activating an image link opens that image directly in the full-screen viewer
+with the complete turn gallery as navigation context. It does not change the
+inline gallery's open or closed state. The gallery has one shared featured-item
+caption rather than repeating captions below every thumbnail:
+
+- On desktop, while the gallery is active, the pointer continuously features
+  the nearest thumbnail across the browser viewport, including above or below
+  the thumbnail rows and in their gaps. Opening the image viewer pauses this
+  tracking so returning preserves the selected item. Keyboard focus features
+  its item directly.
+- In the horizontally swipeable phone row, the item nearest the row's center
+  becomes featured as the user scrolls or drags.
+- The original link label is the primary caption. The literal basename may
+  appear as smaller, lower-emphasis secondary text when it differs and adds
+  useful identity.
+- Activating the featured caption scrolls back to and focuses that image's
+  original link in the turn text.
+
+Selecting a thumbnail also opens the full-screen image viewer at that image.
+Navigation between the turn text and gallery therefore remains distinct from
+full-size inspection.
+
+The shared image viewer uses the useful viewport rather than the generic modal
+preview ceiling. Selecting a thumbnail enters one maximized viewer state.
+Activating the modal **×**, pressing Escape or an unmodified Backspace, or
+using browser Back/back-swipe returns to the prior transcript/gallery state.
+The header has no second text-labelled Close action. Clicking or tapping the
+image stage never dismisses the viewer. Toolbar controls remain operable without
+dismissing it. When a turn gallery supplies context, previous/next buttons and
+the Left/Right arrow keys move through eligible images in original transcript
+order and wrap at either end. The viewer shows the source-order position in
+reserved space outside the image stage, even when compact packing visually
+reorders the thumbnails.
+
+In an authenticated session, a path-backed image viewer participates in the
+shared managed-viewer state. Its header minimize control parks the same mounted
+image and its fit/zoom position into the bottom composer controller; restore
+does not reload or reconstruct it. Pathless media and public-share viewers do
+not manufacture a file identity or parking control. An image opened from an
+already managed file viewer parks that existing viewer rather than replacing
+it, so closing or navigating Back from the image returns to the mounted parent.
+
+The previous/next buttons and position are transient viewer chrome. They appear
+briefly when the viewer opens. Fine-pointer movement over the image stage shows
+both, and inactivity hides them so they do not obscure the image. Keyboard
+Left/Right navigation reveals only the position; keyboard focus within the
+previous/next controls keeps the full chrome visible. On touch screens, a tap
+on the unzoomed or stationary image stage reveals the full chrome briefly
+instead of closing the viewer. Touch movement used for pan or pinch does not
+count as a tap.
+
+The full-screen modal shell remains mounted and maximized throughout image
+loading, decoding, navigation, and load failures; its geometry does not depend
+on whether the image viewer child is currently ready. During gallery
+navigation, the last decoded image, linked filename, and source-order position
+remain visible until the requested replacement has decoded, then change
+together. A superseded load must never replace a newer selection. If a
+replacement fails, the current image stays visible with the error reported
+over it rather than exposing or reflowing the transcript behind the modal.
+
+Fit, 1:1, and stepped zoom are explicit inspection controls within that one
+state, not further expansion levels. A 1:1 or otherwise zoomed image remains
+scrollable and pannable instead of being clipped; trackpad pinch/wheel zoom
+remains anchored near the pointer.
+
+On touch screens, the gallery row retains its horizontal swipe behavior until
+an image is selected. The selected image then owns a full-screen stage with
+two-finger pinch zoom and one-finger pan, while closing it returns to the same
+transcript/gallery position. The transient previous/next buttons remain
+practical touch targets; tapping the stage reveals them and full-screen
+horizontal swipe navigation is not required.
+
+The viewer header exposes the basename as a link to the fetched full-resolution
+image. When viewport width permits, Fit, 1:1, zoom, **Download**, minimize, and
+the single **×** close action occupy that same title row. At phone width the
+image controls move together to a second header row while minimize and close
+remain beside the title. **Download** saves the fetched bytes under the
+basename. The title link and Download both use the relay-safe object URL;
+neither navigates the browser to a bare API route.
+
+The compact-gallery goals, in priority order, are:
+
+- Where the turn is short enough, keep all of its informative text and the
+  gallery visible together. Long turns make that impossible, so this is a
+  target rather than a guarantee.
+- Give the gallery at most roughly one third of the transcript viewport while
+  a useful compact preview is possible. It may use less height when that lets
+  the turn text fit.
+- Keep relative reduction reasonably even: one screenshot should not become
+  illegible merely so another can remain close to its normal inline size.
+- Choose among the viable row counts by maximizing the smallest thumbnail
+  height, preferring fewer rows on a tie. Do not split a row when dividing the
+  same vertical budget would only make its images smaller.
+- A thumbnail's rendered height must never exceed its natural pixel height.
+  Natural-size caps may leave unused space or produce ragged alignment; do not
+  upscale an image merely to align it with its row or fill the gallery. The
+  phone swipe presentation retains the same natural width and height ceilings;
+  its target card width is not permission to enlarge a small image. A vector
+  has no natural pixel height for this cap to read; see *Vector sources have no
+  suggested size* below.
+- Use the available vertical budget without treating complete content-width
+  fill as a goal. Rows may have different heights.
+- Present ordinary completed rows as justified image rows. The final or
+  pathologically sparse row may remain ragged; dead horizontal space is
+  acceptable rather than enlarging images solely to consume it. Roughly 100
+  pixels of leftover row width is an initial tuning signal, not a persistent
+  format constant.
+- Preserve each image's stable filename/identity and full-size target, but do
+  not preserve image occurrence order as a presentation constraint. The
+  gallery may reorder a turn's automatically presented images to improve
+  legibility and packing. Filename references in the prose remain in their
+  original transcript order.
+
+A deterministic greedy row fill with one-image lookahead is a plausible first
+layout strategy. Small bounded exact searches are also acceptable, but the
+observable contract is balanced, stable packing rather than a globally optimal
+permutation. The same image dimensions and available space should produce the
+same arrangement, and small resize changes should not cause gratuitous
+reshuffling.
+
+The gallery footer has a turn-level **Collapse gallery** action with an Escape
+keyboard accelerator. The `−` beside every eligible source link and the
+persistent **− Gallery** action collapse the same turn-level state. Collapsing
+removes the reordered gallery and reinstates each image as the existing minimal
+link and `+` affordance at that image reference's original inline position.
+The generic action returns to **+ Gallery**. The transcript's original
+text/image-reference order is therefore always recoverable even though gallery
+packing may reorder thumbnails. Activating a specific `+` restores the same
+deterministic gallery arrangement centered on that image; activating
+**+ Gallery** restores it at the last featured image. There is no second
+“collapse to expanded inline images” state.
+
+### Phone presentation and deferred gesture
+
+On phone, a single horizontally swipeable thumbnail row is a reasonable compact
+presentation. It spends horizontal overflow instead of shrinking several
+screenshots into nearly unreadable fixed columns. A partially visible next
+thumbnail can disclose the swipe affordance. Selecting an image opens a
+scrollable, pinch-zoomable full-screen view, and returning preserves the
+transcript position.
+
+A post-v1 interaction experiment may combine selection and enlargement in one
+two-axis gesture: horizontal finger movement scrubs through the row, while
+moving the same drag upward toward the top of the screen enlarges the currently
+centered image. This is not required for the first gallery implementation. It
+needs touch testing for accidental activation and conflict with ordinary
+vertical transcript scrolling, plus a complete tap/full-screen path for users
+who do not discover or cannot perform the gesture.
+
+## Vector sources have no suggested size
+
+Every sizing rule above assumes a raster: its pixel dimensions *are* its
+suggested size, which is why a thumbnail never exceeds its natural height and
+why the full-screen **Fit** shrinks but never enlarges. A vector has no pixel
+grid, so those rules need an explicit vector case rather than an implicit
+raster one.
+
+An SVG carries a suggested size only when its root element declares absolute
+`width` and `height`. Its `viewBox` declares vector-coordinate bounds and the
+coordinate-to-viewport mapping; for CSS layout, a viewBox alone contributes an
+aspect ratio but no suggested outer size. Likewise, `width="100%"` defers to
+the container instead of declaring one. Both figure shapes are common:
+matplotlib's `savefig(...)` emits declared point sizes, while mermaid, D3, and
+hand-authored figures routinely ship viewBox-only.
+
+The contract:
+
+- **A declared size is honored.** A sized vector draws inline at its declared
+  size, the same as a raster of those dimensions, and **Actual size** in the
+  viewer means 1:1 against it. This is the only size channel: a Markdown image
+  link carries no dimensions, and non-CommonMark extensions (`=600x400`,
+  `?width=`) would break the same document read on GitHub or through pandoc.
+- **An undeclared size is supplied by the container.** An unsized vector needs
+  a definite width to resolve its ratio against; without one it collapses to
+  zero and reads as a missing figure. Inline previews give it a bounded box
+  (currently `min(100%, 640px)`) and let the ratio set the height. Sized
+  vectors keep the ordinary shrink-to-fit frame so their declared size still
+  decides.
+- **The file-authored mapping and bounds remain authoritative.** The browser
+  applies the SVG's `viewBox` and `preserveAspectRatio` inside the supplied or
+  declared viewport. The default viewer may fit that viewport into available
+  screen area, but does not crop, rewrite the viewBox, or recompute a tighter
+  content box; deliberate whitespace and annotations remain in-frame.
+- **Fit may enlarge a vector.** Filling the stage costs a vector nothing,
+  whereas upscaling a raster shows interpolation rather than detail. The
+  reported zoom percentage is relative to the declared size, or to the
+  browser's ratio-derived default when there is none.
+
+The failure mode is worth naming because it is invisible: a shrink-to-fit
+ancestor gives an unsized vector an indefinite width, so the figure renders at
+zero and the page looks like it simply has no image there. A `<button>` counts
+as one — it sizes to its content even when set to `display: block` — so the
+definite width has to be restated on the copy button that wraps the inline
+preview, not only on the frame.
+
+Sizing is all this section changes. Vectors continue to display through an
+`<img>` fed by a relay-safe object URL, which is inert; nothing here permits
+rendering an SVG as a top-level document or inlining its markup into the DOM.
+See [active-content-security](active-content-security.md) — an SVG remains an
+active document by that contract even where this one calls it an image.
+
+Implemented in `lib/vectorImageSizing.ts` (classification),
+`LocalMediaModal.module.css` (inline frame), and `ImageViewer.tsx` +
+`ImageViewer.module.css` (viewer fit).
+
+## Which route serves the file (the "doors")
+
+There are two routing systems and several serving routes. The serving route
+determines the **permission model**, not just the URL.
+
+Serving routes:
+
+| Route | Access model | Source file |
+|-------|--------------|-------------|
+| `/api/local-image` | File-access allow-set (see below) | `routes/local-image.ts` |
+| `/api/local-file` | Same allow-set (text/PDF/HTML/Markdown) | `routes/local-file.ts` |
+| `/api/projects/:id/files` + `/files/raw` | Relative paths project-scoped; **absolute/`~` paths gated by the same file-access allow-set** | `routes/files.ts` |
+| `/api/projects/:id/sessions/:sid/upload/:filename` | Files uploaded to that session | `routes/upload.ts` |
+| `/api/projects/:id/sessions/:sid/media/:mediaId` | Authenticated session-scoped opaque tool-result handle | `routes/tool-result-media.ts` |
+| `/public-api/shares/:secret/files/raw` | Share-scoped, capability-gated by secret | `routes/public-shares.ts` |
+
+**The file-access allow-set** is one effective list enforced by **both** doors
+(media routes and the project-files route), shared via
+`routes/local-resource-policy.ts` (drive-letter/symlink-safe). It is the union
+of user-toggled sources — projects ∪ uploads ∪ temp ∪ home ∪ custom — held live
+in `middleware/file-access.ts` and editable in Settings → Local Access → File
+access. `ALLOWED_FILE_PATHS` (alias `ALLOWED_IMAGE_PATHS`) pins it from the
+environment. Secure by default: out-of-project absolute paths are denied unless
+their folder is in the set. See `docs/tactical/018-file-access-scoping.md`.
+
+Two client routing systems decide *which* surface a link opens:
+
+- **Tool-result filename links** — `SessionFilePathLink` → `FilePathLink`. These
+  always open the `FileViewer` against `/api/projects/:id/files`, regardless of
+  whether the path is inside the project or an outside safe-dir path like
+  `C:\tmp\...`. `getProjectViewerFilePath` only affects the *displayed* path, not
+  the route.
+- **Rendered-text links** — `useLocalResourceClick` parses each link into a
+  `LocalResourceRef` (`local-media` | `local-file` | `project-raw-file`) using
+  the shared `parseLocalResourceLink` (`packages/shared/src/local-resource.ts`).
+  `normalizeResourceForProjectContext` sends *in-project* paths to the project
+  `FileViewer`, and everything else to the `LocalMediaModal` / `LocalFileModal`
+  (the allow-listed `/api/local-image` / `/api/local-file` doors).
+
+The two routing systems still pick *different surfaces* for the same path, but
+that no longer changes the **permission** outcome: both surfaces now resolve
+against the same file-access allow-set. So a `C:\tmp` image that takes the
+project-files route enforces the same allow-set as the media door would — the
+historical "safe-dir image opened through the project files route" 404 is gone.
+
+### Windows Markdown destinations
+
+Agent-authored Markdown may use native drive paths such as
+`D:\repo\.artifacts\capture.png`. CommonMark treats a backslash before
+punctuation as an escape, so the Markdown lexer would otherwise turn
+`repo\.artifacts` into the nonexistent `repo.artifacts` before YA can classify
+the path.
+
+The server Markdown boundary repairs this deterministically from the raw link,
+image, or reference-definition token before rendering: any absolute
+drive-letter destination (`A:` through `Z:`, case-insensitive) containing
+backslashes is canonicalized to forward slashes. The original transcript text
+is not rewritten. Code spans, code blocks, relative paths, URLs, and UNC paths
+are not changed, and the resulting path still passes through the normal
+project/file-access allow-set without fallback lookup or filesystem guessing.
+
+## Known sharp edges
+
+- **Bare API URLs in relay mode** — the canonical failure. Fixed in the
+  `FileViewer` by giving the default source a `fetchRawFileBlob`; watch for it
+  in any new surface.
+- **In-project vs. out-of-project routing** — tool-result links always use the
+  project files route; rendered-text links split by location. The two systems
+  don't share the in/out-of-project decision. Their client action vocabulary
+  now matches, but discovering that an outside path belongs to another scanned
+  project remains a server-backed follow-up.
+- **Stable viewer links for allow-listed local files** — the client does not
+  call a raw `/api/local-file` URL a Viewer link. A real standalone viewer for
+  those files requires a durable server/client coordinate that works across
+  direct and relay connections.
+- **Static preview assets** — unqualified scriptless previews still deny ambient
+  network loads. Qualified first-party hosted Chrome uses the
+  [managed relay viewer](active-content-security.md#managed-first-party-relay-previews)
+  for bounded relative assets; other environments retain their fallback.
+- **Both doors share one allow-set** — as of `docs/tactical/018`, the
+  project-files route enforces the same file-access allow-set as the media
+  doors for absolute/`~` paths (relative paths stay project-scoped). The set is
+  secure-by-default, so absolute paths outside projects/uploads/temp are denied
+  until the user adds the folder (Settings → File access) or sets
+  `ALLOWED_FILE_PATHS`.
+- **Context-specific media remains** — normalized tool-result images share one
+  media row, and modal-based local images share `LocalMediaModal`; attachments,
+  rendered Markdown placeholders, and the project `FileViewer` retain
+  context-specific presentation. Image actions now converge through one
+  capability-shaped client menu and shared clipboard/download operations.
+  Further cross-surface byte reuse still belongs in a shared source adapter or
+  the narrowest common rendering boundary.
+- **Opaque media viewer links** — the authenticated session-media fetch route
+  serves bytes, not a stable YA application viewer. Copying that raw route or
+  a transient object URL as **Viewer link** would misstate its lifetime and
+  relay behavior. A durable session-media viewer coordinate remains
+  server-backed work.
+- **Browser Blob budget** — Chrome keeps every live `Blob` in one
+  browser-wide store shared by all tabs and extensions, in memory up to a
+  budget and then in a disk-backed `blob_storage/` directory. On 2026-10-03 a
+  direct tab's `fetch(...).blob()` of any body of about 17 MB or more rejected
+  with `TypeError: Failed to fetch` within a second, while smaller reads and a
+  streamed `getReader()` read of the same file succeeded and the same requests
+  worked from another browser; restarting Chrome cleared it. YA's server and
+  network were not involved. Revoking an object URL does not free a `Blob`
+  that state, a cache, or a closure still references. If it recurs, record
+  the `chrome://blob-internals` total and the failed request's `net::ERR_*`
+  code (DevTools → Network) before restarting: a high total suggests
+  retention, `ERR_OUT_OF_MEMORY` the memory budget, and
+  `ERR_FILE_NOT_FOUND`/`ERR_FAILED` on a large body the disk-backed store.
+  Flushing socket pools is not the remedy; fast errors beside successful
+  reads to the same host are not connection-pool exhaustion. Closing a
+  surface must release its Blobs: `e2e/blob-retention.spec.ts` (client
+  package) opens the media modal, inline previews, and the file viewer
+  repeatedly as a relayed client sees them, forces garbage collection, and
+  requires the `chrome://blob-internals` total to return to its baseline.
+  That page shows only the default browser context, so the check drives its
+  own persistent profile.
+- **Repeated client fetches** — an expanded preview, later modal, download, or
+  copy action can independently fetch the same media. The full viewer reuses
+  its already-loaded blob for its own actions, but cross-surface blob sharing
+  is not yet a bounded client cache. Add one only with explicit lifetime,
+  byte-budget, object-URL revocation, and source-runtime scoping.
+
+## Interactive artifact relay verification
+
+`packages/client/e2e/artifact-relay.spec.ts` starts a disposable YA app, relay,
+hosted-client development server, and HTTPS artifact gateway. It exercises
+real relay authentication and resume, the project file route, fonts, dynamic
+modules, mocked data, menu/save controls, linked documents, and revocation.
+The hosted development server must retain its remote entry when a route's
+query string contains a filename; only the URL pathname identifies an asset.
+It also checks that no direct grant API requests, YA cookies, Authorization
+headers, or referrers reach artifact delivery, and that artifact code cannot
+read YA DOM/storage. Desktop and phone frame dimensions are checked to catch
+host CSS overriding the preview's internal layout.
+
+Run with an isolated home so unrelated provider readers cannot inspect the
+operator's history. Set `PLAYWRIGHT_BROWSERS_PATH` to the existing browser cache
+before invoking the wrapper, since the temporary home has no installed browser:
+
+```bash
+pnpm --filter @yep-anywhere/client exec node ../../scripts/run-with-safe-home.js --temporary-home playwright test --config playwright.artifact-relay.config.ts
+```
+
+The HTTPS gateway requires OpenSSL; the test explicitly skips when it is
+unavailable. Chromium on Linux is verified. WebKit, macOS, and Windows remain
+unverified. This covers the hosted-client embedding path with local services;
+it does not verify a particular published client build or external tunnel.

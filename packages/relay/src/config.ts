@@ -1,0 +1,173 @@
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
+import { type TrustedProxy, parseTrustedProxies } from "./client-ip.js";
+import type { LogConfig, LogLevel } from "./logger.js";
+import {
+  type RelayAllowedOriginPolicy,
+  parseRelayAllowedOrigins,
+} from "./origin-policy.js";
+
+export interface RelayTelemetryRuntimeConfig {
+  enabled: boolean;
+  eventsDir: string;
+  nodeId: string;
+  sampleIntervalMs: number;
+}
+
+export const DEFAULT_RELAY_WEBSOCKET_MAX_MESSAGE_BYTES = 100 * 1024 * 1024;
+export const DEFAULT_PAIR_FIRST_MESSAGE_TIMEOUT_MS = 20_000;
+
+export interface RelayConfig {
+  /** Port for the relay server (default: 4400) */
+  port: number;
+  /** Maximum bytes accepted in one physical WebSocket message. */
+  webSocketMaxMessageBytes: number;
+  /** File to write the actual port to after binding (for test harnesses) */
+  portFile: string | null;
+  /** Data directory for SQLite database (default: ~/.yep-relay/) */
+  dataDir: string;
+  /** Ping interval for waiting connections in ms (default: 60000) */
+  pingIntervalMs: number;
+  /** Pong timeout in ms - drop connection if no pong (default: 30000) */
+  pongTimeoutMs: number;
+  /** Close a pair whose client sends nothing within this window (0 disables). */
+  pairFirstMessageTimeoutMs: number;
+  /** Days of inactivity before username can be reclaimed (default: 90) */
+  reclaimDays: number;
+  /** Pending unauthenticated WebSocket connections allowed per source IP. */
+  unauthenticatedConnectionLimitPerIp: number;
+  /** Time allowed for a new WebSocket to send a valid relay protocol message. */
+  unauthenticatedConnectionTimeoutMs: number;
+  /** Maximum logical circuits carried by one client mux socket. */
+  muxMaxCircuitsPerSocket: number;
+  /** Maximum live mux circuits associated with one effective client IP. */
+  muxMaxCircuitsPerIp: number;
+  /** Maximum circuit-open attempts per minute on one mux socket. */
+  muxOpenAttemptsPerMinutePerSocket: number;
+  /** Maximum circuit-open attempts per minute from one effective client IP. */
+  muxOpenAttemptsPerMinutePerIp: number;
+  /** Maximum circuit-open attempts per minute for one IP/username pair. */
+  muxOpenAttemptsPerMinutePerIpUsername: number;
+  /** Maximum opaque inner payload size accepted by mux. */
+  muxMaxFrameBytes: number;
+  /** Maximum queued relay-to-client bytes for one mux circuit. */
+  muxMaxQueuedBytesPerCircuit: number;
+  /** Maximum queued relay-to-client bytes for one physical mux socket. */
+  muxMaxQueuedBytesPerSocket: number;
+  /** Physical socket bufferedAmount threshold before mux queues writes. */
+  muxBufferedAmountHighWaterBytes: number;
+  /** Maximum lifetime of a mux socket with no circuits. */
+  muxIdleTimeoutMs: number;
+  /**
+   * IPs/CIDRs whose `X-Forwarded-For` header is trusted when resolving the
+   * client IP for the per-IP unauthenticated-connection cap. Empty by default
+   * (use only the direct socket peer). Set this to the reverse proxy's IP
+   * when running behind nginx/Caddy/Cloudflare; otherwise the per-IP cap
+   * collapses into a single global counter.
+   */
+  trustedProxies: TrustedProxy[];
+  /** Browser origins allowed to use the public relay websocket/HTTP endpoints. */
+  allowedOrigins: RelayAllowedOriginPolicy;
+  /** Logging configuration */
+  logging: LogConfig;
+  /** Structured relay telemetry configuration */
+  telemetry: RelayTelemetryRuntimeConfig;
+}
+
+function getEnvNumber(name: string, defaultValue: number): number {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+function getEnvBoolean(name: string, defaultValue: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined) return defaultValue;
+  return value.toLowerCase() !== "false" && value !== "0";
+}
+
+export function loadConfig(): RelayConfig {
+  const dataDir = process.env.RELAY_DATA_DIR ?? join(homedir(), ".yep-relay");
+  const logLevel = (process.env.RELAY_LOG_LEVEL ?? "info") as LogLevel;
+  const fileLevel = (process.env.RELAY_LOG_FILE_LEVEL ?? logLevel) as LogLevel;
+
+  return {
+    port: getEnvNumber("RELAY_PORT", 4400),
+    webSocketMaxMessageBytes: getEnvNumber(
+      "RELAY_WEBSOCKET_MAX_MESSAGE_BYTES",
+      DEFAULT_RELAY_WEBSOCKET_MAX_MESSAGE_BYTES,
+    ),
+    portFile: process.env.RELAY_PORT_FILE ?? null,
+    dataDir,
+    pingIntervalMs: getEnvNumber("RELAY_PING_INTERVAL_MS", 60_000),
+    pongTimeoutMs: getEnvNumber("RELAY_PONG_TIMEOUT_MS", 30_000),
+    pairFirstMessageTimeoutMs: getEnvNumber(
+      "RELAY_PAIR_FIRST_MESSAGE_TIMEOUT_MS",
+      DEFAULT_PAIR_FIRST_MESSAGE_TIMEOUT_MS,
+    ),
+    reclaimDays: getEnvNumber("RELAY_RECLAIM_DAYS", 90),
+    unauthenticatedConnectionLimitPerIp: getEnvNumber(
+      "RELAY_UNAUTHENTICATED_CONNECTION_LIMIT_PER_IP",
+      10,
+    ),
+    unauthenticatedConnectionTimeoutMs: getEnvNumber(
+      "RELAY_UNAUTHENTICATED_CONNECTION_TIMEOUT_MS",
+      30_000,
+    ),
+    muxMaxCircuitsPerSocket: getEnvNumber(
+      "RELAY_MUX_MAX_CIRCUITS_PER_SOCKET",
+      5,
+    ),
+    muxMaxCircuitsPerIp: getEnvNumber("RELAY_MUX_MAX_CIRCUITS_PER_IP", 20),
+    muxOpenAttemptsPerMinutePerSocket: getEnvNumber(
+      "RELAY_MUX_OPEN_ATTEMPTS_PER_MINUTE_PER_SOCKET",
+      20,
+    ),
+    muxOpenAttemptsPerMinutePerIp: getEnvNumber(
+      "RELAY_MUX_OPEN_ATTEMPTS_PER_MINUTE_PER_IP",
+      60,
+    ),
+    muxOpenAttemptsPerMinutePerIpUsername: getEnvNumber(
+      "RELAY_MUX_OPEN_ATTEMPTS_PER_MINUTE_PER_IP_USERNAME",
+      6,
+    ),
+    muxMaxFrameBytes: getEnvNumber(
+      "RELAY_MUX_MAX_FRAME_BYTES",
+      2 * 1024 * 1024,
+    ),
+    muxMaxQueuedBytesPerCircuit: getEnvNumber(
+      "RELAY_MUX_MAX_QUEUED_BYTES_PER_CIRCUIT",
+      2 * 1024 * 1024,
+    ),
+    muxMaxQueuedBytesPerSocket: getEnvNumber(
+      "RELAY_MUX_MAX_QUEUED_BYTES_PER_SOCKET",
+      8 * 1024 * 1024,
+    ),
+    muxBufferedAmountHighWaterBytes: getEnvNumber(
+      "RELAY_MUX_BUFFERED_AMOUNT_HIGH_WATER_BYTES",
+      1024 * 1024,
+    ),
+    muxIdleTimeoutMs: getEnvNumber("RELAY_MUX_IDLE_TIMEOUT_MS", 30_000),
+    trustedProxies: parseTrustedProxies(process.env.RELAY_TRUSTED_PROXIES),
+    allowedOrigins: parseRelayAllowedOrigins(process.env.RELAY_ALLOWED_ORIGINS),
+    logging: {
+      logDir: process.env.RELAY_LOG_DIR ?? join(dataDir, "logs"),
+      logFile: process.env.RELAY_LOG_FILE ?? "relay.log",
+      consoleLevel: logLevel,
+      fileLevel,
+      logToConsole: getEnvBoolean("RELAY_LOG_TO_CONSOLE", true),
+      logToFile: getEnvBoolean("RELAY_LOG_TO_FILE", true),
+      prettyPrint: process.env.NODE_ENV !== "production",
+    },
+    telemetry: {
+      enabled: getEnvBoolean("RELAY_TELEMETRY_ENABLED", true),
+      eventsDir: process.env.RELAY_TELEMETRY_DIR ?? join(dataDir, "telemetry"),
+      nodeId: process.env.RELAY_NODE_ID ?? hostname(),
+      sampleIntervalMs: getEnvNumber(
+        "RELAY_TELEMETRY_SAMPLE_INTERVAL_MS",
+        60_000,
+      ),
+    },
+  };
+}

@@ -1,0 +1,497 @@
+import type {
+  RelayRequest,
+  RemoteClientMessage,
+  UploadedFile,
+} from "@yep-anywhere/shared";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { RelayProtocol, type RelayTransport } from "../RelayProtocol";
+import { ConnectionReconnectingError } from "../types";
+
+function testFile(name: string, body: string, type: string): File {
+  const bytes = new TextEncoder().encode(body);
+  return {
+    name,
+    type,
+    size: bytes.byteLength,
+    stream() {
+      let sent = false;
+      return {
+        getReader() {
+          return {
+            read: async () => {
+              if (sent) return { done: true, value: undefined };
+              sent = true;
+              return { done: false, value: bytes };
+            },
+            cancel: vi.fn(),
+          };
+        },
+      };
+    },
+  } as unknown as File;
+}
+
+async function flushUntil(predicate: () => boolean): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  throw new Error("Timed out waiting for async protocol work");
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
+  return { promise, reject, resolve };
+}
+
+describe("RelayProtocol hooks", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    {
+      status: 200,
+      body: "# schema\n",
+      contentType: "text/markdown",
+      expected: "# schema\n",
+    },
+    {
+      status: 200,
+      body: { type: "tagged-stages/1" },
+      contentType: "application/json",
+      expected: '{"type":"tagged-stages/1"}',
+    },
+    {
+      status: 200,
+      body: { _binary: true, data: btoa("schema bytes") },
+      contentType: "application/octet-stream",
+      expected: "schema bytes",
+    },
+    { status: 304, body: null, contentType: "application/json", expected: "" },
+    {
+      status: 200,
+      body: null,
+      contentType: "application/json",
+      expected: "null",
+    },
+    {
+      status: 200,
+      body: "schema",
+      contentType: "application/example+json; charset=utf-8",
+      expected: '"schema"',
+    },
+    {
+      status: 200,
+      body: { _binary: true, data: "not base64" },
+      contentType: "application/json",
+      expected: '{"_binary":true,"data":"not base64"}',
+    },
+  ])(
+    "preserves raw response status $status for $contentType",
+    async ({ status, body, contentType, expected }) => {
+      const sent: RemoteClientMessage[] = [];
+      const protocol = new RelayProtocol({
+        sendMessage: (message) => sent.push(message),
+        sendUploadChunk: vi.fn(),
+        ensureConnected: vi.fn(async () => undefined),
+        isConnected: () => true,
+      });
+      const etag = 'W/"file-generation"';
+      const pending = protocol.fetchResponse(
+        "/projects/p/files/raw?path=schema",
+        {
+          headers: { "If-None-Match": etag },
+        },
+      );
+      await flushUntil(() => sent.length === 1);
+      const request = sent[0] as RelayRequest;
+      expect(request.headers?.["If-None-Match"]).toBe(etag);
+      protocol.routeMessage({
+        type: "response",
+        id: request.id,
+        status,
+        headers: { "content-type": contentType, etag },
+        body,
+      });
+      const response = await pending;
+      expect(response.status).toBe(status);
+      expect(response.headers.get("etag")).toBe(etag);
+      expect(await response.text()).toBe(expected);
+    },
+  );
+
+  it("reports inbound relay events before consumer routing", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const onInboundEvent = vi.fn();
+    const protocol = new RelayProtocol(
+      {
+        sendMessage: vi.fn(),
+        sendUploadChunk: vi.fn(),
+        ensureConnected: vi.fn(async () => undefined),
+        isConnected: vi.fn(() => true),
+      },
+      { onInboundEvent },
+    );
+
+    protocol.routeMessage({
+      type: "event",
+      subscriptionId: "missing-subscription",
+      eventType: "heartbeat",
+      data: null,
+    });
+
+    expect(onInboundEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: "heartbeat" }),
+    );
+  });
+
+  it("does not send delayed subscriptions after their handles close", async () => {
+    const connected = deferred<void>();
+    const sent: RemoteClientMessage[] = [];
+    const onClose = vi.fn();
+    const onError = vi.fn();
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(() => connected.promise),
+      isConnected: vi.fn(() => false),
+    });
+    const handlers = { onEvent: vi.fn(), onClose, onError };
+    const subscriptions = [
+      protocol.subscribeSession("session-1", handlers),
+      protocol.subscribeActivity(handlers),
+      protocol.subscribeGlossary("project-1", handlers),
+      protocol.subscribeWorktree(
+        "project-1",
+        { tracked: true, untracked: true, ignored: false },
+        handlers,
+      ),
+      protocol.subscribeSessionWatch("session-1", handlers),
+    ];
+
+    for (const subscription of subscriptions) {
+      subscription.close();
+      subscription.close();
+    }
+    connected.resolve(undefined);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sent).toEqual([]);
+    expect(onClose).toHaveBeenCalledTimes(5);
+    expect(onError).not.toHaveBeenCalled();
+    expect(protocol.subscriptions.size).toBe(0);
+  });
+
+  it("keeps ordinary browser unsubscribe silent after its socket closes", async () => {
+    const sent: RemoteClientMessage[] = [];
+    let connected = true;
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: async () => undefined,
+      isConnected: () => connected,
+    });
+    const subscription = protocol.subscribeActivity({ onEvent: () => {} });
+    await flushUntil(() => sent.length === 1);
+    connected = false;
+    subscription.close();
+    expect(sent.map((message) => message.type)).toEqual(["subscribe"]);
+    expect(protocol.subscriptions.size).toBe(0);
+    protocol.close();
+  });
+
+  it("sends one unsubscribe for each subscription that was sent", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const onClose = vi.fn();
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: vi.fn(() => true),
+    });
+    const handlers = { onEvent: vi.fn(), onClose };
+    const subscriptions = [
+      protocol.subscribeSession("session-1", handlers),
+      protocol.subscribeActivity(handlers),
+      protocol.subscribeGlossary("project-1", handlers),
+      protocol.subscribeWorktree(
+        "project-1",
+        { tracked: true, untracked: true, ignored: false },
+        handlers,
+      ),
+      protocol.subscribeSessionWatch("session-1", handlers),
+    ];
+    await flushUntil(
+      () => sent.filter((message) => message.type === "subscribe").length === 5,
+    );
+    const subscribeIds = sent
+      .filter((message) => message.type === "subscribe")
+      .map((message) => message.subscriptionId)
+      .sort();
+
+    for (const subscription of subscriptions) {
+      subscription.close();
+      subscription.close();
+    }
+
+    const unsubscribeIds = sent
+      .filter((message) => message.type === "unsubscribe")
+      .map((message) => message.subscriptionId)
+      .sort();
+    expect(unsubscribeIds).toEqual(subscribeIds);
+    expect(onClose).toHaveBeenCalledTimes(5);
+    expect(protocol.subscriptions.size).toBe(0);
+  });
+
+  it("sends project and coverage on worktree subscriptions", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: vi.fn(() => true),
+    });
+    const coverage = { tracked: true, untracked: false, ignored: true };
+
+    protocol.subscribeWorktree("project-1", coverage, {
+      onEvent: vi.fn(),
+    });
+    await flushUntil(() => sent.length === 1);
+
+    expect(sent[0]).toMatchObject({
+      type: "subscribe",
+      channel: "worktree",
+      projectId: "project-1",
+      coverage,
+      subscriptionId: expect.any(String),
+    });
+  });
+
+  it("does not publish a late connection failure after pending close", async () => {
+    const connected = deferred<void>();
+    const onClose = vi.fn();
+    const onError = vi.fn();
+    const protocol = new RelayProtocol({
+      sendMessage: vi.fn(),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(() => connected.promise),
+      isConnected: vi.fn(() => false),
+    });
+    const subscription = protocol.subscribeSession("session-1", {
+      onEvent: vi.fn(),
+      onClose,
+      onError,
+    });
+
+    subscription.close();
+    connected.reject(new Error("relay unavailable"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("uses injected critical-operation guards for uploads", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const endCriticalOperation = vi.fn();
+    const beginCriticalOperation = vi.fn(() => endCriticalOperation);
+    const transport: RelayTransport = {
+      sendMessage: (msg) => {
+        sent.push(msg);
+      },
+      sendUploadChunk: vi.fn(async () => undefined),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: vi.fn(() => true),
+    };
+    const protocol = new RelayProtocol(transport, {
+      beginCriticalOperation,
+    });
+    const uploadedFile: UploadedFile = {
+      id: "file-1",
+      name: "file-1_note.txt",
+      originalName: "note.txt",
+      path: "/uploads/file-1_note.txt",
+      size: 4,
+      mimeType: "text/plain",
+    };
+
+    const uploadPromise = protocol.upload(
+      "project-1",
+      "session-1",
+      testFile("note.txt", "note", "text/plain"),
+    );
+
+    await flushUntil(() => sent.some((msg) => msg.type === "upload_end"));
+    const uploadStart = sent.find(
+      (msg): msg is Extract<RemoteClientMessage, { type: "upload_start" }> =>
+        msg.type === "upload_start",
+    );
+    expect(uploadStart).toBeDefined();
+    if (!uploadStart) throw new Error("Expected upload_start");
+
+    protocol.routeMessage({
+      type: "upload_complete",
+      uploadId: uploadStart.uploadId,
+      file: uploadedFile,
+    });
+
+    await expect(uploadPromise).resolves.toEqual(uploadedFile);
+    expect(beginCriticalOperation).toHaveBeenCalledWith("upload");
+    expect(endCriticalOperation).toHaveBeenCalledTimes(1);
+    expect(transport.sendUploadChunk).toHaveBeenCalledTimes(1);
+    expect(
+      sent.find((msg) => msg.type === "request") as RelayRequest | undefined,
+    ).toBeUndefined();
+  });
+
+  it("follows same-server API redirects", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: vi.fn(() => true),
+    });
+
+    const fetchPromise = protocol.fetch<{ messages: unknown[] }>(
+      "/sessions/session-1?projectId=wrong-project",
+    );
+    await flushUntil(() => sent.length === 1);
+    const first = sent[0] as RelayRequest;
+    protocol.routeMessage({
+      type: "response",
+      id: first.id,
+      status: 307,
+      headers: {
+        Location: "/api/sessions/session-1?projectId=correct-project",
+      },
+      body: null,
+    });
+
+    await flushUntil(() => sent.length === 2);
+    const redirected = sent[1] as RelayRequest;
+    expect(redirected.path).toBe(
+      "/api/sessions/session-1?projectId=correct-project",
+    );
+    protocol.routeMessage({
+      type: "response",
+      id: redirected.id,
+      status: 200,
+      body: { messages: [] },
+    });
+
+    await expect(fetchPromise).resolves.toEqual({ messages: [] });
+  });
+  it("re-issues a read the transport rejected to replace its socket", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: () => true,
+    });
+
+    const pending = protocol.fetch<{ files: string[] }>(
+      "/projects/p/git/status",
+    );
+    await flushUntil(() => sent.length === 1);
+    protocol.rejectAllPending(new ConnectionReconnectingError());
+
+    await flushUntil(() => sent.length === 2);
+    const retried = sent[1] as RelayRequest;
+    expect(retried.path).toBe("/api/projects/p/git/status");
+    protocol.routeMessage({
+      type: "response",
+      id: retried.id,
+      status: 200,
+      body: { files: [] },
+    });
+
+    await expect(pending).resolves.toEqual({ files: [] });
+  });
+
+  it("re-issues a blob read the transport rejected to replace its socket", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const ensureConnected = vi.fn(async () => undefined);
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected,
+      isConnected: () => true,
+    });
+
+    const pending = protocol.fetchBlob("/sessions/s1/media/asset");
+    await flushUntil(() => sent.length === 1);
+    protocol.rejectAllPending(new ConnectionReconnectingError());
+
+    await flushUntil(() => sent.length === 2);
+    const retried = sent[1] as RelayRequest;
+    expect(retried.path).toBe("/api/sessions/s1/media/asset");
+    protocol.routeMessage({
+      type: "response",
+      id: retried.id,
+      status: 200,
+      headers: { "content-type": "image/png" },
+      body: { _binary: true, data: btoa("png bytes") },
+    });
+
+    const blob = await pending;
+    expect(blob.type).toBe("image/png");
+    // One connect per attempt: the read itself joins the reconnect, so the
+    // retry must not ask a second time on its way in.
+    expect(ensureConnected).toHaveBeenCalledTimes(2);
+  });
+
+  it("abandons a read whose caller aborted during the reconnect", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: () => true,
+    });
+    const controller = new AbortController();
+
+    const pending = protocol.fetch("/projects/p/git/status", {
+      signal: controller.signal,
+    });
+    await flushUntil(() => sent.length === 1);
+    protocol.rejectAllPending(new ConnectionReconnectingError());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(sent).toHaveLength(1);
+  });
+
+  it("does not replay a mutation across a transport reconnect", async () => {
+    const sent: RemoteClientMessage[] = [];
+    const protocol = new RelayProtocol({
+      sendMessage: (message) => sent.push(message),
+      sendUploadChunk: vi.fn(),
+      ensureConnected: vi.fn(async () => undefined),
+      isConnected: () => true,
+    });
+
+    const pending = protocol.fetch("/projects/p/git/commit", {
+      method: "POST",
+      body: JSON.stringify({ message: "landing" }),
+    });
+    await flushUntil(() => sent.length === 1);
+    protocol.rejectAllPending(new ConnectionReconnectingError());
+
+    await expect(pending).rejects.toBeInstanceOf(ConnectionReconnectingError);
+    expect(sent).toHaveLength(1);
+  });
+});

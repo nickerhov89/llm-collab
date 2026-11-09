@@ -1,0 +1,618 @@
+import { UI_KEYS } from "../storageKeys";
+import { setSpeechCaptureActivity } from "../speechCaptureActivity";
+import { connectMicSampleTap, type MicSampleTap } from "./micSampleTap";
+
+export const SPEECH_CAPTURE_SAMPLE_RATE = 16_000;
+export const SHARED_SPEECH_MIC_LEASE_STORAGE_KEY =
+  "yep-anywhere-speech-warm-mic-lease";
+
+const SHARED_SPEECH_MIC_CHANNEL_NAME = "yep-anywhere-speech-warm-mic";
+const SHARED_SPEECH_MIC_LEASE_TTL_MS = 4000;
+const SHARED_SPEECH_MIC_LEASE_HEARTBEAT_MS = 1000;
+const SHARED_SPEECH_MIC_HANDOFF_RETRY_MS = 200;
+const TAB_ID = `${Date.now().toString(36)}-${Math.random()
+  .toString(36)
+  .slice(2)}`;
+
+interface SharedSpeechMicLease {
+  ownerId: string;
+  expiresAt: number;
+}
+
+interface SharedSpeechMicChannelMessage {
+  type: "claimed" | "released";
+  ownerId: string;
+}
+
+let sharedWarmStream: MediaStream | null = null;
+let sharedWarmDeviceKey: string | null = null;
+let sharedWarmRequest: Promise<MediaStream> | null = null;
+let sharedWarmRequestKey: string | null = null;
+let sharedWarmGeneration = 0;
+let sharedActiveCaptureLeases = 0;
+let sharedTemporaryWarmLeases = 0;
+const managedSharedStreams = new WeakSet<MediaStream>();
+const activeLeaseCountByStream = new WeakMap<MediaStream, number>();
+const retiredActiveStreams = new Set<MediaStream>();
+let releaseSharedWarmWhenInactive = false;
+let reacquireSharedWarmWhenVisible = false;
+let sharedWarmRequested = false;
+let idleLeaseHeld = false;
+let idleLeaseHeartbeat: ReturnType<typeof setInterval> | null = null;
+let reacquireRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let lifecycleInstalled = false;
+let leaseChannel: BroadcastChannel | null = null;
+
+function deviceKey(
+  micDeviceId: string | null | undefined,
+  reducePlayback: boolean,
+): string {
+  return `${micDeviceId ?? ""}\u0000${reducePlayback ? "voice" : "raw"}`;
+}
+
+function canUseStorage(): boolean {
+  return (
+    typeof globalThis.localStorage !== "undefined" &&
+    typeof globalThis.localStorage.getItem === "function" &&
+    typeof globalThis.localStorage.setItem === "function" &&
+    typeof globalThis.localStorage.removeItem === "function"
+  );
+}
+
+function isDocumentVisible(): boolean {
+  return (
+    typeof document === "undefined" || document.visibilityState === "visible"
+  );
+}
+
+function getStoredKeepMicWarm(): boolean {
+  return (
+    canUseStorage() &&
+    globalThis.localStorage.getItem(UI_KEYS.speechKeepMicWarm) === "true"
+  );
+}
+
+function getStoredReducePlayback(): boolean {
+  return (
+    !canUseStorage() ||
+    globalThis.localStorage.getItem(UI_KEYS.speechReducePlayback) !== "false"
+  );
+}
+
+function getStoredMicDeviceId(): string | null {
+  if (!canUseStorage()) return null;
+  const deviceId = globalThis.localStorage.getItem(UI_KEYS.speechMicDeviceId);
+  return deviceId && deviceId.length > 0 ? deviceId : null;
+}
+
+function readIdleLease(): SharedSpeechMicLease | null {
+  if (!canUseStorage()) return null;
+  const raw = globalThis.localStorage.getItem(
+    SHARED_SPEECH_MIC_LEASE_STORAGE_KEY,
+  );
+  if (!raw) return null;
+  try {
+    const lease = JSON.parse(raw) as Partial<SharedSpeechMicLease>;
+    if (
+      typeof lease.ownerId === "string" &&
+      typeof lease.expiresAt === "number" &&
+      Number.isFinite(lease.expiresAt)
+    ) {
+      return { ownerId: lease.ownerId, expiresAt: lease.expiresAt };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function writeIdleLease(ownerId: string): void {
+  if (!canUseStorage()) return;
+  const lease: SharedSpeechMicLease = {
+    ownerId,
+    expiresAt: Date.now() + SHARED_SPEECH_MIC_LEASE_TTL_MS,
+  };
+  globalThis.localStorage.setItem(
+    SHARED_SPEECH_MIC_LEASE_STORAGE_KEY,
+    JSON.stringify(lease),
+  );
+}
+
+function isLeaseCurrent(
+  lease: SharedSpeechMicLease | null,
+): lease is SharedSpeechMicLease {
+  return lease !== null && lease.expiresAt > Date.now();
+}
+
+function hasOtherCurrentIdleLease(): boolean {
+  const lease = readIdleLease();
+  return isLeaseCurrent(lease) && lease.ownerId !== TAB_ID;
+}
+
+function getBroadcastChannel(): BroadcastChannel | null {
+  if (leaseChannel) return leaseChannel;
+  if (typeof BroadcastChannel === "undefined") return null;
+  leaseChannel = new BroadcastChannel(SHARED_SPEECH_MIC_CHANNEL_NAME);
+  leaseChannel.onmessage = (event: MessageEvent<unknown>) => {
+    const message = event.data as Partial<SharedSpeechMicChannelMessage>;
+    if (message.ownerId === TAB_ID) return;
+    if (message.type === "claimed") {
+      releaseIdleSharedSpeechMicStream(false);
+      return;
+    }
+    if (message.type === "released") {
+      maybeReacquireSharedWarmStream();
+    }
+  };
+  return leaseChannel;
+}
+
+function broadcastIdleLease(type: SharedSpeechMicChannelMessage["type"]): void {
+  getBroadcastChannel()?.postMessage({ type, ownerId: TAB_ID });
+}
+
+function stopIdleLeaseHeartbeat(): void {
+  if (idleLeaseHeartbeat !== null) {
+    clearInterval(idleLeaseHeartbeat);
+    idleLeaseHeartbeat = null;
+  }
+}
+
+function clearReacquireRetry(): void {
+  if (reacquireRetryTimer !== null) {
+    clearTimeout(reacquireRetryTimer);
+    reacquireRetryTimer = null;
+  }
+}
+
+function scheduleReacquireRetry(): void {
+  if (reacquireRetryTimer !== null) return;
+  reacquireRetryTimer = setTimeout(() => {
+    reacquireRetryTimer = null;
+    maybeReacquireSharedWarmStream();
+  }, SHARED_SPEECH_MIC_HANDOFF_RETRY_MS);
+}
+
+function releaseIdleLease(): void {
+  if (!idleLeaseHeld) return;
+  idleLeaseHeld = false;
+  stopIdleLeaseHeartbeat();
+  const lease = readIdleLease();
+  if (lease?.ownerId === TAB_ID) {
+    globalThis.localStorage.removeItem(SHARED_SPEECH_MIC_LEASE_STORAGE_KEY);
+  }
+  broadcastIdleLease("released");
+}
+
+function startIdleLeaseHeartbeat(): void {
+  if (idleLeaseHeartbeat !== null) return;
+  idleLeaseHeartbeat = setInterval(() => {
+    if (!idleLeaseHeld || !isDocumentVisible()) {
+      releaseIdleSharedSpeechMicStream(!isDocumentVisible());
+      return;
+    }
+    writeIdleLease(TAB_ID);
+  }, SHARED_SPEECH_MIC_LEASE_HEARTBEAT_MS);
+}
+
+function tryAcquireIdleLease(): boolean {
+  if (!isDocumentVisible()) return false;
+  if (!canUseStorage()) {
+    idleLeaseHeld = true;
+    startIdleLeaseHeartbeat();
+    broadcastIdleLease("claimed");
+    return true;
+  }
+
+  const existing = readIdleLease();
+  if (isLeaseCurrent(existing) && existing.ownerId !== TAB_ID) {
+    return false;
+  }
+
+  writeIdleLease(TAB_ID);
+  if (readIdleLease()?.ownerId !== TAB_ID) return false;
+  idleLeaseHeld = true;
+  startIdleLeaseHeartbeat();
+  broadcastIdleLease("claimed");
+  return true;
+}
+
+function activeLeaseCount(stream: MediaStream): number {
+  return activeLeaseCountByStream.get(stream) ?? 0;
+}
+
+function stopManagedStream(stream: MediaStream): void {
+  managedSharedStreams.delete(stream);
+  retiredActiveStreams.delete(stream);
+  stopSpeechStreamTracks(stream);
+}
+
+function stopSharedWarmStreamNow(): void {
+  sharedWarmGeneration += 1;
+  if (sharedWarmStream) {
+    if (activeLeaseCount(sharedWarmStream) > 0) {
+      retiredActiveStreams.add(sharedWarmStream);
+    } else {
+      stopManagedStream(sharedWarmStream);
+    }
+  }
+  sharedWarmStream = null;
+  sharedWarmDeviceKey = null;
+  sharedWarmRequest = null;
+  sharedWarmRequestKey = null;
+  releaseIdleLease();
+}
+
+function releaseIdleSharedSpeechMicStream(reacquireOnVisible: boolean): void {
+  if (reacquireOnVisible) reacquireSharedWarmWhenVisible = true;
+  releaseIdleLease();
+  if (sharedActiveCaptureLeases > 0) {
+    releaseSharedWarmWhenInactive = true;
+    return;
+  }
+  stopSharedWarmStreamNow();
+}
+
+function maybeReacquireSharedWarmStream(): void {
+  if (!reacquireSharedWarmWhenVisible) return;
+  if (!isDocumentVisible()) return;
+  if (!getStoredKeepMicWarm()) {
+    reacquireSharedWarmWhenVisible = false;
+    clearReacquireRetry();
+    return;
+  }
+  if (hasOtherCurrentIdleLease()) {
+    scheduleReacquireRetry();
+    return;
+  }
+  void getSpeechMicStream({
+    keepWarm: true,
+    micDeviceId: getStoredMicDeviceId(),
+    reducePlayback: getStoredReducePlayback(),
+  })
+    .then((stream) => {
+      if (isSharedSpeechMicStream(stream) && hasLiveSpeechTracks(stream)) {
+        reacquireSharedWarmWhenVisible = false;
+        clearReacquireRetry();
+        return;
+      }
+      if (isDocumentVisible() && getStoredKeepMicWarm()) {
+        scheduleReacquireRetry();
+      }
+    })
+    .catch((err: unknown) => {
+      if (!isDocumentVisible()) return;
+      if (!getStoredKeepMicWarm()) {
+        reacquireSharedWarmWhenVisible = false;
+        clearReacquireRetry();
+        return;
+      }
+      if (hasOtherCurrentIdleLease()) {
+        scheduleReacquireRetry();
+        return;
+      }
+      reacquireSharedWarmWhenVisible = false;
+      clearReacquireRetry();
+      console.warn(
+        "[SpeechMic] Warm microphone reacquire failed",
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+}
+
+function shouldRetainIdleWarmStream(): boolean {
+  return (
+    sharedWarmRequested ||
+    sharedTemporaryWarmLeases > 0 ||
+    getStoredKeepMicWarm()
+  );
+}
+
+function retainOrReleaseIdleWarmStream(): void {
+  if (sharedActiveCaptureLeases > 0) return;
+
+  if (releaseSharedWarmWhenInactive) {
+    const shouldTryRetain =
+      isDocumentVisible() &&
+      shouldRetainIdleWarmStream() &&
+      !reacquireSharedWarmWhenVisible;
+    releaseSharedWarmWhenInactive = false;
+    if (!shouldTryRetain || !tryAcquireIdleLease()) {
+      stopSharedWarmStreamNow();
+    }
+    return;
+  }
+
+  if (!hasLiveSpeechTracks(sharedWarmStream)) return;
+  if (
+    !isDocumentVisible() ||
+    !shouldRetainIdleWarmStream() ||
+    !tryAcquireIdleLease()
+  ) {
+    stopSharedWarmStreamNow();
+  }
+}
+
+function installSharedMicLifecycle(): void {
+  if (lifecycleInstalled || typeof window === "undefined") return;
+  lifecycleInstalled = true;
+  getBroadcastChannel();
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", () => {
+      if (!isDocumentVisible()) {
+        releaseIdleSharedSpeechMicStream(true);
+        return;
+      }
+      releaseSharedWarmWhenInactive = false;
+      maybeReacquireSharedWarmStream();
+    });
+  }
+
+  window.addEventListener("pagehide", () => {
+    releaseIdleSharedSpeechMicStream(false);
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== SHARED_SPEECH_MIC_LEASE_STORAGE_KEY) return;
+    const lease = readIdleLease();
+    if (isLeaseCurrent(lease) && lease.ownerId !== TAB_ID) {
+      releaseIdleSharedSpeechMicStream(false);
+      return;
+    }
+    maybeReacquireSharedWarmStream();
+  });
+}
+
+export interface SharedSpeechMicActiveLease {
+  bind(stream: MediaStream): void;
+  release(): void;
+}
+
+export function acquireSharedSpeechMicActiveLease(): SharedSpeechMicActiveLease {
+  installSharedMicLifecycle();
+  if (sharedActiveCaptureLeases === 0) {
+    broadcastIdleLease("claimed");
+  }
+  sharedActiveCaptureLeases += 1;
+  let boundStream: MediaStream | null = null;
+  let released = false;
+  return {
+    bind(stream) {
+      if (released || boundStream === stream) return;
+      if (boundStream !== null) {
+        throw new Error("Shared speech mic lease is already bound");
+      }
+      if (!managedSharedStreams.has(stream)) {
+        throw new Error("Shared speech mic lease requires a managed stream");
+      }
+      boundStream = stream;
+      activeLeaseCountByStream.set(stream, activeLeaseCount(stream) + 1);
+    },
+    release() {
+      if (released) return;
+      released = true;
+      sharedActiveCaptureLeases = Math.max(0, sharedActiveCaptureLeases - 1);
+      if (boundStream !== null) {
+        const remaining = Math.max(0, activeLeaseCount(boundStream) - 1);
+        if (remaining > 0) {
+          activeLeaseCountByStream.set(boundStream, remaining);
+        } else {
+          activeLeaseCountByStream.delete(boundStream);
+          if (retiredActiveStreams.has(boundStream)) {
+            stopManagedStream(boundStream);
+          }
+        }
+      }
+      retainOrReleaseIdleWarmStream();
+    },
+  };
+}
+
+export function acquireSharedSpeechMicWarmLease(): () => void {
+  installSharedMicLifecycle();
+  sharedTemporaryWarmLeases += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    sharedTemporaryWarmLeases = Math.max(0, sharedTemporaryWarmLeases - 1);
+    retainOrReleaseIdleWarmStream();
+  };
+}
+
+export function hasLiveSpeechTracks(
+  stream: MediaStream | null,
+): stream is MediaStream {
+  return (
+    stream?.getTracks().some((track) => track.readyState !== "ended") === true
+  );
+}
+
+export function stopSpeechStreamTracks(stream: MediaStream): void {
+  stream.getTracks().forEach((track) => {
+    track.stop();
+  });
+  setSpeechCaptureActivity(stream, null);
+}
+
+function muteWhileMicOpen(
+  stream: MediaStream,
+  { retainedWhenIdle }: { retainedWhenIdle: boolean },
+): void {
+  // A retained stream outlives dictation, so the composer's capture phase,
+  // not the open device, owns ducking other apps.
+  setSpeechCaptureActivity(stream, "capturing", {
+    holdAudioFocus: !retainedWhenIdle,
+  });
+  for (const track of stream.getTracks()) {
+    // These tracks are newly acquired and privately owned by YA.
+    track.onended = () => {
+      if (!hasLiveSpeechTracks(stream)) {
+        setSpeechCaptureActivity(stream, null);
+      }
+    };
+  }
+}
+
+export function startSpeechWaveformMonitor(
+  stream: MediaStream,
+  onAudioSamples: ((samples: Float32Array) => void) | undefined,
+): () => void {
+  if (!onAudioSamples || typeof window === "undefined") return () => {};
+  const AudioContextCtor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext })
+      .webkitAudioContext;
+  if (!AudioContextCtor) return () => {};
+
+  let context: AudioContext;
+  let source: MediaStreamAudioSourceNode;
+  try {
+    context = new AudioContextCtor();
+    source = context.createMediaStreamSource(stream);
+  } catch {
+    return () => {};
+  }
+  // The display is best-effort: a monitor that cannot start shows no waveform
+  // and must not disturb the capture it decorates.
+  let stopped = false;
+  let tap: MicSampleTap | null = null;
+  const stop = (): void => {
+    if (stopped) return;
+    stopped = true;
+    tap?.disconnect();
+    source.disconnect();
+    void context.close().catch(() => undefined);
+  };
+  void connectMicSampleTap(context, source, {
+    batchSize: 1024,
+    onSamples: onAudioSamples,
+  }).then((connected) => {
+    if (stopped) connected.disconnect();
+    else tap = connected;
+  }, stop);
+  void context.resume().catch(() => undefined);
+  return stop;
+}
+
+export function isSharedSpeechMicStream(stream: MediaStream | null): boolean {
+  return stream !== null && managedSharedStreams.has(stream);
+}
+
+export function speechMicConstraints(
+  micDeviceId: string | null | undefined,
+  reducePlayback = true,
+): MediaStreamConstraints {
+  return {
+    audio: {
+      ...(micDeviceId ? { deviceId: { exact: micDeviceId } } : {}),
+      // A single YA-controlled capture shape avoids paying a fresh
+      // getUserMedia/device path when the user switches STT backends.
+      channelCount: { ideal: 1 },
+      sampleRate: { ideal: SPEECH_CAPTURE_SAMPLE_RATE },
+      sampleSize: { ideal: 16 },
+      // Keep one capture shape across YA-controlled backends. The default voice
+      // path asks Chromium Android for its communication capture mode as well
+      // as browser echo cancellation. Users can opt back into raw capture for
+      // a device or backend that performs worse with browser processing.
+      echoCancellation: reducePlayback,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+  };
+}
+
+export function releaseSharedSpeechMicStream(): void {
+  sharedWarmRequested = false;
+  releaseIdleLease();
+  clearReacquireRetry();
+  if (sharedActiveCaptureLeases > 0) {
+    releaseSharedWarmWhenInactive = true;
+    reacquireSharedWarmWhenVisible = false;
+    return;
+  }
+  reacquireSharedWarmWhenVisible = false;
+  stopSharedWarmStreamNow();
+}
+
+export function getSpeechMicStream({
+  keepWarm,
+  retainWhenIdle = keepWarm,
+  activeLease,
+  micDeviceId,
+  reducePlayback = true,
+}: {
+  keepWarm: boolean;
+  retainWhenIdle?: boolean;
+  activeLease?: SharedSpeechMicActiveLease | null;
+  micDeviceId?: string | null;
+  reducePlayback?: boolean;
+}): Promise<MediaStream> {
+  const key = deviceKey(micDeviceId, reducePlayback);
+  const constraints = speechMicConstraints(micDeviceId, reducePlayback);
+  if (!keepWarm) {
+    return navigator.mediaDevices.getUserMedia(constraints).then((stream) => {
+      if (reducePlayback) muteWhileMicOpen(stream, { retainedWhenIdle: false });
+      return stream;
+    });
+  }
+  installSharedMicLifecycle();
+  if (retainWhenIdle) sharedWarmRequested = true;
+
+  const hasActiveCapture = sharedActiveCaptureLeases > 0;
+  if (!hasActiveCapture) {
+    if (!tryAcquireIdleLease()) {
+      return Promise.reject(
+        new Error("Another visible YA tab owns the idle warm microphone"),
+      );
+    }
+  }
+
+  if (sharedWarmDeviceKey !== null && sharedWarmDeviceKey !== key) {
+    stopSharedWarmStreamNow();
+  }
+  sharedWarmDeviceKey = key;
+
+  if (hasLiveSpeechTracks(sharedWarmStream)) {
+    activeLease?.bind(sharedWarmStream);
+    return Promise.resolve(sharedWarmStream);
+  }
+  if (sharedWarmRequest && sharedWarmRequestKey === key) {
+    return sharedWarmRequest.then((stream) => {
+      if (managedSharedStreams.has(stream)) activeLease?.bind(stream);
+      return stream;
+    });
+  }
+
+  const generation = sharedWarmGeneration;
+  const request = navigator.mediaDevices.getUserMedia(constraints);
+  sharedWarmRequest = request;
+  sharedWarmRequestKey = key;
+
+  return request
+    .then((stream) => {
+      if (
+        generation === sharedWarmGeneration &&
+        sharedWarmRequest === request &&
+        sharedWarmDeviceKey === key &&
+        (sharedActiveCaptureLeases > 0 ||
+          (isDocumentVisible() && idleLeaseHeld))
+      ) {
+        if (reducePlayback)
+          muteWhileMicOpen(stream, { retainedWhenIdle: true });
+        managedSharedStreams.add(stream);
+        sharedWarmStream = stream;
+        activeLease?.bind(stream);
+      } else if (hasLiveSpeechTracks(stream)) {
+        stopSpeechStreamTracks(stream);
+      }
+      return stream;
+    })
+    .finally(() => {
+      if (sharedWarmRequest === request) {
+        sharedWarmRequest = null;
+        sharedWarmRequestKey = null;
+      }
+    });
+}

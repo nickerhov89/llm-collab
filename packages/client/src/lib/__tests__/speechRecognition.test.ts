@@ -1,0 +1,540 @@
+import { describe, expect, it } from "vitest";
+import {
+  type SpeechResult,
+  appendSpeechTranscript,
+  computeSpeechDelta,
+  createSpeechInsertionRange,
+  getSpeechInterimDisplayTranscript,
+  getSpeechSelectionFinalDelayMs,
+  getSpeechTranscriptInsertionParts,
+  getSpeechTranscriptReplacementParts,
+  getSpeechTranscriptSeparator,
+  getSpeechVisibleDraftText,
+  insertSpeechTranscriptAt,
+  mapSpeechInsertionRangeThroughEdit,
+  mapSpeechInsertionRangeThroughReplacement,
+  mapTextIndexThroughEdit,
+  processSpeechResults,
+  retargetSpeechInsertionRange,
+  removeLatestSpeechChunkFromRange,
+  replaceSpeechTranscriptBefore,
+  replaceSpeechTranscriptInRange,
+  removeTextRange,
+  textBeforeSpeechCursor,
+} from "../speechRecognition";
+
+describe("processSpeechResults", () => {
+  it("returns empty for no results", () => {
+    const result = processSpeechResults([]);
+    expect(result).toEqual({ latestFinal: "", interimText: "" });
+  });
+
+  it("extracts the latest final result (mobile behavior)", () => {
+    // On mobile, multiple final results accumulate - we want the last one
+    const results: SpeechResult[] = [
+      { isFinal: true, transcript: "the" },
+      { isFinal: true, transcript: "the quick" },
+      { isFinal: true, transcript: "the quick brown" },
+    ];
+    const result = processSpeechResults(results);
+    expect(result.latestFinal).toBe("the quick brown");
+    expect(result.interimText).toBe("");
+  });
+
+  it("collects interim text from non-final results", () => {
+    const results: SpeechResult[] = [
+      { isFinal: true, transcript: "hello" },
+      { isFinal: false, transcript: " world" },
+      { isFinal: false, transcript: " foo" },
+    ];
+    const result = processSpeechResults(results);
+    expect(result.latestFinal).toBe("hello");
+    expect(result.interimText).toBe(" world foo");
+  });
+
+  it("handles only interim results", () => {
+    const results: SpeechResult[] = [
+      { isFinal: false, transcript: "typing" },
+      { isFinal: false, transcript: " in progress" },
+    ];
+    const result = processSpeechResults(results);
+    expect(result.latestFinal).toBe("");
+    expect(result.interimText).toBe("typing in progress");
+  });
+});
+
+describe("computeSpeechDelta", () => {
+  describe("mobile behavior (cumulative finals)", () => {
+    it("returns empty for no change", () => {
+      expect(computeSpeechDelta("hello", "hello")).toBe("");
+    });
+
+    it("returns empty for empty latest", () => {
+      expect(computeSpeechDelta("", "hello")).toBe("");
+    });
+
+    it("extracts delta when latest starts with previous", () => {
+      expect(computeSpeechDelta("the quick", "the")).toBe(" quick");
+      expect(computeSpeechDelta("the quick brown", "the quick")).toBe(" brown");
+    });
+
+    it("handles first utterance (empty previous)", () => {
+      expect(computeSpeechDelta("hello", "")).toBe("hello");
+    });
+
+    it("extracts multi-word delta", () => {
+      expect(computeSpeechDelta("the quick brown fox", "the")).toBe(
+        " quick brown fox",
+      );
+    });
+  });
+
+  describe("desktop behavior (separate utterances)", () => {
+    it("returns full transcript for new utterance after pause", () => {
+      // When user pauses and starts new utterance, it won't start with previous
+      expect(computeSpeechDelta("goodbye", "hello world")).toBe("goodbye");
+    });
+
+    it("handles completely different utterances", () => {
+      expect(computeSpeechDelta("new sentence", "old sentence")).toBe(
+        "new sentence",
+      );
+    });
+  });
+
+  describe("edge cases", () => {
+    it("handles whitespace-only delta", () => {
+      expect(computeSpeechDelta("hello ", "hello")).toBe(" ");
+    });
+
+    it("handles punctuation", () => {
+      expect(computeSpeechDelta("hello, world", "hello")).toBe(", world");
+    });
+
+    it("is case sensitive", () => {
+      // "Hello" doesn't start with "hello" so treated as new utterance
+      expect(computeSpeechDelta("Hello world", "hello")).toBe("Hello world");
+    });
+  });
+});
+
+describe("appendSpeechTranscript", () => {
+  it("separates ordinary transcript chunks with one space", () => {
+    expect(appendSpeechTranscript("hello", "world")).toBe("hello world");
+  });
+
+  it("does not insert a space before punctuation chunks", () => {
+    expect(appendSpeechTranscript("hello", ", world")).toBe("hello, world");
+    expect(appendSpeechTranscript("hello", ".")).toBe("hello.");
+  });
+
+  it("uses the same separator helper as speech draft mirrors", () => {
+    expect(getSpeechTranscriptSeparator("hello", "world")).toBe(" ");
+    expect(getSpeechTranscriptSeparator("hello", ", world")).toBe("");
+  });
+});
+
+describe("speech transcript text edits", () => {
+  it("inserts transcript at a selected replacement point", () => {
+    expect(insertSpeechTranscriptAt("Fix this please", "exactly", 4)).toEqual({
+      text: "Fix exactly this please",
+      cursor: "Fix exactly".length,
+    });
+  });
+
+  it("returns inline mirror parts for a speech-owned insertion point", () => {
+    expect(
+      getSpeechTranscriptInsertionParts("hello world", "there", 5),
+    ).toEqual({
+      before: "hello",
+      separatorBefore: " ",
+      transcript: "there",
+      separatorAfter: " ",
+      after: "world",
+      text: "hello there world",
+      cursor: "hello there".length,
+    });
+  });
+
+  it("returns inline mirror parts for a selected replacement span", () => {
+    expect(
+      getSpeechTranscriptReplacementParts("replace this text", "spoken", 8, 12),
+    ).toEqual({
+      before: "replace",
+      separatorBefore: " ",
+      transcript: "spoken",
+      separatorAfter: " ",
+      after: "text",
+      text: "replace spoken text",
+      cursor: "replace spoken".length,
+    });
+  });
+
+  it("snapshots provisional speech exactly where the mirror shows it", () => {
+    expect(
+      getSpeechVisibleDraftText(
+        "alpha beta gamma",
+        "spoken",
+        createSpeechInsertionRange(6, 10),
+      ),
+    ).toBe("alpha spoken gamma");
+    expect(
+      getSpeechVisibleDraftText(
+        "existing text",
+        "provisional words",
+        createSpeechInsertionRange(
+          "existing text".length,
+          "existing text".length,
+        ),
+      ),
+    ).toBe("existing text provisional words");
+  });
+
+  it("decapitalizes selected mid-sentence replacements to match context", () => {
+    expect(
+      replaceSpeechTranscriptInRange(
+        "Ok, look again.",
+        "Focus",
+        createSpeechInsertionRange(4, 8),
+        0,
+      ).text,
+    ).toBe("Ok, focus again.");
+
+    expect(
+      replaceSpeechTranscriptInRange(
+        "look again.",
+        "Focus",
+        createSpeechInsertionRange(0, 4),
+        0,
+      ).text,
+    ).toBe("Focus again.");
+  });
+
+  it("replaces a provider-owned finalized suffix without text matching", () => {
+    expect(
+      replaceSpeechTranscriptBefore(
+        "prefix Testing.",
+        "Testing. again.",
+        "prefix Testing.".length,
+        "Testing.".length,
+      ),
+    ).toMatchObject({
+      text: "prefix Testing. again.",
+      cursor: "prefix Testing. again.".length,
+      replacementStart: "prefix ".length,
+      replacementEnd: "prefix Testing.".length,
+      insertedLength: "Testing. again.".length,
+    });
+  });
+
+  it("removes a speech-owned range for cancel", () => {
+    expect(removeTextRange("alpha speech beta", 6, 12)).toEqual({
+      text: "alpha  beta",
+      cursor: 6,
+    });
+  });
+
+  it("defers selected text replacement until speech commits", () => {
+    const range = createSpeechInsertionRange(8, 12);
+
+    expect(range).toMatchObject({
+      start: 8,
+      end: 8,
+      replaceEnd: 12,
+      chunks: [],
+    });
+
+    expect(
+      replaceSpeechTranscriptInRange("replace this text", "spoken", range, 0),
+    ).toMatchObject({
+      text: "replace spoken text",
+      cursor: "replace spoken".length,
+      replacementStart: 8,
+      replacementEnd: 12,
+    });
+  });
+
+  it("arms a hot-mic selection target with a final-chunk grace window", () => {
+    const range = createSpeechInsertionRange(4, 4);
+    const retargeted = retargetSpeechInsertionRange(range, 8, 12, 1000);
+
+    expect(retargeted).toMatchObject({
+      start: 4,
+      end: 8,
+      replaceEnd: 12,
+      replaceSelectedAtMs: 1000,
+    });
+    expect(getSpeechSelectionFinalDelayMs(retargeted, 1125)).toBe(175);
+    expect(getSpeechSelectionFinalDelayMs(retargeted, 1300)).toBe(0);
+  });
+
+  it("does not delay final chunks without a hot non-empty selection", () => {
+    expect(
+      getSpeechSelectionFinalDelayMs(createSpeechInsertionRange(4, 4)),
+    ).toBe(0);
+    expect(
+      getSpeechSelectionFinalDelayMs(createSpeechInsertionRange(4, 8)),
+    ).toBe(0);
+  });
+
+  it("retargets the next speech chunk to a collapsed caret", () => {
+    const range = createSpeechInsertionRange(4, 4);
+
+    expect(retargetSpeechInsertionRange(range, 8, 8, 1000)).toMatchObject({
+      start: 4,
+      end: 8,
+      replaceEnd: undefined,
+      replaceSelectedAtMs: undefined,
+      chunks: [],
+    });
+  });
+
+  it("keeps manually typed text before the next speech chunk", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "",
+      "spoken first",
+      createSpeechInsertionRange(0, 0),
+      0,
+    );
+    const withTyping = `${first.text} [typing this]`;
+    const mapped = mapSpeechInsertionRangeThroughEdit(
+      first.text,
+      withTyping,
+      first.range,
+    );
+    const retargeted = retargetSpeechInsertionRange(
+      mapped,
+      withTyping.length,
+      withTyping.length,
+    );
+
+    expect(
+      replaceSpeechTranscriptInRange(
+        withTyping,
+        "resumed speech",
+        retargeted,
+        0,
+      ).text,
+    ).toBe("spoken first [typing this] resumed speech");
+  });
+
+  it("revises speech-owned text without consuming typed text after the caret moved", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "",
+      "draft",
+      createSpeechInsertionRange(0, 0),
+      0,
+    );
+    const withTyping = `${first.text} [typed]`;
+    const retargeted = retargetSpeechInsertionRange(
+      mapSpeechInsertionRangeThroughEdit(first.text, withTyping, first.range),
+      withTyping.length,
+      withTyping.length,
+    );
+    const revision = replaceSpeechTranscriptInRange(
+      withTyping,
+      "draft revised",
+      retargeted,
+      "draft".length,
+    );
+
+    expect(revision.text).toBe("draft revised [typed]");
+    expect(
+      replaceSpeechTranscriptInRange(
+        revision.text,
+        "continued",
+        revision.range,
+        0,
+      ).text,
+    ).toBe("draft revised [typed] continued");
+  });
+
+  it("removes only the latest committed speech chunk", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "prefix suffix",
+      "first.",
+      createSpeechInsertionRange(6, 6),
+      0,
+    );
+    const second = replaceSpeechTranscriptInRange(
+      first.text,
+      "second.",
+      first.range,
+      0,
+    );
+
+    expect(second.text).toBe("prefix first. second. suffix");
+
+    const removal = removeLatestSpeechChunkFromRange(second.text, second.range);
+
+    expect(removal).toMatchObject({
+      text: "prefix first. suffix",
+      replacementStart: "prefix first.".length,
+      replacementEnd: "prefix first. second.".length,
+    });
+  });
+
+  it("removes the latest spoken chunk after the caret moves backward", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "alpha suffix",
+      "first",
+      createSpeechInsertionRange(6, 6),
+      0,
+    );
+    const retargeted = retargetSpeechInsertionRange(first.range, 6, 6);
+    const second = replaceSpeechTranscriptInRange(
+      first.text,
+      "second",
+      retargeted,
+      0,
+    );
+
+    expect(second.text).toBe("alpha second first suffix");
+    expect(
+      removeLatestSpeechChunkFromRange(second.text, second.range),
+    ).toMatchObject({
+      text: "alpha first suffix",
+      replacementStart: "alpha".length,
+    });
+  });
+
+  it("smooths ordinary capitalization on later mid-sentence chunks", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "",
+      "This is",
+      createSpeechInsertionRange(0, 0),
+      0,
+    );
+    const second = replaceSpeechTranscriptInRange(
+      first.text,
+      "The next part",
+      first.range,
+      0,
+    );
+
+    expect(second.text).toBe("This is the next part");
+  });
+
+  it("shows later provisional chunks with their committed capitalization", () => {
+    const first = replaceSpeechTranscriptInRange(
+      "",
+      "This is",
+      createSpeechInsertionRange(0, 0),
+      0,
+    );
+
+    expect(
+      getSpeechInterimDisplayTranscript(
+        first.text,
+        "The next part",
+        first.range,
+      ),
+    ).toBe("the next part");
+    expect(
+      getSpeechInterimDisplayTranscript(
+        "",
+        "The first part",
+        createSpeechInsertionRange(0, 0),
+      ),
+    ).toBe("The first part");
+  });
+
+  it("preserves sentence starts, acronyms, letters, and likely names", () => {
+    const append = (firstChunk: string, secondChunk: string) => {
+      const first = replaceSpeechTranscriptInRange(
+        "",
+        firstChunk,
+        createSpeechInsertionRange(0, 0),
+        0,
+      );
+      return replaceSpeechTranscriptInRange(
+        first.text,
+        secondChunk,
+        first.range,
+        0,
+      ).text;
+    };
+
+    expect(append("This ended.", "The next part")).toBe(
+      "This ended. The next part",
+    );
+    expect(append("Call it", "API")).toBe("Call it API");
+    expect(append("Call it", "J")).toBe("Call it J");
+    expect(append("Use", "Android")).toBe("Use Android");
+  });
+
+  it("maps a speech-owned range across user edits before it", () => {
+    expect(mapTextIndexThroughEdit("alpha beta", "alpha edited beta", 10)).toBe(
+      17,
+    );
+  });
+
+  it("moves queued speech insertion points after speech inserted at the same index", () => {
+    const mapped = mapSpeechInsertionRangeThroughReplacement(
+      createSpeechInsertionRange(6, 6),
+      6,
+      6,
+      " first.".length,
+    );
+
+    expect(mapped.start).toBe("prefix first.".length);
+    expect(mapped.end).toBe("prefix first.".length);
+  });
+
+  it("preserves unrelated selected speech replacement targets", () => {
+    const mapped = mapSpeechInsertionRangeThroughReplacement(
+      createSpeechInsertionRange(12, 18),
+      6,
+      6,
+      " first.".length,
+    );
+
+    expect(mapped.start).toBe(19);
+    expect(mapped.end).toBe(19);
+    expect(mapped.replaceEnd).toBe(25);
+  });
+
+  it("clears a selected speech replacement target consumed by another speech edit", () => {
+    const mapped = mapSpeechInsertionRangeThroughReplacement(
+      createSpeechInsertionRange(6, 12),
+      6,
+      12,
+      " first.".length,
+    );
+
+    expect(mapped.start).toBe("prefix first.".length);
+    expect(mapped.end).toBe("prefix first.".length);
+    expect(mapped.replaceEnd).toBeUndefined();
+  });
+});
+
+describe("textBeforeSpeechCursor", () => {
+  const draft = "before after";
+
+  const caretAt = (index: number): HTMLTextAreaElement => {
+    const textarea = document.createElement("textarea");
+    textarea.value = draft;
+    textarea.setSelectionRange(index, index);
+    return textarea;
+  };
+
+  it("takes the recording's own insertion point over the live caret", () => {
+    expect(
+      textBeforeSpeechCursor(
+        draft,
+        createSpeechInsertionRange("before".length, "before".length),
+        caretAt(0),
+      ),
+    ).toBe("before");
+  });
+
+  it("takes the caret when no recording owns an insertion point", () => {
+    expect(textBeforeSpeechCursor(draft, null, caretAt("before".length))).toBe(
+      "before",
+    );
+  });
+
+  it("takes the whole draft when no composer textarea is focused", () => {
+    expect(textBeforeSpeechCursor(draft, null, null)).toBe(draft);
+  });
+});

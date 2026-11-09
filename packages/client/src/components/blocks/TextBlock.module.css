@@ -1,0 +1,65 @@
+.root {
+  --source-block-inset: var(--space-1);
+  --source-block-line-height: calc(
+    var(--fixed-font-size-sm) *
+    1.5 +
+    var(--output-prose-line-height-offset)
+  );
+  --first-line-center: 0.5lh;
+}
+
+.root:has(.source) {
+  --first-line-center: calc(
+    1px +
+    var(--source-block-inset) +
+    var(--source-block-line-height) /
+    2
+  );
+}
+
+.root td {
+  vertical-align: top;
+}
+
+.root:global(.timeline-item) {
+  padding-top: 0;
+}
+
+.root:global(.timeline-item)::before {
+  top: calc(var(--first-line-center) - 3px);
+}
+
+.root:global(.timeline-item)::after {
+  top: calc(var(--first-line-center) + 3px);
+}
+
+.root pre.source {
+  margin: 0;
+  padding: var(--source-block-inset) var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fixed-font-size-sm);
+  line-height: var(--source-block-line-height);
+}
+
+.timelineAction {
+  position: absolute;
+  inset-inline-start: -22px;
+  top: calc(var(--first-line-center) - 14px);
+  z-index: 2;
+}
+
+/*
+ * Sits on its own line after the cut text, flush with the prose column so the
+ * marker reads as the end of that text rather than an indented aside.
+ */
+.abortedMidStream {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-block-start: var(--space-1);
+  color: var(--text-muted, #888);
+  font-size: var(--font-size-sm);
+  font-style: italic;
+}

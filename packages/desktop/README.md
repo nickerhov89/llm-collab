@@ -1,0 +1,113 @@
+# Yep Anywhere Desktop
+
+Desktop v0 is a stable shell around the bundled Yep Anywhere server. The
+installer includes the Tauri app, a private Bun runtime, and the matching
+server/client build. First launch does not run a package manager or provider
+login wizard.
+
+Claude or Codex is expected to be managed outside Yep Anywhere. If neither
+provider application is detected, the dashboard still opens and links to the
+official [Claude download](https://claude.com/download) and
+[Codex setup](https://openai.com/codex/get-started/) pages. Authentication is
+checked only when the normal provider/session UI needs it.
+
+## Windows installation
+
+The signed `YepAnywhere_<version>_x64-setup.exe` NSIS artifact is the only
+installer. Interactive installation is the default. Quiet installation uses:
+
+```powershell
+.\YepAnywhere_<version>_x64-setup.exe /S
+```
+
+Windows releases publish only this non-elevated NSIS installer. Automatic
+updates use the same signed NSIS artifact and do not request administrator
+access.
+
+The NSIS uninstaller accepts `/S`. Ordinary update, reinstall, and uninstall
+preserve the desktop data directory at `%USERPROFILE%\.yep-anywhere-desktop`.
+Remove that directory only when an explicit full data reset is intended.
+
+The tray menu provides Dashboard, Server Output, Desktop Diagnostics, update
+checks, autostart, startup view, restart, quit, and three explicit dashboard
+close behaviors:
+
+- **Unload Dashboard After 5 Minutes** (default) hides immediately, then
+  destroys the WebView if it stays hidden while leaving the tray app, server,
+  and provider sessions running. Reopening restores the last dashboard route.
+- **Keep Dashboard Loaded** hides the window but keeps its WebView alive for
+  the fastest possible reopen.
+- **Quit Yep Anywhere** stops the bundled server and exits when the dashboard
+  is closed.
+
+A manual reinstall of a signed release is the v0 recovery path; automatic
+downgrade is not supported.
+
+## Local Windows build and smoke
+
+From a prepared checkout:
+
+```powershell
+pnpm --dir packages/desktop prepare-runtime
+pnpm --dir packages/desktop smoke-runtime
+scripts\install-local-tauri-windows.bat
+```
+
+The local helper builds an unsigned NSIS package, installs it with `/S`, and
+launches the installed app. Use `--no-launch` when only install behavior is
+being tested.
+
+To smoke the delayed-unload lifecycle without waiting five minutes, launch the
+app from a test shell with both explicit overrides:
+
+```powershell
+$env:YEP_DESKTOP_TEST_MODE = "1"
+$env:YEP_DESKTOP_TEST_UNLOAD_DELAY_MS = "1500"
+$env:YEP_DESKTOP_TEST_DATA_DIR = "$env:TEMP\yep-desktop-smoke"
+.\YepAnywhere.exe
+```
+
+The delay override is ignored unless test mode is also exactly `1`, and it
+does not change the saved desktop preference. The optional data-directory
+override is guarded by the same test-mode switch so an isolated smoke does not
+touch the normal desktop profile.
+
+## Local macOS build and smoke
+
+From a prepared checkout:
+
+```bash
+pnpm --dir packages/desktop prepare-runtime
+pnpm --dir packages/desktop smoke-runtime
+scripts/install-local-tauri-macos.sh
+```
+
+Tagged macOS releases sign the Tauri shell and private Bun sidecar with the
+hardened runtime. Bun uses JavaScriptCore, so the final Bun signature must
+retain `com.apple.security.cs.allow-jit=true`. Release CI smokes the Bun and
+server resources from the final signed `.app` before the release action uploads
+artifacts.
+
+## Release QA history
+
+End-to-end checks against published installers and updater feeds are recorded
+in the [desktop release QA log](../../docs/testing/desktop-release-qa-log.md).
+
+## Nightly Latest builds
+
+Older desktop releases without the channel selector need a one-time install
+from the [Latest desktop releases](https://github.com/kzahel/yepanywhere/releases?q=desktop-latest-v).
+
+Open the tray menu’s **Check for Updates** window and choose **Latest
+(nightly)**. The same app retains its data and offers signed updates with an
+explicit **Update and restart** action. Stable remains the default. Returning
+to Stable waits until its version exceeds your installed nightly; immediate
+rollback uses a manual signed reinstall, with a backup of desktop data first.
+
+The Nightly Desktop workflow checks for eligible verified source at 02:37 UTC
+and skips unchanged packaged inputs. Its manual dispatch can force an unchanged
+source rebuild for release QA. Published `desktop-latest-v*` prereleases contain
+the version, exact source SHA, and all three platform downloads. Failed builds
+remain drafts, leaving the previous successful Latest available. See the
+[desktop contract](../../topics/desktop-v0.md#stable-and-nightly-latest-channels)
+for selection, versioning, signing, and Stable catch-up rules.

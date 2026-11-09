@@ -1,0 +1,90 @@
+.surface {
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border: 1px solid var(--tooltip-border);
+  border-radius: 4px;
+  background: var(--tooltip-background);
+  color: var(--tooltip-foreground);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+  font-family: var(--font-ui);
+  font-size: calc(
+    var(--font-size-xs) +
+    1px +
+    var(--tooltip-font-size-offset, 0px)
+  );
+  font-weight: 500;
+  line-height: 1.25;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.root {
+  composes: surface;
+  width: max-content;
+  position: fixed;
+  /* Stay visually frontmost while document capture owns passive hit testing. */
+  z-index: 2147483647;
+  max-width: min(520px, calc(100dvw - 16px));
+  max-height: min(50vh, 420px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  pointer-events: none;
+  user-select: none;
+  cursor: default;
+}
+
+.specimen {
+  composes: surface;
+  width: fit-content;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.interactive {
+  pointer-events: auto;
+  user-select: text;
+  cursor: text;
+}
+
+.glossary {
+  font-size: calc(
+    var(--font-size-xs) +
+    2px +
+    var(--tooltip-font-size-offset, 0px)
+  );
+}
+
+.enlarged {
+  max-width: min(calc(520px + 4.25em), calc(100dvw - 16px));
+  max-height: min(calc(100dvh - 16px), 50em);
+  padding: 7px 9px;
+  font-size: calc(
+    var(--font-size-sm) +
+    0.5px +
+    var(--tooltip-font-size-offset, 0px)
+  );
+}
+
+.zoomHeadline {
+  display: block;
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.zoomDetail {
+  display: block;
+  margin-top: 0.45em;
+  white-space: pre-wrap;
+}
+
+.glossary.enlarged {
+  font-size: calc(
+    var(--font-size-sm) +
+    1.5px +
+    var(--tooltip-font-size-offset, 0px)
+  );
+}

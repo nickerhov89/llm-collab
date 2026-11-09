@@ -1,0 +1,1417 @@
+/* Codex-inspired workspace for the self-hosted Polza client. */
+.polza-login-brand {
+  color: #202124;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 29px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+.polza-ui {
+  --content-max-width: 1100px;
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --sidebar-row-min-height: 42px;
+  --sidebar-navigation-padding-block: 9px;
+  --sidebar-section-gap: 18px;
+  --composer-window-padding-inline: clamp(16px, 4vw, 46px);
+  --font-size-base: 16px;
+  --font-size-sm: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+[data-theme="light"] .polza-ui,
+[data-theme="auto"] .polza-ui {
+  --bg-surface: #ffffff;
+  --bg-secondary: #f7f7f8;
+  --bg-tertiary: #ededee;
+  --bg-hover: #e9e9eb;
+  --bg-code: #f6f6f7;
+  --bg-input: #ffffff;
+  --bg-user-message: #f2f2f3;
+  --text-primary: #202124;
+  --text-secondary: #494b50;
+  --text-muted: #73767d;
+  --text-dimmed: #9a9da3;
+  --border-color: #e8e8ea;
+  --border-subtle: #eeeeef;
+  --border-input: #e5e5e8;
+  color: var(--text-primary);
+}
+.polza-ui .polza-app-rail {
+  width: 66px;
+  flex: 0 0 66px;
+  min-height: 0;
+  padding: 18px 8px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: #f0f1f3;
+  border-right: 1px solid #e4e5e8;
+}
+.polza-ui .polza-rail-link {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: #83868b;
+  border-radius: 14px;
+  text-decoration: none;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+.polza-ui .polza-rail-link svg {
+  width: 21px;
+  height: 21px;
+}
+
+.polza-ui .polza-rail-link:hover,
+.polza-ui .polza-rail-link.active {
+  color: #1f2226;
+  background: #e3e4e7;
+}
+
+.polza-ui .polza-rail-bottom {
+  margin-top: auto;
+}
+
+.polza-ui .sidebar-desktop,
+.polza-ui .sidebar-desktop .sidebar {
+  background: #f8f8f9;
+  border-color: #e9e9eb;
+}
+
+.polza-ui .sidebar-header {
+  min-height: 76px;
+  padding: 16px 18px 13px 20px;
+}
+
+.polza-ui .polza-sidebar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #292b2e;
+  font-size: 23px;
+  font-weight: 650;
+  letter-spacing: -0.04em;
+}
+
+.polza-ui .polza-sidebar-brand span {
+  color: #9a9da2;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.polza-ui .sidebar-actions {
+  padding: 0 11px 14px;
+  border-bottom: 1px solid #e9e9eb;
+}
+
+.polza-ui .sidebar-actions .sidebar-nav-item {
+  font-size: 15px;
+  font-weight: 530;
+  min-height: 43px;
+  padding-inline: 14px;
+}
+
+.polza-ui .sidebar-sessions {
+  padding: 13px 11px 28px;
+}
+@media (width >= 1100px) {
+  .polza-ui .sidebar-sessions > .sidebar-nav-section {
+    display: none;
+  }
+}
+.polza-ui .sidebar-section {
+  margin-bottom: 24px;
+}
+.polza-ui .polza-project-heading {
+  padding: 0 14px 8px;
+  color: #97999f;
+  font-size: 14px;
+  font-weight: 600;
+}
+.polza-ui .polza-project-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.polza-ui .polza-project-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.polza-ui .polza-project-link svg {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+.polza-ui .polza-project-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.polza-ui .sidebar-section-header {
+  color: #989ba0;
+  font-size: 13px;
+  font-weight: 600;
+  padding-inline: 14px;
+}
+
+.polza-ui .session-list-item--compact .session-list-item__link {
+  min-height: 42px;
+  padding: 8px 14px;
+  border-radius: 12px;
+}
+
+.polza-ui .session-list-item--compact .session-list-item__title-text {
+  font-size: 14px;
+  font-weight: 440;
+}
+
+.polza-ui .session-list-item--compact.current .session-list-item__link {
+  background: #e8e8ea;
+  font-weight: 560;
+}
+
+.polza-ui .navigation-route-layer,
+.polza-ui .main-content-wrapper,
+.polza-ui .main-content-constrained,
+.polza-ui .session-header,
+.polza-ui .session-input {
+  background: #fff;
+}
+
+.polza-ui .session-header {
+  border-bottom: 1px solid #f0f0f1;
+}
+.polza-ui .session-header-inner {
+  min-height: 58px;
+  padding: 8px 24px;
+}
+.polza-ui .session-header-left {
+  gap: 10px;
+}
+.polza-ui .project-breadcrumb {
+  color: #898c93;
+  font-size: 13px;
+}
+.polza-ui span.project-breadcrumb:hover {
+  color: #898c93;
+}
+.polza-ui .project-breadcrumb-wrapper::after {
+  content: "/";
+  margin-left: 10px;
+  color: #c7c9cd;
+  font-size: 14px;
+}
+.polza-ui .session-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.polza-ui .star-indicator-inline {
+  color: #8e9299;
+  margin-right: 7px;
+}
+.polza-ui .session-messages {
+  padding: 30px clamp(18px, 4vw, 52px);
+}
+.polza-ui .main-content-constrained .session-messages .message-list {
+  max-width: 1100px;
+}
+.polza-ui .message {
+  margin-bottom: 26px;
+}
+.polza-ui .message-user-prompt {
+  padding: 10px 15px;
+  border-radius: 16px;
+  line-height: 1.5;
+}
+
+.polza-ui .session-input {
+  padding-block: 12px 18px;
+}
+.polza-ui .main-content-constrained .session-input-inner {
+  max-width: 1100px;
+}
+.polza-ui .message-input-wrapper {
+  border: 1px solid #e7e7e9;
+  border-radius: 31px;
+  padding: 16px 17px 13px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(25, 27, 32, 0.055);
+}
+
+.polza-ui .message-input .speech-draft-field,
+.polza-ui .message-input textarea {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 17px;
+}
+
+.polza-ui .message-input .speech-draft-field:focus-within {
+  box-shadow: none;
+}
+.polza-ui .message-input .speech-draft-field textarea {
+  min-height: 77px;
+  padding: 4px 7px 10px;
+  line-height: 1.45;
+}
+.polza-ui .message-input .speech-draft-mirror {
+  padding: 4px 7px 10px;
+  font-size: 17px;
+  line-height: 1.45;
+}
+.polza-ui .speech-interim-inline {
+  text-decoration: none;
+}
+.polza-ui .message-input .speech-draft-field textarea::placeholder {
+  color: #b9babd;
+}
+.polza-ui .message-input-toggle {
+  display: none;
+}
+.polza-ui .message-input-toolbar {
+  padding: 2px 4px 1px;
+}
+.polza-ui .mode-button::after {
+  content: "⌄";
+  margin-left: 2px;
+  font-size: 16px;
+  line-height: 1;
+}
+.polza-ui .message-input-keyboard-action.message-input-keyboard-primary {
+  border-radius: 50%;
+  min-width: 36px;
+  min-height: 36px;
+  background: #151619;
+  color: white;
+}
+
+/* Keep the composer controls in one quiet row, like the desktop Codex input. */
+.polza-ui .message-input-toolbar {
+  min-height: 52px;
+  gap: 12px;
+  padding: 0;
+  --composer-primary-control-size: 48px;
+}
+.polza-ui .message-input-left {
+  gap: 9px;
+  flex: 1 1 auto;
+  position: relative;
+}
+.polza-ui .polza-add-menu {
+  position: absolute;
+  z-index: 1200;
+  bottom: calc(100% + 16px);
+  left: 0;
+  display: grid;
+  width: min(390px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid #e6e6e8;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 18px 50px rgb(0 0 0 / 13%);
+}
+.polza-ui .polza-add-menu-heading {
+  padding: 4px 12px 8px;
+  color: #8e8e93;
+  font-size: 14px;
+}
+.polza-ui .polza-add-menu button {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: #25262a;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.polza-ui .polza-add-menu button:hover:not(:disabled) {
+  background: #f4f4f5;
+}
+.polza-ui .polza-add-menu button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.polza-ui .polza-add-menu button svg {
+  flex: 0 0 19px;
+  color: #696b70;
+}
+.polza-ui .polza-add-menu button small {
+  color: #9b9ba0;
+  font-size: 14px;
+}
+.polza-ui .message-input-left [data-session-toolbar-control="attachments"] {
+  order: -2;
+}
+.polza-ui .message-input-left [data-session-toolbar-control="modeSelector"] {
+  order: -1;
+}
+.polza-ui .attach-button {
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 50%;
+  color: #202226;
+  background: #f2f2f3;
+}
+.polza-ui .message-input-left > .attach-button > svg,
+.polza-ui
+  .message-input-left
+  [data-session-toolbar-control="attachments"]
+  > svg {
+  display: none;
+}
+.polza-ui .message-input-left .attach-button::before {
+  content: "+";
+  font-size: 31px;
+  font-weight: 300;
+  line-height: 1;
+}
+.polza-ui .mode-button {
+  height: 43px;
+  padding-inline: 12px;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: #d65e2c;
+  font-size: 16px;
+}
+.polza-ui .mode-button:hover:not(:disabled),
+.polza-ui .attach-button:hover:not(:disabled) {
+  border: 0;
+  background: #f0f1f3;
+}
+.polza-ui .polza-mode-button {
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 18px;
+  background: #f1f1f2;
+  color: #d85a24;
+  font-size: 13px;
+}
+.polza-ui .mode-button .polza-mode-button-icon {
+  color: #e26732;
+  font-size: 21px;
+}
+.polza-ui .mode-button .mode-button-label {
+  font-size: 16px;
+  white-space: nowrap;
+}
+.polza-ui .mode-button::after {
+  display: none;
+}
+.polza-ui .message-input-toolbar .mode-selector-container .mode-button {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  color: #dc602d;
+}
+.polza-ui .polza-mode-button .polza-mode-button-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+.polza-ui .mode-selector-container .mode-selector-dropdown {
+  width: min(570px, calc(100dvw - 24px));
+  padding: 13px;
+  border-color: #e0e0e2;
+  border-radius: 23px;
+  background: #fff;
+  box-shadow: 0 14px 35px #0000001c;
+}
+.polza-ui .polza-mode-heading {
+  padding: 7px 10px 10px;
+  color: #92959b;
+  font-size: 14px;
+}
+.polza-ui .mode-selector-dropdown .mode-selector-option {
+  gap: 14px;
+  min-height: 68px;
+  padding: 11px 14px;
+  border-radius: 12px;
+}
+.polza-ui .mode-selector-dropdown .mode-selector-option.selected {
+  background: transparent;
+}
+.polza-ui .mode-selector-dropdown .mode-selector-option:hover {
+  background: #f4f4f5;
+}
+.polza-ui .polza-mode-option-icon {
+  flex: 0 0 26px;
+  color: #5c6167;
+  font-size: 22px;
+  text-align: center;
+}
+.polza-ui
+  .mode-selector-option:has(.polza-mode-option-icon)
+  .mode-selector-label {
+  display: grid;
+  gap: 2px;
+  font-size: 17px;
+}
+.polza-ui .mode-selector-option:has(.polza-mode-option-icon) small {
+  color: #96989d;
+  font-size: 14px;
+  line-height: 1.3;
+}
+.polza-ui
+  .mode-selector-option:has(.polza-mode-option-icon).selected
+  .mode-selector-label,
+.polza-ui
+  .mode-selector-option:has(.polza-mode-option-icon).selected
+  .polza-mode-option-icon,
+.polza-ui
+  .mode-selector-option:has(.polza-mode-option-icon).selected
+  .mode-selector-check {
+  color: #df612c;
+}
+.polza-model-button {
+  display: none;
+}
+.polza-ui .polza-model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 5px 7px;
+  max-width: 190px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #41444a;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.polza-ui .polza-model-button:hover {
+  background: #f0f1f3;
+}
+.polza-ui .polza-model-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.polza-ui .polza-model-bolt {
+  font-size: 20px;
+  line-height: 1;
+}
+.polza-ui .polza-model-chevron {
+  color: #8b8d92;
+  font-size: 17px;
+}
+.polza-ui .message-input-left .polza-combined-model-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  max-width: min(360px, 45vw);
+  height: 44px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #313339;
+  font-size: 16px;
+  font-weight: 400;
+}
+.polza-ui .message-input-left .polza-combined-model-button:hover {
+  background: #f1f1f2;
+}
+.polza-ui
+  .message-input-toolbar
+  .message-input-left
+  .polza-combined-model-button.active {
+  border: 0;
+  background: transparent;
+  color: #202226;
+}
+.polza-ui
+  .message-input-toolbar
+  .message-input-left
+  .polza-combined-model-button.active:hover {
+  background: #f1f1f2;
+}
+.polza-combined-bolt,
+.polza-effort-menu-bolt {
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1;
+}
+.polza-ui .polza-combined-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.polza-ui .polza-combined-effort-name,
+.polza-ui .polza-combined-chevron {
+  color: #8a8c91;
+}
+.polza-ui .message-input-left [data-session-toolbar-control="thinkingToggle"] {
+  margin-left: auto;
+  order: 1;
+}
+.polza-ui .message-input-left [data-session-toolbar-control="microphone"] {
+  order: 2;
+}
+.polza-ui .polza-effort-menu {
+  left: auto;
+  right: 0;
+  width: min(420px, calc(100dvw - 24px));
+  gap: 15px;
+  padding: 18px 20px;
+  border: 1px solid #e2e3e5;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 32px #00000018;
+  color: #33363b;
+}
+.polza-ui .polza-effort-menu-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.polza-ui .polza-effort-menu-bolt {
+  color: #4b7ff2;
+}
+.polza-ui .polza-effort-menu-model {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: #f3f3f4;
+  color: #45484d;
+  cursor: pointer;
+}
+.polza-ui .polza-effort-menu-model strong {
+  color: #4b7ff2;
+  font-size: 16px;
+  font-weight: 500;
+}
+.polza-ui .polza-effort-menu-model span {
+  font-size: 13px;
+}
+.polza-ui .polza-effort-menu-reset {
+  border: 0;
+  background: transparent;
+  color: #8a8d93;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+.polza-ui .polza-effort-range-wrap {
+  position: relative;
+  height: 31px;
+}
+.polza-ui .polza-effort-range-wrap input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 30px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid #d9dadd;
+  border-radius: 18px;
+  background: linear-gradient(
+    to right,
+    #4b7ff2 var(--polza-effort-progress),
+    #e7e7e9 var(--polza-effort-progress)
+  );
+  cursor: pointer;
+}
+.polza-ui .polza-effort-range-wrap input::-webkit-slider-thumb {
+  width: 34px;
+  height: 34px;
+  appearance: none;
+  border: 1px solid #e2e2e4;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 5px #00000020;
+}
+.polza-ui .polza-effort-range-wrap input::-moz-range-thumb {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e2e2e4;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 5px #00000020;
+}
+.polza-ui .polza-effort-dots {
+  position: absolute;
+  z-index: 3;
+  inset: 0 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+.polza-ui .polza-effort-dots span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #b4b7bb;
+}
+.polza-model-menu {
+  position: fixed;
+  z-index: 10050;
+  width: min(400px, calc(100dvw - 24px));
+  max-height: min(520px, calc(100dvh - 110px));
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #dedfe2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 14px 35px #0000001c;
+  color: #26282c;
+}
+.polza-model-menu-heading {
+  padding: 7px 9px 10px;
+  color: #93969b;
+  font-size: 16px;
+}
+.polza-model-menu-list {
+  display: grid;
+  gap: 2px;
+}
+.polza-model-menu-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 43px;
+  padding: 8px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.polza-model-menu-item:hover,
+.polza-model-menu-item:focus-visible {
+  background: #f0f0f2;
+}
+.polza-model-menu-item:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.polza-model-menu-message {
+  padding: 12px 9px;
+  color: #71747b;
+  font-size: 13px;
+}
+.polza-model-menu-activate {
+  display: block;
+  margin-top: 10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #f0f0f2;
+  color: #35383d;
+  cursor: pointer;
+}
+.polza-model-menu-other {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #e9e9eb;
+}
+.polza-model-menu-group + .polza-model-menu-group {
+  margin-top: 8px;
+}
+.polza-model-menu-group-title {
+  padding: 8px 11px 3px;
+  color: #85878c;
+  font-size: 12px;
+  font-weight: 600;
+}
+.polza-model-menu-new {
+  color: #a3a5aa;
+  font-size: 14px;
+}
+.polza-ui:has(.polza-model-button) .session-header .provider-badge-button {
+  display: none;
+}
+.polza-ui .thinking-toggle-button,
+.polza-ui .slash-command-button,
+.polza-ui .voice-input-button {
+  border-color: transparent;
+  background: transparent;
+  color: #5b5e64;
+}
+.polza-ui .message-input-actions {
+  gap: 8px;
+}
+.polza-ui .message-input-actions .send-button,
+.polza-ui .message-input-actions .stop-button {
+  border-radius: 50%;
+  background: #08090b;
+  color: #fff;
+}
+.polza-ui .message-input-left .voice-input-button {
+  width: 40px;
+  min-width: 40px;
+  height: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #24262a;
+}
+.polza-ui .message-input-left .voice-input-button > span[aria-hidden="true"] {
+  display: none;
+}
+.polza-ui .message-input-left .voice-input-button:hover {
+  background: #f2f2f3;
+  border-radius: 50%;
+}
+.polza-ui .message-input-left .voice-input-button > svg {
+  width: 22px;
+  height: 22px;
+}
+/* The desktop-style composer does not show the legacy floating status and
+   overflow strip beside the input. */
+.polza-ui .message-input-toolbar > .composer-bottom-overflow,
+.polza-ui .message-input-toolbar > .composer-status-ages {
+  display: none;
+}
+.polza-ui .message-input-left [data-session-toolbar-control="slashMenu"],
+.polza-ui .message-input-left [data-session-toolbar-control="conversationView"],
+.polza-ui
+  .message-input-actions
+  [data-session-toolbar-control="transcriptSearch"],
+.polza-ui
+  .message-input-actions
+  [data-session-toolbar-control="shortcutsHelp"] {
+  display: none;
+}
+
+@media (width <= 700px) {
+  .polza-ui .message-input-toolbar {
+    gap: 4px;
+  }
+  .polza-ui .message-input-left {
+    gap: 2px;
+    flex: 1 1 auto;
+  }
+  .polza-ui .mode-selector-container .mode-selector-dropdown,
+  .polza-ui .polza-effort-menu {
+    position: fixed;
+    right: 12px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
+    left: 12px;
+    box-sizing: border-box;
+    width: auto;
+    max-height: calc(100dvh - 108px - env(safe-area-inset-bottom));
+    overflow-y: auto;
+  }
+  .polza-ui
+    .message-input-left
+    [data-session-toolbar-control="thinkingToggle"] {
+    margin-left: auto;
+  }
+  .polza-ui .message-input-wrapper {
+    padding: 11px 10px 9px;
+  }
+  .polza-ui .message-input .speech-draft-field textarea {
+    min-height: 62px;
+    font-size: 16px;
+  }
+  .polza-ui .message-input-toolbar {
+    min-height: 46px;
+    --composer-primary-control-size: 42px;
+  }
+  .polza-ui .attach-button {
+    width: 40px;
+    height: 40px;
+  }
+  .polza-ui .mode-button {
+    height: 40px;
+    padding-inline: 5px;
+  }
+  .polza-ui .mode-button .mode-button-label {
+    font-size: 13px;
+  }
+  .polza-ui .message-input-left .polza-combined-model-button {
+    max-width: 155px;
+    height: 40px;
+    gap: 3px;
+    padding: 2px 4px;
+    font-size: 12px;
+  }
+  .polza-ui .message-input-left .voice-input-button {
+    width: 34px;
+    min-width: 34px;
+    height: 38px;
+  }
+  .polza-ui .polza-model-button {
+    max-width: 104px;
+    padding-inline: 3px;
+    font-size: 12px;
+  }
+}
+
+@media (width < 1100px) {
+  .polza-ui .polza-app-rail {
+    display: none;
+  }
+  .polza-ui .sidebar {
+    background: #f8f8f9;
+  }
+  .polza-ui .session-messages {
+    padding: 18px 16px;
+  }
+  .polza-ui .session-input {
+    padding: 10px 12px max(12px, env(safe-area-inset-bottom));
+  }
+  .polza-ui .message-input-wrapper {
+    border-radius: 24px;
+  }
+}
+@media (width <= 390px) {
+  .polza-ui .mode-button {
+    width: auto;
+    min-width: 52px;
+    padding-inline: 7px;
+  }
+  .polza-ui .mode-button-label {
+    display: block;
+  }
+}
+
+/* Polza uses the Codex Home flow: one sidebar and one conversation surface. */
+.polza-ui .polza-app-rail,
+.polza-ui
+  .sidebar-sessions
+  > .sidebar-section:has(.sidebar-project-queue-list) {
+  display: none;
+}
+
+.polza-ui
+  .sidebar-sessions
+  > .sidebar-nav-section
+  > :not(.sidebar-return-to-superuser) {
+  display: none;
+}
+
+.polza-ui
+  .sidebar-sessions
+  > .sidebar-nav-section:not(:has(.sidebar-return-to-superuser)) {
+  display: none;
+}
+
+.polza-ui .sidebar-desktop,
+.polza-ui .sidebar-desktop .sidebar {
+  background: #f7f7f8;
+}
+
+.polza-ui .sidebar-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.polza-ui .sidebar-sessions > .sidebar-section {
+  margin-bottom: 17px;
+}
+
+.polza-ui .sidebar-sessions > .polza-project-section {
+  order: -1;
+}
+.polza-ui .polza-project-heading {
+  padding-top: 4px;
+}
+
+/* Pinning remains available from the chat menu; the list stays visually quiet. */
+.polza-ui .session-list-item--compact .session-star-icon {
+  display: none;
+}
+
+.polza-ui .sidebar-header {
+  min-height: 70px;
+  padding-block: 14px;
+}
+
+.polza-ui .polza-sidebar-search,
+.polza-ui .polza-sidebar-settings {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 9px;
+  color: #797c82;
+  text-decoration: none;
+}
+
+.polza-ui .polza-sidebar-search:hover,
+.polza-ui .polza-sidebar-settings:hover {
+  background: #e9e9eb;
+  color: #303238;
+}
+.polza-ui .polza-sidebar-search svg,
+.polza-ui .polza-sidebar-settings svg {
+  width: 18px;
+  height: 18px;
+}
+.polza-ui .polza-sidebar-settings {
+  order: 3;
+  width: calc(100% - 24px);
+  margin: 0 12px 12px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.polza-ui .settings-two-column {
+  width: min(100%, 1120px);
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 28px;
+  margin: 0 auto;
+  padding: 28px 32px;
+}
+.polza-ui .settings-category-nav {
+  max-width: none;
+}
+.polza-ui .settings-category-item {
+  border-radius: 10px;
+}
+.polza-ui .settings-content-panel {
+  max-width: none;
+}
+.polza-ui .settings-category-nav form[role="search"] {
+  display: none;
+}
+@media (max-width: 760px) {
+  .polza-ui .settings-two-column {
+    padding: 16px;
+  }
+}
+
+.polza-ui .sidebar-actions {
+  padding-bottom: 12px;
+}
+
+.polza-ui .sidebar-section-header,
+.polza-ui .polza-project-heading {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.polza-ui .polza-project-link,
+.polza-ui .session-list-item--compact .session-list-item__link {
+  min-height: 38px;
+  padding-block: 7px;
+}
+
+/* New chat follows the same full-height conversation layout as an active chat. */
+.polza-ui .new-session-page-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 1340px;
+  padding: 24px clamp(16px, 4vw, 44px) 22px;
+}
+.polza-ui .main-content-constrained .page-content-inner.new-session-page-shell {
+  max-width: 1340px;
+}
+
+.polza-ui .new-session-container {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 100%;
+  min-height: 0;
+}
+
+.polza-ui .new-session-header {
+  margin: auto auto 28px;
+  text-align: center;
+}
+
+@media (width >= 1100px) {
+  .polza-ui:has(.new-session-page-shell) .session-header {
+    display: none;
+  }
+}
+.polza-ui
+  .new-session-project-chooser:not(.expanded)
+  button[aria-controls="new-session-new-project"] {
+  display: none;
+}
+.polza-ui
+  .new-session-project-chooser:not(.expanded)
+  .new-session-project-inline-field {
+  display: none;
+}
+
+.polza-ui .new-session-subtitle {
+  max-width: none;
+  font-size: clamp(23px, 3vw, 30px);
+  font-weight: 500;
+  line-height: 1.2;
+  color: #303238;
+}
+
+.polza-ui .new-session-top-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.polza-ui .new-session-project-slot {
+  order: -1;
+}
+
+.polza-ui .new-session-project-chooser {
+  width: 235px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.polza-ui .new-session-project-controls {
+  display: block;
+}
+
+.polza-ui .new-session-project-summary {
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 9px;
+  background: #f5f5f6;
+}
+
+.polza-ui .new-session-project-summary-path {
+  display: none;
+}
+.polza-ui .new-session-project-summary-title {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.polza-ui .new-session-main-stack {
+  width: 100%;
+  padding: 10px 12px 5px;
+  border: 1px solid #e5e5e7;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 4px 22px rgba(25, 27, 32, 0.05);
+}
+
+.polza-ui .new-session-form-textarea {
+  height: 88px;
+  min-height: 88px;
+  padding: 9px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 15px;
+}
+
+.polza-ui .new-session-form .speech-draft-field textarea {
+  height: 88px;
+  min-height: 88px;
+}
+
+.polza-ui .new-session-form-textarea:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.polza-ui .new-session-provider-slot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 3px 4px;
+}
+
+.polza-ui .new-session-provider-slot h3,
+.polza-ui .new-session-provider-slot p,
+.polza-ui .new-session-provider-slot [class*="catalogStatusMuted"],
+.polza-ui .new-session-container [class*="advancedSummary"],
+.polza-ui .new-session-container [class*="captionToggle"] {
+  display: none;
+}
+
+.polza-ui .new-session-provider-slot > * {
+  width: auto;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.polza-ui .new-session-provider-section,
+.polza-ui .new-session-model-section {
+  margin: 0;
+}
+
+.polza-ui .new-session-form-toolbar .toolbar-button,
+.polza-ui .new-session-form-toolbar .voice-input-button {
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.polza-ui .new-session-form-toolbar .toolbar-button:hover,
+.polza-ui .new-session-form-toolbar .voice-input-button:hover {
+  background: #f0f1f3;
+}
+
+.polza-ui .new-session-submit-button {
+  border-radius: 50%;
+  background: #161719;
+  color: #fff;
+}
+
+@media (width <= 700px) {
+  .polza-ui .new-session-page-shell {
+    padding: 15px 14px max(14px, env(safe-area-inset-bottom));
+  }
+  .polza-ui .new-session-main-stack {
+    border-radius: 19px;
+  }
+  .polza-ui .new-session-header {
+    margin-bottom: 22px;
+  }
+  .polza-ui .new-session-subtitle {
+    font-size: 23px;
+  }
+  .polza-ui .new-session-form-textarea {
+    height: 76px;
+    min-height: 76px;
+  }
+  .polza-ui .new-session-form .speech-draft-field textarea {
+    height: 76px;
+    min-height: 76px;
+  }
+}
+.polza-ui .polza-project-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.polza-ui .polza-project-heading a {
+  color: var(--text-secondary);
+  font-size: 21px;
+  font-weight: 400;
+  text-decoration: none;
+  padding: 0 8px;
+}
+.polza-ui .polza-project-list li {
+  display: flex;
+  align-items: center;
+  position: relative;
+  min-width: 0;
+}
+.polza-ui .polza-project-list > li:has(.polza-project-popover) {
+  z-index: 10;
+}
+.polza-ui .polza-project-list .polza-project-link {
+  flex: 1;
+  min-width: 0;
+}
+.polza-ui .polza-project-list .polza-project-dots {
+  opacity: 0;
+}
+.polza-ui .polza-project-list li:hover .polza-project-dots,
+.polza-ui .polza-project-list .polza-project-dots[aria-expanded="true"] {
+  opacity: 1;
+}
+.polza-create-project {
+  display: grid;
+  gap: 22px;
+  min-width: min(670px, 80vw);
+  padding: 10px 2px 15px;
+}
+.polza-create-project label {
+  display: grid;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.polza-create-project input {
+  width: 100%;
+  min-height: 52px;
+  padding: 12px 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+}
+.polza-create-project input:focus {
+  outline: 2px solid #4b82f8;
+  outline-offset: 0;
+}
+.polza-create-project p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+.polza-create-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 15px;
+  margin-top: 12px;
+}
+.polza-create-project-actions button {
+  padding: 10px 17px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.polza-create-project-actions button[type="submit"] {
+  background: #202124;
+  color: #fff;
+}
+.polza-create-project-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (max-width: 700px) {
+  .polza-ui .polza-project-list .polza-project-dots {
+    opacity: 1;
+  }
+  .polza-create-project {
+    min-width: 0;
+  }
+}
+.polza-ui .polza-project-list li:has(> .polza-project-chat-sublist) {
+  flex-wrap: wrap;
+}
+.polza-ui .polza-project-chat-sublist {
+  flex: 0 0 100%;
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0 0 0 34px;
+  min-width: 0;
+}
+.polza-ui .polza-project-chat-sublist li {
+  display: block;
+  min-width: 0;
+}
+.polza-ui .polza-project-chat-sublist a {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+.polza-ui .polza-project-chat-sublist a:hover {
+  background: var(--bg-hover);
+}
+.modal:has(.polza-create-project) {
+  width: min(780px, calc(100vw - 32px));
+  max-width: 780px;
+  border-radius: 24px;
+}
+.modal:has(.polza-create-project) .modal-header {
+  font-size: 23px;
+}
+.modal:has(.polza-rename-chat) {
+  width: min(440px, calc(100vw - 32px));
+  max-width: 440px;
+  border-radius: 20px;
+  border-color: #e7e7e9;
+  box-shadow: 0 22px 65px rgb(0 0 0 / 0.16);
+}
+.modal:has(.polza-rename-chat) .modal-header {
+  padding: 22px 24px 4px;
+  border: 0;
+  background: var(--bg-surface);
+}
+.modal:has(.polza-rename-chat) .modal-title {
+  font-size: 24px;
+  font-weight: 650;
+}
+.modal:has(.polza-rename-chat) .modal-close {
+  font-size: 22px;
+  font-weight: 400;
+}
+.modal:has(.polza-rename-chat) .modal-content {
+  padding: 0 24px 22px;
+  overflow: visible;
+}
+.polza-rename-chat {
+  display: grid;
+  gap: 16px;
+}
+.polza-rename-chat > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+.polza-rename-chat input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 48px;
+  padding: 10px 13px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+}
+.polza-rename-chat input:focus {
+  outline: 2px solid #4b82f8;
+  outline-offset: -1px;
+}
+.polza-rename-chat .polza-rename-chat-error {
+  color: #b42318;
+  font-size: 13px;
+}
+.polza-rename-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 2px;
+}
+.polza-rename-chat-actions button {
+  min-width: 76px;
+  padding: 9px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.polza-rename-chat-actions button:last-child {
+  border-color: #202124;
+  background: #202124;
+  color: white;
+}
+.polza-rename-chat-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

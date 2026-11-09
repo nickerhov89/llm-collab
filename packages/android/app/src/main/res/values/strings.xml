@@ -1,0 +1,97 @@
+<resources>
+    <string name="app_name">Yep Anywhere</string>
+    <string name="privacy_policy">Privacy policy</string>
+    <string name="open_full_app">Open full app</string>
+    <string name="connect_to_server">Connect to your server</string>
+    <string name="connect_to_server_explanation">Enter the remote-access username and password configured on your Yep Anywhere server.</string>
+    <string name="advanced_connection">Advanced connection</string>
+    <string name="hide_advanced_connection">Hide advanced connection</string>
+    <string name="connection_route">Connection route</string>
+    <string name="direct_connection">Direct</string>
+    <string name="relay_connection">Relay</string>
+    <string name="direct_connection_explanation">Enter the exact secure WebSocket address of your server.</string>
+    <string name="relay_connection_explanation">The public Yep Anywhere relay is used when the custom URL is empty.</string>
+    <string name="custom_relay_url">Custom relay URL</string>
+    <string name="default_relay_url" translatable="false">wss://relay.yepanywhere.com/ws</string>
+    <string name="websocket_url">WebSocket URL</string>
+    <string name="websocket_url_example" translatable="false">wss://example.com/api/ws</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="connect">Connect</string>
+    <string name="cancel">Cancel</string>
+    <string name="back">Back</string>
+    <string name="servers">Servers</string>
+    <string name="add_server">Add server</string>
+    <string name="forget_server">Forget server</string>
+    <string name="forget_server_title">Forget this server?</string>
+    <string name="forget_server_explanation">This removes the saved server profile and its protected resume credential from this device.</string>
+    <string name="remove_server">Remove server</string>
+    <string name="remove_server_title">Remove this server?</string>
+    <string name="remove_server_explanation">Yep Anywhere will first unregister this Android device from the server, revoking its saved sessions and push access, and then erase the local profile and protected keys.</string>
+    <string name="forget_anyway">Forget anyway</string>
+    <string name="forget_anyway_title">Could not unregister this device</string>
+    <string name="forget_anyway_explanation">The server is offline or rejected the request. Forgetting anyway erases this phone’s profile and keys, but the server-side device or push record may remain until you remove it there.</string>
+    <string name="finish_forgetting">Finish forgetting</string>
+    <string name="finish_forgetting_title">Device unregistered</string>
+    <string name="finish_forgetting_explanation">The server revoked this device, but Android could not erase the local profile. Try the local cleanup again.</string>
+    <string name="sign_in_again">Sign in again</string>
+    <string name="sign_in_again_explanation">The saved session expired or was rejected. Enter your server password to create a new session.</string>
+    <string name="sign_in">Sign in</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="connection_idle">Idle</string>
+    <string name="connection_connecting">Connecting…</string>
+    <string name="connection_connected">Connected</string>
+    <string name="connection_retrying">Reconnecting…</string>
+    <string name="connection_sign_in_required">Sign-in required</string>
+    <string name="connection_revoked">Device revoked</string>
+    <string name="connection_failed">Offline</string>
+    <string name="invalid_server_details">Check the username, password, and any advanced connection settings.</string>
+    <string name="server_unavailable">Could not reach this server. Check your connection and try again.</string>
+    <string name="authentication_failed">Could not authenticate with this server.</string>
+    <string name="connection_failed_message">Could not update the saved server.</string>
+    <string name="retry">Retry</string>
+    <string name="web_client_unavailable">Yep Anywhere is unavailable.</string>
+    <string name="notification_channel_activity_id" translatable="false">ya_activity</string>
+    <string name="notification_channel_activity_name">Session activity</string>
+    <string name="notification_channel_activity_description">Approvals, questions, and session updates</string>
+    <string name="asset_statements" translatable="false">
+        [{
+          \"include\": \"https://yepanywhere.com/.well-known/assetlinks.json\"
+        }]
+    </string>
+    <string name="native_push_enabled">Notifications enabled for this server</string>
+    <string name="native_push_disabled">Notifications are off for this server</string>
+    <string name="native_push_enable">Enable notifications</string>
+    <string name="native_push_disable">Disable notifications</string>
+    <string name="native_push_test">Send test</string>
+    <string name="native_push_blocked">Android is blocking notifications from Yep Anywhere. Allow them in settings to turn them on for this server.</string>
+    <string name="native_push_enabled_blocked">Notifications are on for this server, but Android is blocking them.</string>
+    <string name="native_push_open_settings">Open notification settings</string>
+    <string name="native_push_offer_title">Turn on notifications?</string>
+    <string name="native_push_offer_body">Get notified when an agent on %1$s needs your approval or input, or finishes. Notifications never include session content.</string>
+    <string name="native_push_offer_decline">Not now</string>
+    <string name="native_push_failed">Could not update notifications. Check your connection, then retry.</string>
+    <string name="native_push_update_required">Update this YA server to enable native notifications.</string>
+    <string name="push_approval">An agent needs your approval.</string>
+    <string name="push_input">An agent needs your input.</string>
+    <string name="push_completed">An agent has finished working.</string>
+    <string name="push_failed">An agent stopped with an error.</string>
+    <string name="push_test_message">Notifications are working. Tap to open your server.</string>
+    <string name="native_tab_projects">Projects</string>
+    <string name="native_tabs">Tabs</string>
+    <plurals name="native_tabs_count">
+        <item quantity="one">Tabs, %1$d open</item>
+        <item quantity="other">Tabs, %1$d open</item>
+    </plurals>
+    <string name="native_tabs_done">Done</string>
+    <string name="native_tab_new">New tab</string>
+    <string name="native_tab_add_host">Add host</string>
+    <string name="native_tab_open">Open in new tab</string>
+    <string name="native_tab_opened">Opened in new tab</string>
+    <string name="native_tab_limit">Close a tab before opening another (maximum %1$d)</string>
+    <string name="native_tab_unavailable_host">Unavailable host</string>
+    <string name="native_tab_host_label">%1$s%2$s</string>
+    <string name="native_tab_select">Switch to tab: %1$s, %2$s</string>
+    <string name="native_tab_close">Close tab: %1$s</string>
+    <string name="native_switch_host">Switch host</string>
+</resources>

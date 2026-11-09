@@ -1,0 +1,137 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/dist-*",
+      "!**/*.d.ts",
+      "!**/.artifacts",
+      "!**/.tmp",
+      "!**/.git-blame-ignore-revs",
+      "!**/.handoff-recap.md",
+      "!**/*.running.md",
+      "!**/tasks",
+      "!**/docs/tasks",
+      "!**/branding",
+      "!**/packages/desktop",
+      "!**/packages/server/generated/codex-app-server",
+      "!**/packages/server/src/sdk/providers/codex-protocol/generated"
+    ]
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.astro"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/device-bridge/cmd/bridge/web/**/*.html"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedVariables": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/server/test/fixtures/**/*.html"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noAmbiguousAnchorText": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/client/src/**/*.module.css"],
+      "linter": {
+        "rules": {
+          "complexity": {
+            "noImportantStyles": "error"
+          },
+          "nursery": {
+            "noExcessiveSelectorClasses": {
+              "level": "error",
+              "options": { "maxClasses": 4 }
+            }
+          },
+          "style": {
+            "noDescendingSpecificity": "error",
+            "noExcessiveLinesPerFile": {
+              "level": "warn",
+              "options": { "maxLines": 600 }
+            },
+            "noValueAtRule": "error"
+          },
+          "suspicious": {
+            "noDuplicateProperties": "error"
+          }
+        }
+      }
+    }
+  ],
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "assist": { "actions": { "source": { "organizeImports": "off" } } },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noArrayIndexKey": "off",
+        "noAssignInExpressions": "warn",
+        "noControlCharactersInRegex": "warn",
+        "noDuplicateProperties": "off",
+        "noExplicitAny": "warn",
+        "useIterableCallbackReturn": "warn"
+      },
+      "correctness": {
+        "noInvalidUseBeforeDeclaration": "warn",
+        "useExhaustiveDependencies": "warn"
+      },
+      "complexity": {
+        "noImportantStyles": "off"
+      },
+      "style": {
+        "noDescendingSpecificity": "off",
+        "noNonNullAssertion": "off",
+        "useTemplate": "off"
+      },
+      "a11y": {
+        "noLabelWithoutControl": "warn",
+        "noStaticElementInteractions": "warn",
+        "useAriaPropsForRole": "warn",
+        "useAriaPropsSupportedByRole": "warn",
+        "useButtonType": "warn",
+        "useHtmlLang": "warn",
+        "useKeyWithClickEvents": "warn",
+        "useSemanticElements": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always"
+    }
+  }
+}

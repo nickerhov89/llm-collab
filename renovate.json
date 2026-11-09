@@ -1,0 +1,5 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Renovate is disabled. GitHub Dependabot security updates are the sole automated update source; see docs/development/dependencies.md.",
+  "enabled": false
+}

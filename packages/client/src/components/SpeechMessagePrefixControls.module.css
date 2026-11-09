@@ -1,0 +1,66 @@
+.root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: min(22rem, 100%);
+}
+
+.control {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.selectShell {
+  position: relative;
+  width: 100%;
+}
+
+.selectIcon {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 0.55rem;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.selectShell[data-disabled="true"] .selectIcon {
+  opacity: 0.5;
+}
+
+.select,
+.textInput {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.select:focus-visible,
+.textInput:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.selectWithIcon {
+  padding-left: 1.9rem;
+}
+
+.preview {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.35;
+}

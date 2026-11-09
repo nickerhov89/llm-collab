@@ -1,0 +1,585 @@
+import type {
+  ClientDefaults,
+  EffortLevel,
+  ModelOption,
+  ShowThinking,
+  ThinkingMode,
+  ThinkingOption,
+} from "@yep-anywhere/shared";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { api } from "../api/client";
+import {
+  CLIENT_STORAGE_DEFAULT,
+  type DefaultedValue,
+  isClientStorageDefault,
+  resolveDefaultedValue,
+} from "../lib/defaultedStorage";
+import { EFFORT_LEVEL_OPTIONS, isEffortLevel } from "../lib/effortLevels";
+import { createLocalStorageValue } from "../lib/localStorageValue";
+import { DEFAULT_PARAKEET_SPEECH_MODEL } from "../lib/speechProviders/parakeetModels";
+import {
+  DEFAULT_SPEECH_METHOD,
+  isSpeechMethodId,
+  type SpeechMethodId,
+} from "../lib/speechProviders/methods";
+import {
+  cleanSpeechSmartTurnSettings,
+  DEFAULT_GROK_SPEECH_AUDIO_SETTINGS,
+  DEFAULT_SPEECH_SMART_TURN_SETTINGS,
+  type GrokSpeechAudioSettings,
+  type SpeechSmartTurnSettings,
+} from "../lib/speechProviders/SpeechProvider";
+import { BROWSER_LOCAL_KEYS } from "../lib/storageKeys";
+import { useVersion } from "./useVersion";
+
+/**
+ * Re-export shared types for convenience.
+ */
+export type { EffortLevel, ModelOption, ThinkingMode, ThinkingOption };
+
+export const MODEL_OPTIONS: { value: ModelOption; label: string }[] = [
+  { value: "default", label: "Default" },
+  { value: "best", label: "Best" },
+  { value: "fable", label: "Fable" },
+  { value: "sonnet", label: "Sonnet" },
+  { value: "opus", label: "Opus" },
+  { value: "haiku", label: "Haiku" },
+  { value: "opusplan", label: "Opus Plan" },
+];
+
+export { EFFORT_LEVEL_OPTIONS };
+
+/**
+ * Opus and Sonnet are both always 1M now (the picker no longer offers a
+ * separate "Opus 1M"/"Sonnet 1M" choice), so remap any previously stored
+ * "opus[1m]"/"sonnet[1m]" preference to the base alias rather than dropping it
+ * back to "default". Both `[1m]` ids stay valid launch strings; they are just
+ * no longer offered as picker entries.
+ */
+function remapLegacyModelChoice(stored: string | null): string | null {
+  if (stored === "opus[1m]") return "opus";
+  if (stored === "sonnet[1m]") return "sonnet";
+  return stored;
+}
+
+function loadModel(): ModelOption {
+  const stored = remapLegacyModelChoice(
+    localStorage.getItem(BROWSER_LOCAL_KEYS.model),
+  );
+  if (stored && MODEL_OPTIONS.some((option) => option.value === stored)) {
+    return stored as ModelOption;
+  }
+  return "default";
+}
+
+function saveModel(model: ModelOption) {
+  localStorage.setItem(BROWSER_LOCAL_KEYS.model, model);
+}
+
+/** Migration map from old thinking levels to effort levels */
+const LEGACY_LEVEL_MAP: Record<string, EffortLevel> = {
+  light: "low",
+  medium: "medium",
+  thorough: "max",
+};
+
+function loadEffortLevel(): EffortLevel {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.thinkingLevel);
+  if (stored) {
+    // Check for new effort level values
+    if (isEffortLevel(stored)) {
+      return stored;
+    }
+    // Migrate old thinking level values
+    const migrated = LEGACY_LEVEL_MAP[stored];
+    if (migrated) {
+      saveEffortLevel(migrated);
+      return migrated;
+    }
+  }
+  return "high"; // SDK default
+}
+
+function saveEffortLevel(level: EffortLevel) {
+  localStorage.setItem(BROWSER_LOCAL_KEYS.thinkingLevel, level);
+}
+
+const THINKING_MODES: ThinkingMode[] = ["off", "auto", "on"];
+
+function loadThinkingMode(): ThinkingMode {
+  // Try new key first
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.thinkingMode);
+  if (stored && THINKING_MODES.includes(stored as ThinkingMode)) {
+    return stored as ThinkingMode;
+  }
+  // Migrate from old boolean thinkingEnabled
+  const legacy = localStorage.getItem(BROWSER_LOCAL_KEYS.thinkingEnabled);
+  if (legacy === "true") {
+    // Old "on" was adaptive, so migrate to "auto"
+    saveThinkingMode("auto");
+    return "auto";
+  }
+  return "off";
+}
+
+function saveThinkingMode(mode: ThinkingMode) {
+  localStorage.setItem(BROWSER_LOCAL_KEYS.thinkingMode, mode);
+}
+
+const SHOW_THINKING_VALUES: ShowThinking[] = ["default", "on", "off"];
+
+/**
+ * "Show thinking" preference (default/on/off). Provider-agnostic: drives the
+ * client render gate (default show/hide of thought blocks). Provider summary
+ * requests are controlled separately by the server. Defaults to "default".
+ */
+function loadShowThinking(): ShowThinking {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.showThinking);
+  return stored && SHOW_THINKING_VALUES.includes(stored as ShowThinking)
+    ? (stored as ShowThinking)
+    : "default";
+}
+
+function saveShowThinking(value: ShowThinking) {
+  localStorage.setItem(BROWSER_LOCAL_KEYS.showThinking, value);
+}
+
+function loadVoiceInputEnabled(): boolean {
+  return resolveDefaultedValue(
+    loadVoiceInputEnabledSetting(),
+    getBuiltInSpeechClientDefaults().voiceInputEnabled,
+  );
+}
+
+function loadVoiceInputEnabledSetting(): DefaultedValue<boolean> {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.voiceInputEnabled);
+  if (stored === "true") return true;
+  if (stored === "false") return false;
+  return CLIENT_STORAGE_DEFAULT;
+}
+
+function saveVoiceInputEnabled(enabled: boolean) {
+  localStorage.setItem(
+    BROWSER_LOCAL_KEYS.voiceInputEnabled,
+    enabled ? "true" : "false",
+  );
+}
+
+function loadStoredSpeechMethod(): SpeechMethodId | null {
+  const stored = loadSpeechMethodSetting();
+  return isClientStorageDefault(stored) ? null : stored;
+}
+
+function loadSpeechMethodSetting(): DefaultedValue<SpeechMethodId> {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.speechMethod);
+  if (stored && isSpeechMethodId(stored)) {
+    return stored;
+  }
+  return CLIENT_STORAGE_DEFAULT;
+}
+
+function loadSpeechMethod(): SpeechMethodId {
+  return resolveDefaultedValue(
+    loadSpeechMethodSetting(),
+    getBuiltInSpeechClientDefaults().speechMethod,
+  );
+}
+
+function saveSpeechMethod(method: SpeechMethodId) {
+  localStorage.setItem(BROWSER_LOCAL_KEYS.speechMethod, method);
+}
+
+function loadSpeechSmartTurnSettings(): SpeechSmartTurnSettings {
+  return cleanSpeechSmartTurnSettings(
+    resolveDefaultedValue(
+      loadSpeechSmartTurnSettingsSetting(),
+      getBuiltInSpeechClientDefaults().speechSmartTurnSettings,
+    ),
+  );
+}
+
+function loadSpeechSmartTurnSettingsSetting(): DefaultedValue<SpeechSmartTurnSettings> {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.speechSmartTurn);
+  if (!stored || stored === CLIENT_STORAGE_DEFAULT)
+    return CLIENT_STORAGE_DEFAULT;
+  try {
+    return cleanSpeechSmartTurnSettings(
+      JSON.parse(stored) as unknown as Partial<SpeechSmartTurnSettings>,
+    );
+  } catch {
+    return CLIENT_STORAGE_DEFAULT;
+  }
+}
+
+function saveSpeechSmartTurnSettings(settings: SpeechSmartTurnSettings) {
+  localStorage.setItem(
+    BROWSER_LOCAL_KEYS.speechSmartTurn,
+    JSON.stringify(cleanSpeechSmartTurnSettings(settings)),
+  );
+}
+
+function cleanGrokSpeechAudioSettings(
+  settings: Partial<GrokSpeechAudioSettings>,
+): GrokSpeechAudioSettings {
+  return {
+    uplinkMode:
+      settings.uplinkMode === "browser-compressed"
+        ? "browser-compressed"
+        : DEFAULT_GROK_SPEECH_AUDIO_SETTINGS.uplinkMode,
+  };
+}
+
+function loadGrokSpeechAudioSettings(): GrokSpeechAudioSettings {
+  return resolveDefaultedValue(
+    loadGrokSpeechAudioSettingsSetting(),
+    getBuiltInSpeechClientDefaults().grokSpeechAudioSettings,
+  );
+}
+
+function loadGrokSpeechAudioSettingsSetting(): DefaultedValue<GrokSpeechAudioSettings> {
+  const stored = localStorage.getItem(BROWSER_LOCAL_KEYS.grokSpeechAudio);
+  if (!stored || stored === CLIENT_STORAGE_DEFAULT)
+    return CLIENT_STORAGE_DEFAULT;
+  try {
+    return cleanGrokSpeechAudioSettings(
+      JSON.parse(stored) as unknown as Partial<GrokSpeechAudioSettings>,
+    );
+  } catch {
+    return CLIENT_STORAGE_DEFAULT;
+  }
+}
+
+function saveGrokSpeechAudioSettings(settings: GrokSpeechAudioSettings) {
+  localStorage.setItem(
+    BROWSER_LOCAL_KEYS.grokSpeechAudio,
+    JSON.stringify(cleanGrokSpeechAudioSettings(settings)),
+  );
+}
+
+/**
+ * Local speech-to-text model choices. Every composer mounted at once shows the
+ * same choice, so these are shared stores rather than per-hook state: a write
+ * in one reaches the others, and a write in another tab arrives as a storage
+ * event. Stored trimmed; an in-progress edit keeps whatever the user typed.
+ */
+const parakeetSpeechModelStore = createLocalStorageValue(
+  BROWSER_LOCAL_KEYS.parakeetSpeechModel,
+  "",
+  (raw) => raw.trim(),
+  (model) => model.trim(),
+);
+
+const whisperSpeechModelStore = createLocalStorageValue(
+  BROWSER_LOCAL_KEYS.whisperSpeechModel,
+  "",
+  (raw) => raw.trim(),
+  (model) => model.trim(),
+);
+
+function getBuiltInSpeechClientDefaults(): Required<
+  NonNullable<ClientDefaults["speech"]>
+> {
+  return {
+    voiceInputEnabled: true,
+    speechMethod: DEFAULT_SPEECH_METHOD,
+    speechSmartTurnSettings: { ...DEFAULT_SPEECH_SMART_TURN_SETTINGS },
+    grokSpeechAudioSettings: { ...DEFAULT_GROK_SPEECH_AUDIO_SETTINGS },
+  };
+}
+
+function getSpeechClientDefaults(
+  clientDefaults: ClientDefaults | undefined,
+): Required<NonNullable<ClientDefaults["speech"]>> {
+  const builtInDefaults = getBuiltInSpeechClientDefaults();
+  return {
+    ...builtInDefaults,
+    ...clientDefaults?.speech,
+    speechSmartTurnSettings: {
+      ...builtInDefaults.speechSmartTurnSettings,
+      ...clientDefaults?.speech?.speechSmartTurnSettings,
+    },
+    grokSpeechAudioSettings: {
+      ...builtInDefaults.grokSpeechAudioSettings,
+      ...clientDefaults?.speech?.grokSpeechAudioSettings,
+    },
+  };
+}
+
+function saveSpeechClientDefaults(
+  speech: NonNullable<ClientDefaults["speech"]>,
+): void {
+  void api.updateServerSettings({ clientDefaults: { speech } }).catch((err) => {
+    console.warn(
+      "[useModelSettings] Failed to save server client defaults:",
+      err instanceof Error ? err.message : String(err),
+    );
+  });
+}
+
+/**
+ * Hook to manage model and thinking preferences.
+ */
+export function useModelSettings() {
+  const { version } = useVersion();
+  const speechDefaults = useMemo(
+    () => getSpeechClientDefaults(version?.clientDefaults),
+    [version?.clientDefaults],
+  );
+  const hasServerSpeechMethodDefault = Boolean(
+    version?.clientDefaults?.speech?.speechMethod,
+  );
+  const [model, setModelState] = useState<ModelOption>(loadModel);
+  const [effortLevel, setEffortLevelState] =
+    useState<EffortLevel>(loadEffortLevel);
+  const [thinkingMode, setThinkingModeState] =
+    useState<ThinkingMode>(loadThinkingMode);
+  const [showThinking, setShowThinkingState] =
+    useState<ShowThinking>(loadShowThinking);
+  const [voiceInputEnabled, setVoiceInputEnabledState] = useState<boolean>(() =>
+    resolveDefaultedValue(
+      loadVoiceInputEnabledSetting(),
+      speechDefaults.voiceInputEnabled,
+    ),
+  );
+  const [speechMethod, setSpeechMethodState] = useState<SpeechMethodId>(() =>
+    resolveDefaultedValue(
+      loadSpeechMethodSetting(),
+      speechDefaults.speechMethod,
+    ),
+  );
+  const [hasStoredSpeechMethod, setHasStoredSpeechMethod] = useState<boolean>(
+    () => !isClientStorageDefault(loadSpeechMethodSetting()),
+  );
+  const [speechSmartTurnSettings, setSpeechSmartTurnSettingsState] =
+    useState<SpeechSmartTurnSettings>(() =>
+      cleanSpeechSmartTurnSettings(
+        resolveDefaultedValue(
+          loadSpeechSmartTurnSettingsSetting(),
+          speechDefaults.speechSmartTurnSettings,
+        ),
+      ),
+    );
+  const [grokSpeechAudioSettings, setGrokSpeechAudioSettingsState] =
+    useState<GrokSpeechAudioSettings>(() =>
+      resolveDefaultedValue(
+        loadGrokSpeechAudioSettingsSetting(),
+        speechDefaults.grokSpeechAudioSettings,
+      ),
+    );
+  const parakeetSpeechModel = useSyncExternalStore(
+    parakeetSpeechModelStore.subscribe,
+    parakeetSpeechModelStore.read,
+    parakeetSpeechModelStore.read,
+  );
+  const whisperSpeechModel = useSyncExternalStore(
+    whisperSpeechModelStore.subscribe,
+    whisperSpeechModelStore.read,
+    whisperSpeechModelStore.read,
+  );
+
+  useEffect(() => {
+    if (isClientStorageDefault(loadVoiceInputEnabledSetting())) {
+      setVoiceInputEnabledState(speechDefaults.voiceInputEnabled);
+    }
+    if (isClientStorageDefault(loadSpeechMethodSetting())) {
+      setSpeechMethodState(speechDefaults.speechMethod);
+      setHasStoredSpeechMethod(hasServerSpeechMethodDefault);
+    }
+    if (isClientStorageDefault(loadSpeechSmartTurnSettingsSetting())) {
+      setSpeechSmartTurnSettingsState(
+        cleanSpeechSmartTurnSettings(speechDefaults.speechSmartTurnSettings),
+      );
+    }
+    if (isClientStorageDefault(loadGrokSpeechAudioSettingsSetting())) {
+      setGrokSpeechAudioSettingsState(speechDefaults.grokSpeechAudioSettings);
+    }
+  }, [
+    speechDefaults.voiceInputEnabled,
+    speechDefaults.speechMethod,
+    speechDefaults.speechSmartTurnSettings,
+    speechDefaults.grokSpeechAudioSettings,
+    hasServerSpeechMethodDefault,
+  ]);
+
+  const setModel = useCallback((m: ModelOption) => {
+    setModelState(m);
+    saveModel(m);
+  }, []);
+
+  const setEffortLevel = useCallback((level: EffortLevel) => {
+    setEffortLevelState(level);
+    saveEffortLevel(level);
+  }, []);
+
+  const setThinkingMode = useCallback((mode: ThinkingMode) => {
+    setThinkingModeState(mode);
+    saveThinkingMode(mode);
+  }, []);
+
+  const setShowThinking = useCallback((value: ShowThinking) => {
+    setShowThinkingState(value);
+    saveShowThinking(value);
+  }, []);
+
+  const cycleThinkingMode = useCallback(() => {
+    const idx = THINKING_MODES.indexOf(thinkingMode);
+    const next = THINKING_MODES[(idx + 1) % THINKING_MODES.length] ?? "off";
+    setThinkingModeState(next);
+    saveThinkingMode(next);
+  }, [thinkingMode]);
+
+  const setVoiceInputEnabled = useCallback((enabled: boolean) => {
+    setVoiceInputEnabledState(enabled);
+    saveVoiceInputEnabled(enabled);
+    saveSpeechClientDefaults({ voiceInputEnabled: enabled });
+  }, []);
+
+  const toggleVoiceInput = useCallback(() => {
+    const newEnabled = !voiceInputEnabled;
+    setVoiceInputEnabledState(newEnabled);
+    saveVoiceInputEnabled(newEnabled);
+    saveSpeechClientDefaults({ voiceInputEnabled: newEnabled });
+  }, [voiceInputEnabled]);
+
+  const setSpeechMethod = useCallback((method: SpeechMethodId) => {
+    setSpeechMethodState(method);
+    setHasStoredSpeechMethod(true);
+    saveSpeechMethod(method);
+    saveSpeechClientDefaults({ speechMethod: method });
+  }, []);
+
+  const setSpeechSmartTurnSettings = useCallback(
+    (settings: SpeechSmartTurnSettings) => {
+      const clean = cleanSpeechSmartTurnSettings(settings);
+      setSpeechSmartTurnSettingsState(clean);
+      saveSpeechSmartTurnSettings(clean);
+      saveSpeechClientDefaults({ speechSmartTurnSettings: clean });
+    },
+    [],
+  );
+
+  const setGrokSpeechAudioSettings = useCallback(
+    (settings: GrokSpeechAudioSettings) => {
+      const clean = cleanGrokSpeechAudioSettings(settings);
+      setGrokSpeechAudioSettingsState(clean);
+      saveGrokSpeechAudioSettings(clean);
+      saveSpeechClientDefaults({ grokSpeechAudioSettings: clean });
+    },
+    [],
+  );
+
+  const setParakeetSpeechModel = useCallback((model: string) => {
+    parakeetSpeechModelStore.set(model);
+  }, []);
+  const setWhisperSpeechModel = useCallback((model: string) => {
+    whisperSpeechModelStore.set(model);
+  }, []);
+
+  return {
+    model,
+    setModel,
+    effortLevel,
+    setEffortLevel,
+    // Keep thinkingLevel as alias for backward compat with components
+    thinkingLevel: effortLevel,
+    setThinkingLevel: setEffortLevel,
+    thinkingMode,
+    setThinkingMode,
+    cycleThinkingMode,
+    showThinking,
+    setShowThinking,
+    voiceInputEnabled,
+    setVoiceInputEnabled,
+    toggleVoiceInput,
+    speechMethod,
+    hasStoredSpeechMethod,
+    setSpeechMethod,
+    speechSmartTurnSettings,
+    setSpeechSmartTurnSettings,
+    grokSpeechAudioSettings,
+    setGrokSpeechAudioSettings,
+    parakeetSpeechModel,
+    setParakeetSpeechModel,
+    whisperSpeechModel,
+    setWhisperSpeechModel,
+  };
+}
+
+/**
+ * Get model setting without React state (for non-component code).
+ */
+export function getModelSetting(): ModelOption {
+  return loadModel();
+}
+
+/**
+ * Get thinking setting as ThinkingOption (for API compatibility).
+ * - "off" when thinking is disabled
+ * - "auto" for adaptive (model decides when to think)
+ * - "on:level" for forced-on thinking at that effort level
+ */
+export function getThinkingSetting(
+  effortOverride?: EffortLevel,
+): ThinkingOption {
+  const mode = loadThinkingMode();
+  if (mode === "off") return "off";
+  if (mode === "auto") return "auto";
+  return `on:${effortOverride ?? loadEffortLevel()}`;
+}
+
+/**
+ * Get thinking mode without React state.
+ */
+export function getThinkingMode(): ThinkingMode {
+  return loadThinkingMode();
+}
+
+/**
+ * Get effort level without React state.
+ */
+export function getEffortLevel(): EffortLevel {
+  return loadEffortLevel();
+}
+
+/**
+ * Get the "Show thinking" preference (default/on/off) without React state.
+ */
+export function getShowThinkingSetting(): ShowThinking {
+  return loadShowThinking();
+}
+
+/**
+ * Get voice input enabled state without React state.
+ */
+export function getVoiceInputEnabled(): boolean {
+  return loadVoiceInputEnabled();
+}
+
+/**
+ * Get the persisted speech method without React state.
+ */
+export function getSpeechMethod(): SpeechMethodId {
+  return loadSpeechMethod();
+}
+
+export function hasStoredSpeechMethodSetting(): boolean {
+  return loadStoredSpeechMethod() !== null;
+}
+
+export function getSpeechSmartTurnSettings(): SpeechSmartTurnSettings {
+  return loadSpeechSmartTurnSettings();
+}
+
+export function getGrokSpeechAudioSettings(): GrokSpeechAudioSettings {
+  return loadGrokSpeechAudioSettings();
+}
+
+export function getParakeetSpeechModel(): string {
+  return parakeetSpeechModelStore.read() || DEFAULT_PARAKEET_SPEECH_MODEL;
+}

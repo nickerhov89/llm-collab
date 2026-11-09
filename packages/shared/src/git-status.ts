@@ -1,0 +1,536 @@
+import type {
+  ReviewCommentSide,
+  ReviewSourceProjection,
+} from "./review-comments.js";
+import type { PatchHunk } from "./types.js";
+
+export {
+  GIT_DIRTY_FILE_EDITOR_CAPABILITY,
+  GIT_FILE_DIFF_PROJECTIONS_CAPABILITY,
+  GIT_FILE_REVISION_CAPABILITY,
+  GIT_INCLUSIVE_TO_HEAD_CAPABILITY,
+  GIT_INCOMING_COMMITS_CAPABILITY,
+  GIT_SOURCE_REVIEW_CAPABILITY,
+  GIT_SOURCE_REVIEW_PROJECTIONS_CAPABILITY,
+  GIT_SOURCE_REVIEW_SUBMISSIONS_CAPABILITY,
+  GIT_STATUS_CAPABILITY,
+  GIT_STATUS_ENHANCED_CAPABILITY,
+  GIT_STATUS_INTEGRATION_OPTIONS_CAPABILITY,
+  GIT_STATUS_PULL_CAPABILITY,
+  GIT_STATUS_PUSH_CAPABILITY,
+  GIT_STATUS_REMOTE_CHECK_CAPABILITY,
+} from "./server-capabilities.js";
+
+/** Last YA session observed successfully mutating a still-dirty file. */
+export interface GitFileEditor {
+  sessionId: string;
+  /** Successful tool-result observation time, as ISO 8601. */
+  observedAt: string;
+}
+
+export interface GitFileChange {
+  /** Relative path within the repo. May be a compact untracked directory. */
+  path: string;
+  /** Git status code: M, A, D, ?, R, T, U */
+  status: string;
+  /** Whether the change is staged (in the index) */
+  staged: boolean;
+  /** Lines added (null for binary or untracked files) */
+  linesAdded: number | null;
+  /** Lines deleted (null for binary or untracked files) */
+  linesDeleted: number | null;
+  /** Original path (for renames) */
+  origPath?: string;
+  /** Last YA session observed successfully mutating this dirty path. */
+  lastEditor?: GitFileEditor;
+}
+
+export interface GitRecentCommit {
+  /** Full commit hash */
+  hash: string;
+  /** Short commit hash for display */
+  shortHash: string;
+  /** Commit subject line */
+  subject: string;
+  /** Author display name */
+  authorName: string;
+  /** Author timestamp as an ISO 8601 string */
+  authorDate: string;
+}
+
+/** Commit metadata shown beside a file view. */
+export interface GitFileRevisionCommit extends GitRecentCommit {
+  /** Commit subject and body, capped by the server at 50 lines. */
+  message: string;
+  /** Whether undisplayed commit-message lines remain. */
+  messageTruncated: boolean;
+}
+
+/** Last committed content revision for one repository-relative file path. */
+export interface GitFileRevision {
+  path: string;
+  /** False when the selected project is not a Git working tree. */
+  isGitRepo: boolean;
+  /** Null for a file with no revision reachable from the requested tree. */
+  commit: GitFileRevisionCommit | null;
+  /** True only when live file content differs from the committed blob. */
+  dirty: boolean;
+  /** Omitted by older servers; null when no committed GitHub file is available. */
+  githubLink?: { url: string; pushed: boolean } | null;
+}
+
+/**
+ * A commit's metadata plus the files it changed (topic:
+ * source-review-to-session, stage 3 commit browser). Diffs are fetched per
+ * file via `POST /git/commit-diff`, mirroring the working-tree diff flow.
+ */
+export interface GitCommitDetail extends GitRecentCommit {
+  /** Full commit message body (may be empty or multi-line). */
+  body: string;
+  /** Files changed by the commit. Reuses {@link GitFileChange} with `staged` always false. */
+  files: GitFileChange[];
+}
+
+/** A direct two-tree comparison from a selected revision to a pinned HEAD. */
+export interface GitRevisionComparison {
+  /** Resolved full SHA of the selected revision. */
+  baseSha: string;
+  /** Resolved full SHA of HEAD when the comparison was created. */
+  headSha: string;
+  /** Files whose content differs between the two revisions. */
+  files: GitFileChange[];
+}
+
+/** Inclusive selected-commit-through-HEAD comparison with pinned endpoints. */
+export interface GitInclusiveRevisionComparison {
+  /** Resolved full SHA of the selected commit included in the range. */
+  selectedSha: string;
+  /** Selected commit's first parent, or Git's empty tree for a root commit. */
+  baseSha: string;
+  /** Resolved full SHA of HEAD when the comparison was created. */
+  headSha: string;
+  /** Net files changed by the inclusive range. */
+  files: GitFileChange[];
+}
+
+export type GitFileDiffMode = "worktree" | "cumulative";
+
+/** Exact file-change corpora backing file-viewer diff selectors. */
+export interface GitFileProjectionManifest {
+  /** Resolved HEAD used as the ordinary worktree baseline. */
+  headSha: string | null;
+  /** Resolved first parent of HEAD used as the cumulative baseline. */
+  baseSha: string | null;
+  /** Net changes from HEAD through the current filesystem. */
+  worktreeFiles: GitFileChange[];
+  /** Net changes from HEAD^1 through the current filesystem. */
+  cumulativeFiles: GitFileChange[];
+}
+
+/** One page of commits for the commit browser. */
+export interface GitCommitListResult {
+  commits: GitRecentCommit[];
+  /** True when more commits exist past this page (for "load more"). */
+  hasMore: boolean;
+}
+
+/** Commits observed on the upstream tracking ref but not local HEAD. */
+export interface GitIncomingCommitListResult {
+  upstream: string;
+  headSha: string;
+  upstreamSha: string;
+  commits: GitRecentCommit[];
+  truncated: boolean;
+  limit: number;
+}
+
+/**
+ * Complete commit order for the on-demand browser search index. Metadata is
+ * intentionally small; changed-line text is fetched in bounded batches.
+ */
+export interface GitCommitSearchManifest {
+  /** Current repository HEAD, or null for an empty repository. */
+  head: string | null;
+  /** Reachable commits, newest first, up to the server's manifest bound. */
+  commits: GitRecentCommit[];
+  /** Set when history exceeded the bound: the index covers a recent prefix. */
+  truncated?: boolean;
+}
+
+/** Searchable changed-line/path text for one commit. */
+export interface GitCommitSearchRecord {
+  hash: string;
+  deltaText: string;
+}
+
+export interface GitCommitSearchRecordsResult {
+  records: GitCommitSearchRecord[];
+}
+
+/** One source line's blame in the all-files provenance browser. */
+export interface GitBlameLine {
+  /** 1-based line number in the blamed revision. */
+  line: number;
+  /** Originating commit sha (40-hex; all-zero when not yet committed). */
+  sha: string;
+  shortSha: string;
+  author: string;
+  /**
+   * Stable project-owned hue preference. Older servers omit it; clients then
+   * derive a deterministic preference from the author display name.
+   */
+  authorColorSeed?: number;
+  /** ISO 8601 author time, or "" when unknown. */
+  authorTime: string;
+  /** First line of the originating commit's message. */
+  summary: string;
+  /** The line's text (diff prefix stripped; it is plain file content). */
+  content: string;
+  /** True when the line is a working-tree change with no commit yet. */
+  uncommitted: boolean;
+}
+
+/** Whole-file blame plus the highlighted file body for the viewer. */
+export interface GitBlameResult {
+  path: string;
+  /** The blamed revision: a resolved full sha, or "working-tree". */
+  rev: string;
+  lines: GitBlameLine[];
+  /** Shiki HTML of the file (per-line spans), aligned to `lines` by order. */
+  highlightedHtml?: string;
+  highlightedLanguage?: string;
+  /** True when the file was too large to blame/highlight in full. */
+  truncated?: boolean;
+}
+
+/** Tracked-file list for the all-files tree / filename search. */
+export interface GitFileListResult {
+  /** Repo-relative paths (`git ls-files`), optionally filtered by a query. */
+  files: string[];
+  /** True when the list was capped by the server limit. */
+  truncated: boolean;
+}
+
+export type GitWorkingTreePathKind = "tracked" | "untracked" | "ignored";
+
+/** Git change facts embedded in one resident worktree path row. */
+export type GitWorkingTreeChange = Omit<GitFileChange, "path">;
+
+/** One path in the server-maintained worktree snapshot. */
+export interface GitWorkingTreeFile {
+  /** Repo-relative path. */
+  path: string;
+  /** False for untracked or ignored files; true for files known to the index. */
+  tracked: boolean;
+  /** Classification used by live worktree snapshots. Older servers omit it. */
+  kind?: GitWorkingTreePathKind;
+  /** False only for a tracked deletion retained as dirty truth. */
+  present?: boolean;
+  /** Staged and/or unstaged changes from HEAD to the live filesystem. */
+  worktreeChanges?: GitWorkingTreeChange[];
+  /** Net change from HEAD^1 to the live filesystem. */
+  cumulativeChange?: GitWorkingTreeChange;
+}
+
+export type GitWorktreeFilesystemScan = "bounded" | "complete";
+
+export interface GitWorktreeCoverage {
+  tracked: boolean;
+  untracked: boolean;
+  ignored: boolean;
+  /**
+   * Filesystem-only directories explicitly opened by this subscriber. The root
+   * is implicit. Omission retains the earlier bounded breadth-first inventory.
+   */
+  expandedPrefixes?: string[];
+  /**
+   * Delivery policy for an opened filesystem-only directory. Omission is the
+   * bounded policy understood by earlier servers.
+   */
+  filesystemScan?: GitWorktreeFilesystemScan;
+}
+
+/** One filesystem-only directory row in a lazy worktree inventory. */
+export interface GitWorktreeDirectory {
+  /** Canonical project-relative path without a trailing slash. */
+  path: string;
+  /** True until a subscriber opens this directory prefix. */
+  pending: boolean;
+  /** True when the opened directory contains more files than were published. */
+  truncated: boolean;
+  /** Exact direct file count when known, including count-only recovery. */
+  totalFiles?: number;
+}
+
+export interface GitWorktreeGeneration {
+  epoch: string;
+  sequence: number;
+}
+
+export interface GitWorktreeSnapshotEvent {
+  type: "git-worktree-snapshot";
+  generation: GitWorktreeGeneration;
+  coverage: GitWorktreeCoverage;
+  /** Resolved HEAD used by worktree projection facts. */
+  headSha: string | null;
+  /** Resolved HEAD^1 used by cumulative projection facts. */
+  baseSha: string | null;
+  files: GitWorkingTreeFile[];
+  /** Filesystem-only directory rows. Older servers omit this field. */
+  directories?: GitWorktreeDirectory[];
+  truncated: boolean;
+  /** Exact files in this subscriber's opened-directory corpus when known. */
+  totalFiles?: number;
+  timestamp: string;
+}
+
+export type GitWorktreePathChangeType = "create" | "modify" | "delete";
+
+export interface GitWorktreePathChange {
+  changeType: GitWorktreePathChangeType;
+  path: string;
+  file?: GitWorkingTreeFile;
+}
+
+export interface GitWorktreeDirectoryChange {
+  changeType: GitWorktreePathChangeType;
+  path: string;
+  directory?: GitWorktreeDirectory;
+}
+
+export interface GitWorktreeDeltaEvent {
+  type: "git-worktree-delta";
+  generation: GitWorktreeGeneration;
+  /** Current resolved projection endpoints after applying this delta. */
+  headSha: string | null;
+  baseSha: string | null;
+  changes: GitWorktreePathChange[];
+  /** Filesystem-only directory-row changes. Older servers omit this field. */
+  directoryChanges?: GitWorktreeDirectoryChange[];
+  /** Current bounded state. Older servers omit this field from deltas. */
+  truncated?: boolean;
+  /** Current exact opened-directory total; null clears an unavailable count. */
+  totalFiles?: number | null;
+  timestamp: string;
+}
+
+export type GitWorktreeSubscriptionEvent =
+  | GitWorktreeSnapshotEvent
+  | GitWorktreeDeltaEvent;
+
+/** Bounded current-content inventory for the Working Tree browser. */
+export interface GitWorkingTreeFileListResult {
+  files: GitWorkingTreeFile[];
+  /** True when the inventory contains more paths than this response. */
+  truncated: boolean;
+  /** Effective response bound. */
+  limit: number;
+  /** The browsed directory, present only when the request named a `root`. */
+  root?: LocalSourceRoot;
+}
+
+/**
+ * A directory outside the project browsed as a read-only snapshot: the
+ * enclosing Git checkout when the file-access allow-set covers it, else the
+ * requested directory. Paths in the inventory are relative to `path`.
+ */
+export interface LocalSourceRoot {
+  /** Realpath of the browsed directory. */
+  path: string;
+  /** Whether Git classified the inventory (tracked/untracked). */
+  isGitRepo: boolean;
+  /** The requested file relative to `path`, when the request named a file. */
+  requestedFile?: string;
+}
+
+/** Rudimentary commit-delta / filename search results. */
+export interface GitSearchResult {
+  /** Matching file paths (filename search). */
+  files?: string[];
+  /** Commits whose diff touched the query (delta search). */
+  commits?: GitRecentCommit[];
+  /** True when results were capped by the server limit. */
+  truncated: boolean;
+}
+
+export interface GitUntrackedFolderInfo {
+  /** Compact untracked directory path, with trailing slash */
+  path: string;
+  /** Expanded untracked file paths within the directory */
+  files: string[];
+  /** Last-editor attribution for expanded paths that have it. */
+  lastEditors?: Record<string, GitFileEditor>;
+  /** Whether the list was capped by the server */
+  truncated: boolean;
+  /** Maximum number of files returned before truncation */
+  limit: number;
+}
+
+export interface GitUntrackedFolderSummary {
+  /** Top-level compact directory path, with trailing slash. */
+  path: string;
+  /** Cached descendant count before any response bound. */
+  count: number;
+}
+
+/** A bounded view over the persistent non-ignored untracked-path cache. */
+export interface GitUntrackedFileListResult {
+  /** File paths for a root, folder, or search query. */
+  files: string[];
+  /** Top-level groups, populated only by an unfiltered root request. */
+  folders: GitUntrackedFolderSummary[];
+  /** Complete cached file count before query and response bounds. */
+  total: number;
+  /** Last complete filesystem reconciliation time. */
+  refreshedAt: string;
+  /** True when either the cache or this response hit its safety bound. */
+  truncated: boolean;
+  /** Effective file/group response bound. */
+  limit: number;
+  /** Last-editor attribution for returned file paths that have it. */
+  lastEditors?: Record<string, GitFileEditor>;
+}
+
+export type GitDiffPreviewSkippedReason =
+  | "binary"
+  | "content-too-large"
+  | "line-too-long"
+  | "html-too-large";
+
+export interface GitDiffPreviewSkipped {
+  /** Why the preview was omitted or downgraded. */
+  reason: GitDiffPreviewSkippedReason;
+  /** Source bytes measured before diffing, when that boundary rejected input. */
+  totalBytes?: number;
+  /** Source characters represented by the rendered hunks. */
+  totalChars?: number;
+  /** Lines represented by the rendered hunks. */
+  totalLines?: number;
+  /** Longest measured line in JavaScript string characters, when known. */
+  maxLineChars?: number;
+  /** Highlighted HTML size in JavaScript string characters, for legacy clients. */
+  htmlChars?: number;
+  /** Source content byte budget that triggered this guard. */
+  maxTotalBytes?: number;
+  /** Hunk-content character budget that triggered this guard. */
+  maxTotalChars?: number;
+  /** Hunk-line budget that triggered this guard. */
+  maxTotalLines?: number;
+  /** Per-line character budget that triggered this guard. */
+  maxLineCharsLimit?: number;
+  /** Highlighted HTML character budget that triggered this guard. */
+  maxHtmlChars?: number;
+}
+
+export interface GitDiffResult {
+  /** Syntax-highlighted diff HTML, omitted for a plain or skipped preview. */
+  diffHtml: string;
+  /** Large accepted diffs use one low-node-count plain-text projection. */
+  renderMode?: "plain";
+  /** Structured diff hunks for accepted previews. */
+  structuredPatch: PatchHunk[];
+  /** Rendered markdown preview HTML for small markdown files. */
+  markdownHtml?: string;
+  /** Bounded omission metadata for previews that are unsafe to render. */
+  previewSkipped?: GitDiffPreviewSkipped;
+  /** Exact source object rendered on each clickable diff side. */
+  reviewProjections?: Partial<
+    Record<ReviewCommentSide, ReviewSourceProjection>
+  >;
+}
+
+export interface GitStatusInfo {
+  /** Whether the project path is a git repository */
+  isGitRepo: boolean;
+  /** Current branch name (null if detached HEAD) */
+  branch: string | null;
+  /** Upstream branch (e.g. "origin/main") */
+  upstream: string | null;
+  /** Commits ahead of upstream */
+  ahead: number;
+  /** Commits behind upstream */
+  behind: number;
+  /** Whether the working tree is clean */
+  isClean: boolean;
+  /** Changed files with status and line counts */
+  files: GitFileChange[];
+  /** Recent commits on the current HEAD */
+  recentCommits?: GitRecentCommit[];
+  /** Last successful remote fetch/check detected from this server or git metadata */
+  checkedRemoteAt?: string | null;
+}
+
+export type GitRemoteCheckStatus =
+  | "checked"
+  | "busy"
+  | "not-a-git-repo"
+  | "failed";
+
+export interface GitRemoteCheckResult {
+  status: GitRemoteCheckStatus;
+  checkedRemoteAt: string | null;
+  gitStatus?: GitStatusInfo;
+  detail?: string;
+}
+
+export type GitPullStatus = "pulled" | "busy" | "not-a-git-repo" | "failed";
+
+export interface GitPullResult {
+  status: GitPullStatus;
+  checkedRemoteAt: string | null;
+  gitStatus?: GitStatusInfo;
+  /** Commits by which the local branch advanced; omitted by older servers or when unavailable. */
+  commitsAdvanced?: number;
+  detail?: string;
+}
+
+export type GitPushStatus =
+  | "pushed"
+  | "published"
+  | "up-to-date"
+  | "busy"
+  | "no-upstream"
+  | "rejected"
+  | "not-a-git-repo"
+  | "failed";
+
+export interface GitPushResult {
+  status: GitPushStatus;
+  checkedRemoteAt: string | null;
+  gitStatus?: GitStatusInfo;
+  /** Commits by which the remote branch advanced; omitted by older servers or when unavailable. */
+  commitsAdvanced?: number;
+  detail?: string;
+}
+
+export type GitIntegrationOptionsStatus =
+  | "available"
+  | "unavailable"
+  | "busy"
+  | "not-a-git-repo"
+  | "failed";
+
+export type GitIntegrationOptionReason =
+  | "not-diverged"
+  | "missing-upstream"
+  | "detached-head"
+  | "dirty-worktree"
+  | "sequencer-in-progress"
+  | "operation-running"
+  | "not-a-git-repo"
+  | "status-unavailable";
+
+export interface GitIntegrationOptionsResult {
+  status: GitIntegrationOptionsStatus;
+  checkedRemoteAt: string | null;
+  gitStatus?: GitStatusInfo;
+  canAutoRebase: boolean;
+  canAutoMerge: boolean;
+  reasons: GitIntegrationOptionReason[];
+  ahead: number;
+  behind: number;
+  upstream: string | null;
+  isClean: boolean;
+  hasSequencerState: boolean;
+  detail?: string;
+}

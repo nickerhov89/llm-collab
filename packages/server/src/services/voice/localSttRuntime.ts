@@ -1,0 +1,184 @@
+import { execFile, spawn } from "node:child_process";
+import { statfsSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
+
+export const execFileAsync = promisify(execFile);
+
+export const PIXI_COMMAND = "pixi";
+export const PIXI_STT_ENV = "stt";
+export const PIXI_NEMO_ENV = "stt-nemo";
+export const PIXI_PYTHON_ARGS = [
+  "run",
+  "--frozen",
+  "-e",
+  PIXI_STT_ENV,
+  "python",
+];
+export const LOCAL_STT_BOOTSTRAP_TIMEOUT_MS = 20 * 60_000;
+
+export function localSttEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  // Pixi/Python packages own runtime libraries; host overrides can mix CUDA ABIs.
+  delete env.LD_LIBRARY_PATH;
+  delete env.LD_PRELOAD;
+  // Workers import a shared helper module from the checkout; byte-code caches
+  // for it would otherwise appear as stray files inside the served tree.
+  env.PYTHONDONTWRITEBYTECODE = "1";
+  return env;
+}
+
+export function localSttReadyHint(
+  task: string,
+  environment = PIXI_STT_ENV,
+): string {
+  return `Run \`pixi run -e ${environment} ${task}\` from the YA checkout, then restart YA.`;
+}
+
+export function formatBytes(bytes: number): string {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+export function defaultHuggingFaceHubCache(): string {
+  // Mirror Hugging Face's own hub-cache resolution so this reported path
+  // matches where the spawned worker actually caches weights. HF consults
+  // HF_HUB_CACHE, then HF_HOME/hub, then ~/.cache/huggingface/hub — it does
+  // not use XDG_CACHE_HOME, so neither do we.
+  if (process.env.HF_HUB_CACHE) return process.env.HF_HUB_CACHE;
+  if (process.env.HF_HOME) return join(process.env.HF_HOME, "hub");
+  return join(homedir(), ".cache", "huggingface", "hub");
+}
+
+export function cacheFreeSpaceSummary(cacheDir: string): string {
+  try {
+    const stat = statfsSync(cacheDir);
+    return `free=${formatBytes(stat.bavail * stat.bsize)}`;
+  } catch {
+    return "free=unknown";
+  }
+}
+
+export async function ensureLocalSttRuntime(opts: {
+  backendLabel: string;
+  checkPython: string;
+  bootstrapTask: string;
+  environment?: string;
+}): Promise<{ ok: true } | { ok: false; reason: string }> {
+  const environment = opts.environment ?? PIXI_STT_ENV;
+  const check = () =>
+    execFileAsync(
+      PIXI_COMMAND,
+      ["run", "--frozen", "-e", environment, "python", "-c", opts.checkPython],
+      {
+        cwd: process.cwd(),
+        env: localSttEnv(),
+        timeout: 30_000,
+      },
+    );
+
+  try {
+    await check();
+    return { ok: true };
+  } catch (checkError) {
+    try {
+      await execFileAsync(
+        PIXI_COMMAND,
+        ["run", "-e", environment, opts.bootstrapTask],
+        {
+          cwd: process.cwd(),
+          env: localSttEnv(),
+          timeout: LOCAL_STT_BOOTSTRAP_TIMEOUT_MS,
+        },
+      );
+      await check();
+      return { ok: true };
+    } catch (bootstrapError) {
+      return {
+        ok: false,
+        reason: `${opts.backendLabel} pixi environment is not ready. ${localSttReadyHint(opts.bootstrapTask, environment)} Initial check: ${summarizeChildError(checkError)} Bootstrap: ${summarizeChildError(bootstrapError)}`,
+      };
+    }
+  }
+}
+
+export function runPixiLogged(
+  args: string[],
+  options: {
+    environment: string;
+    onLine: (line: string) => void;
+    timeoutMs: number;
+    frozen?: boolean;
+  },
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  return new Promise((resolve) => {
+    const proc = spawn(
+      PIXI_COMMAND,
+      [
+        "run",
+        ...(options.frozen === false ? [] : ["--frozen"]),
+        "-e",
+        options.environment,
+        ...args,
+      ],
+      {
+        cwd: process.cwd(),
+        env: localSttEnv(),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let settled = false;
+    const finish = (result: { ok: true } | { ok: false; reason: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      proc.kill();
+      finish({
+        ok: false,
+        reason: `pixi ${args.join(" ")} timed out after ${options.timeoutMs}ms`,
+      });
+    }, options.timeoutMs);
+    const emit = (chunk: Buffer) => {
+      for (const line of chunk.toString().split(/\r?\n/)) {
+        if (line.trim()) options.onLine(line);
+      }
+    };
+    proc.stdout?.on("data", emit);
+    proc.stderr?.on("data", emit);
+    proc.on("error", (error) => {
+      finish({ ok: false, reason: summarizeChildError(error) });
+    });
+    proc.on("close", (code) => {
+      if (code === 0) finish({ ok: true });
+      else finish({ ok: false, reason: `pixi exited ${code ?? "null"}` });
+    });
+  });
+}
+
+export function summarizeChildError(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const record = error as {
+      code?: unknown;
+      message?: unknown;
+      stderr?: unknown;
+    };
+    const stderr =
+      typeof record.stderr === "string" ? record.stderr.trim() : "";
+    if (stderr) return stderr.split("\n").slice(-4).join(" ");
+    if (typeof record.code === "string" && typeof record.message === "string") {
+      return `${record.code}: ${record.message}`;
+    }
+    if (typeof record.message === "string") return record.message;
+  }
+  return String(error);
+}

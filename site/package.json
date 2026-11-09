@@ -1,0 +1,20 @@
+{
+  "name": "yepanywhere-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && tsx scripts/validate-catalog-source-refs.ts && astro build && node scripts/validate-build.mjs",
+    "validate": "node scripts/validate-build.mjs",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.7.3",
+    "astro": "^7.3.5",
+    "typescript": "^5.2.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.9",
+    "tsx": "^4.19.2"
+  }
+}

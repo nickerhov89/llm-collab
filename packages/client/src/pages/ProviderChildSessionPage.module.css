@@ -1,0 +1,30 @@
+.page {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.parentLink {
+  display: inline-flex;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.parentLink:hover,
+.parentLink:focus-visible {
+  color: var(--text-primary);
+}
+
+.main {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.status {
+  margin: var(--space-4);
+  color: var(--text-muted);
+}

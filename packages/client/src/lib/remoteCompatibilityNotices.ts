@@ -1,0 +1,559 @@
+import {
+  isSupportedServerRuntime,
+  type ServerRuntimeInfo,
+} from "@yep-anywhere/shared/server-runtime";
+import type { TranslationFn } from "../i18n";
+
+export type RemoteNoticeSeverity =
+  | "info"
+  | "recommended"
+  | "security"
+  | "blocking";
+
+export interface RemoteCompatibilityNoticeAction {
+  label: string;
+  command?: string;
+  commandPreview?: string;
+  href?: string;
+}
+
+export interface RemoteCompatibilityNotice {
+  id: string;
+  severity: RemoteNoticeSeverity;
+  title: string;
+  body: string;
+  guidance?: string;
+  versionSummary?: string;
+  action?: RemoteCompatibilityNoticeAction;
+  dismissKey: string;
+  /** Sort rank among notices of the same severity; lower shows first. */
+  priority: number;
+  /** "snooze-only" offers Remind me later but no Dismiss. */
+  dismissal: "dismiss" | "snooze-only";
+  /**
+   * Where a floating card sits: a notice the user cannot dismiss must leave
+   * the navigation header reachable. Ignored by inline cards.
+   */
+  floatingPlacement: "over-header" | "below-header";
+}
+
+export type RemoteInstallSource =
+  | "npm-global"
+  | "source"
+  | "release-package"
+  | "unknown";
+
+export interface RemoteCompatibilityInput {
+  runtimeNotice?: {
+    runtime?: ServerRuntimeInfo;
+    sourceKey: string;
+    t: TranslationFn;
+  };
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  installSource?: RemoteInstallSource;
+  desktopRuntime?: boolean;
+  resumeProtocolVersion?: number;
+  remoteCompatibilityLevel?: number;
+  capabilities?: string[];
+  relayUsername?: string | null;
+  installId?: string | null;
+  recommendedBaselineVersion?: string;
+  requiredRemoteCompatibilityLevel?: number;
+  recommendedRemoteCompatibilityLevel?: number;
+}
+
+export const RELAY_RESUME_SECURITY_MIN_VERSION = "0.4.0";
+export const RELAY_RESUME_SECURITY_MIN_PROTOCOL = 2;
+export const RELAY_RESUME_SERVER_PROOF_MIN_VERSION = "0.5.1";
+export const RELAY_RESUME_SERVER_PROOF_PROTOCOL = 3;
+export const REMOTE_BACKEND_API_RECOMMENDED_VERSION = "0.4.29";
+export const REQUIRED_REMOTE_COMPATIBILITY_LEVEL = 0;
+export const RECOMMENDED_REMOTE_COMPATIBILITY_LEVEL = 10;
+
+const NPM_UPDATE_COMMAND = "npm update -g yepanywhere";
+const SOURCE_UPDATE_COMMAND = [
+  "git fetch origin",
+  "git merge origin/main",
+  "pnpm install",
+  "pnpm build",
+].join("\n");
+const SOURCE_UPDATE_PREVIEW =
+  "git fetch origin && git merge origin/main && pnpm install && pnpm build";
+
+const SEVERITY_RANK: Record<RemoteNoticeSeverity, number> = {
+  blocking: 0,
+  security: 1,
+  recommended: 2,
+  info: 3,
+};
+
+interface ParsedSemver {
+  major: number;
+  minor: number;
+  patch: number;
+  prerelease: string | null;
+  sourceBuild: boolean;
+  stable: boolean;
+  normalized: string;
+}
+
+export function getRemoteCompatibilityNotices(
+  input: RemoteCompatibilityInput,
+): RemoteCompatibilityNotice[] {
+  const runtimeNotice = getRuntimeNotice(input.runtimeNotice);
+  const notices: RemoteCompatibilityNotice[] = runtimeNotice
+    ? [runtimeNotice]
+    : [];
+  // Existing protocol/update notices remain relay-specific. Runtime guidance
+  // also applies to authenticated direct and same-origin clients.
+  if (!input.relayUsername) return notices;
+  const current = parseSemver(input.currentVersion);
+  const remoteCompatibilityLevel = getRemoteCompatibilityLevel(input);
+  const requiredRemoteCompatibilityLevel =
+    input.requiredRemoteCompatibilityLevel ??
+    REQUIRED_REMOTE_COMPATIBILITY_LEVEL;
+  const recommendedRemoteCompatibilityLevel =
+    input.recommendedRemoteCompatibilityLevel ??
+    RECOMMENDED_REMOTE_COMPATIBILITY_LEVEL;
+
+  const oldResumeProtocol =
+    input.resumeProtocolVersion !== undefined &&
+    input.resumeProtocolVersion < RELAY_RESUME_SECURITY_MIN_PROTOCOL;
+  const oldResumeVersion =
+    input.resumeProtocolVersion === undefined &&
+    isVersionLessThan(input.currentVersion, RELAY_RESUME_SECURITY_MIN_VERSION);
+  const graceResumeProtocol =
+    input.resumeProtocolVersion !== undefined &&
+    input.resumeProtocolVersion >= RELAY_RESUME_SECURITY_MIN_PROTOCOL &&
+    input.resumeProtocolVersion < RELAY_RESUME_SERVER_PROOF_PROTOCOL;
+
+  if (oldResumeProtocol || oldResumeVersion) {
+    const target = chooseTargetVersion(
+      input.latestVersion,
+      RELAY_RESUME_SECURITY_MIN_VERSION,
+    );
+    const guidance = buildUpdateGuidance(input, target.label);
+    notices.push({
+      id: "relay-resume-security",
+      severity: "blocking",
+      priority: 0,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Server update required",
+      body: "This hosted client requires current relay session-resume server verification. Update the local server, or use localhost, a tunnel, or a VPN with the old server.",
+      guidance: guidance.text,
+      versionSummary: buildVersionSummary(
+        input.currentVersion,
+        target.label,
+        input.installSource,
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        "relay-resume-security",
+        current?.normalized ??
+          (input.resumeProtocolVersion !== undefined
+            ? `resume-protocol-${input.resumeProtocolVersion}`
+            : "unknown-version"),
+      ),
+    });
+  }
+
+  if (graceResumeProtocol) {
+    const target = chooseTargetVersion(
+      input.latestVersion,
+      RELAY_RESUME_SERVER_PROOF_MIN_VERSION,
+    );
+    const guidance = buildUpdateGuidance(input, target.label);
+    notices.push({
+      id: "relay-resume-v3-grace",
+      severity: "security",
+      priority: 0,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Server update required soon",
+      body: "This server uses the older relay session-resume protocol. Remote login still works during the compatibility window, but update the YA server soon; future hosted clients will require the newer server-verification protocol for security.",
+      guidance: guidance.text,
+      versionSummary: buildVersionSummary(
+        input.currentVersion,
+        target.label,
+        input.installSource,
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        "relay-resume-v3-grace",
+        current?.normalized ?? "resume-protocol-2",
+      ),
+    });
+  }
+
+  if (remoteCompatibilityLevel < requiredRemoteCompatibilityLevel) {
+    const guidance = buildUpdateGuidance(
+      input,
+      `compatibility level ${requiredRemoteCompatibilityLevel}`,
+    );
+    const id = `remote-compat-required-${requiredRemoteCompatibilityLevel}`;
+    notices.push({
+      id,
+      severity: "blocking",
+      priority: 10,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Server update required",
+      body: "This hosted client requires a newer YA server compatibility level for basic remote use. Update the local server, or use localhost, a tunnel, or a VPN with the old server.",
+      guidance: guidance.text,
+      versionSummary: buildCompatibilityLevelSummary(
+        remoteCompatibilityLevel,
+        requiredRemoteCompatibilityLevel,
+        "required",
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        id,
+        `${remoteCompatibilityLevel}-to-${requiredRemoteCompatibilityLevel}`,
+      ),
+    });
+  } else if (remoteCompatibilityLevel < recommendedRemoteCompatibilityLevel) {
+    const guidance = buildUpdateGuidance(
+      input,
+      `compatibility level ${recommendedRemoteCompatibilityLevel}`,
+    );
+    const id = `remote-compat-level-${recommendedRemoteCompatibilityLevel}`;
+    notices.push({
+      id,
+      severity: "recommended",
+      priority: 10,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Update local server soon",
+      body: "This hosted client is newer than your local YA server. Basic remote use should still work, but update the server soon to avoid missing or unstable newer remote features.",
+      guidance: guidance.text,
+      versionSummary: buildCompatibilityLevelSummary(
+        remoteCompatibilityLevel,
+        recommendedRemoteCompatibilityLevel,
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        id,
+        `${remoteCompatibilityLevel}-to-${recommendedRemoteCompatibilityLevel}`,
+      ),
+    });
+  }
+
+  const baseline =
+    input.recommendedBaselineVersion ?? REMOTE_BACKEND_API_RECOMMENDED_VERSION;
+  if (isVersionLessThan(input.currentVersion, baseline)) {
+    const id = `backend-api-compat-${baseline}`;
+    const target = chooseTargetVersion(input.latestVersion, baseline);
+    const guidance = buildUpdateGuidance(input, target.label);
+    notices.push({
+      id,
+      severity: "recommended",
+      priority: 20,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Update recommended",
+      body: "This hosted client includes backend/API compatibility changes. Basic remote use should still work, but updating the local server is recommended for this release.",
+      guidance: guidance.text,
+      versionSummary: buildVersionSummary(
+        input.currentVersion,
+        target.label,
+        input.installSource,
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        id,
+        `${current?.normalized ?? "unknown-version"}-to-${baseline}`,
+      ),
+    });
+  }
+
+  const hasSpecificUpdateNotice = notices.some(
+    (notice) =>
+      notice.id.startsWith("backend-api-compat-") ||
+      notice.id.startsWith("remote-compat-") ||
+      notice.id === "relay-resume-security" ||
+      notice.id === "relay-resume-v3-grace",
+  );
+  if (
+    !hasSpecificUpdateNotice &&
+    input.updateAvailable &&
+    input.latestVersion
+  ) {
+    const target = formatVersion(input.latestVersion);
+    const guidance = buildUpdateGuidance(input, target);
+    notices.push({
+      id: "remote-update-available",
+      severity: "recommended",
+      priority: 30,
+      dismissal: "dismiss",
+      floatingPlacement: "over-header",
+      title: "Update available",
+      body: `Yep Anywhere ${target} is available for this server.`,
+      guidance: guidance.text,
+      versionSummary: buildVersionSummary(
+        input.currentVersion,
+        target,
+        input.installSource,
+        "latest",
+      ),
+      action: guidance.action,
+      dismissKey: buildDismissKey(
+        input,
+        "remote-update-available",
+        `${current?.normalized ?? input.currentVersion ?? "unknown-version"}-to-${
+          input.latestVersion
+        }`,
+      ),
+    });
+  }
+
+  return notices.sort((a, b) => {
+    const severity = SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity];
+    if (severity !== 0) return severity;
+    const priority = a.priority - b.priority;
+    return priority !== 0 ? priority : a.id.localeCompare(b.id);
+  });
+}
+
+function getRemoteCompatibilityLevel(input: RemoteCompatibilityInput): number {
+  const level = input.remoteCompatibilityLevel;
+  if (typeof level === "number" && Number.isSafeInteger(level) && level >= 0) {
+    return level;
+  }
+  return 0;
+}
+
+function chooseTargetVersion(
+  latestVersion: string | null,
+  minimumVersion: string,
+): { label: string; version: string } {
+  const latestComparison = compareSemver(latestVersion, minimumVersion);
+  if (latestVersion && latestComparison !== null && latestComparison >= 0) {
+    return { label: formatVersion(latestVersion), version: latestVersion };
+  }
+  return {
+    label: `${formatVersion(minimumVersion)}+`,
+    version: minimumVersion,
+  };
+}
+
+function buildCompatibilityLevelSummary(
+  currentLevel: number,
+  targetLevel: number,
+  targetLabel: "recommended" | "required" = "recommended",
+): string {
+  return `Compatibility level ${currentLevel}; ${targetLabel} ${targetLevel}`;
+}
+
+function buildVersionSummary(
+  currentVersion: string | null,
+  targetVersion: string,
+  installSource?: RemoteInstallSource,
+  targetLabel: "recommended" | "latest" = "recommended",
+): string {
+  const current = formatRemoteServerVersion(currentVersion, installSource);
+  return `Server ${current}; ${targetLabel} ${targetVersion}`;
+}
+
+export function formatRemoteServerVersion(
+  currentVersion: string | null | undefined,
+  installSource?: RemoteInstallSource,
+): string {
+  if (parseSemver(currentVersion)) {
+    return formatVersion(currentVersion ?? "");
+  }
+  if (installSource === "source") {
+    return "source checkout (version unknown)";
+  }
+  return "version unknown";
+}
+
+function buildUpdateGuidance(
+  input: RemoteCompatibilityInput,
+  targetVersion: string,
+): { text: string; action?: RemoteCompatibilityNoticeAction } {
+  if (input.desktopRuntime) {
+    return {
+      text: "This server is bundled with the Yep Anywhere desktop app. On its host, use Check for Updates in the menu bar or system tray to update the app.",
+    };
+  }
+  const installSource = getEffectiveInstallSource(input);
+  if (installSource === "source") {
+    return {
+      text: `Source checkout detected. Merge origin/main, run pnpm install and pnpm build, then restart the server to update to ${targetVersion}.`,
+      action: {
+        label: "Copy source steps",
+        command: SOURCE_UPDATE_COMMAND,
+        commandPreview: SOURCE_UPDATE_PREVIEW,
+      },
+    };
+  }
+
+  if (installSource === "npm-global") {
+    return {
+      text: `Run ${NPM_UPDATE_COMMAND} on the host, then restart the server to update to ${targetVersion}.`,
+      action: {
+        label: "Copy npm command",
+        command: NPM_UPDATE_COMMAND,
+        commandPreview: NPM_UPDATE_COMMAND,
+      },
+    };
+  }
+
+  return {
+    text: `Update the host install, then restart the server to update to ${targetVersion}. If this host was installed with npm, run ${NPM_UPDATE_COMMAND}.`,
+    action: {
+      label: "Copy npm command",
+      command: NPM_UPDATE_COMMAND,
+      commandPreview: NPM_UPDATE_COMMAND,
+    },
+  };
+}
+
+export function getEffectiveInstallSource(
+  input: Pick<RemoteCompatibilityInput, "currentVersion" | "installSource">,
+): RemoteInstallSource {
+  if (input.installSource) return input.installSource;
+  if (parseSemver(input.currentVersion)?.sourceBuild) return "source";
+  return "unknown";
+}
+
+function formatVersion(version: string): string {
+  return version.startsWith("v") ? version : `v${version}`;
+}
+
+export function isVersionLessThan(
+  version: string | null | undefined,
+  baseline: string,
+): boolean {
+  const comparison = compareSemver(version, baseline);
+  return comparison !== null && comparison < 0;
+}
+
+export function compareSemver(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number | null {
+  const left = parseSemver(a);
+  const right = parseSemver(b);
+  if (!left || !right) return null;
+
+  for (const key of ["major", "minor", "patch"] as const) {
+    if (left[key] !== right[key]) {
+      return left[key] < right[key] ? -1 : 1;
+    }
+  }
+
+  if (left.prerelease === right.prerelease) return 0;
+  if (left.sourceBuild) return 1;
+  if (right.sourceBuild) return -1;
+  if (left.prerelease === null) return 1;
+  if (right.prerelease === null) return -1;
+  return left.prerelease < right.prerelease ? -1 : 1;
+}
+
+export function parseSemver(
+  version: string | null | undefined,
+): ParsedSemver | null {
+  const trimmed = version?.trim().replace(/^v/, "");
+  if (!trimmed) return null;
+
+  const match = trimmed.match(
+    /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/,
+  );
+  if (!match) return null;
+
+  const major = match[1];
+  const minor = match[2];
+  const patch = match[3];
+  if (major === undefined || minor === undefined || patch === undefined) {
+    return null;
+  }
+
+  const prerelease = match[4];
+  const sourceBuild = /^\d+-g[0-9a-f]+$/iu.test(prerelease ?? "");
+  const parsed: ParsedSemver = {
+    major: Number.parseInt(major, 10),
+    minor: Number.parseInt(minor, 10),
+    patch: Number.parseInt(patch, 10),
+    prerelease: prerelease ?? null,
+    sourceBuild,
+    stable: prerelease === undefined,
+    normalized: `${major}.${minor}.${patch}${prerelease ? `-${prerelease}` : ""}`,
+  };
+  return parsed;
+}
+
+export function isStableReleaseVersion(
+  version: string | null | undefined,
+): boolean {
+  return parseSemver(version)?.stable ?? false;
+}
+
+function buildDismissKey(
+  input: RemoteCompatibilityInput,
+  noticeId: string,
+  state: string,
+): string {
+  const scope =
+    input.installId?.trim() ||
+    (input.relayUsername ? `relay-${input.relayUsername}` : "unknown-server");
+  return `remote-notice-dismissed:${scope}:${noticeId}:${state}`;
+}
+
+/** Advisory only: never changes capability checks, update actions or login. */
+function getRuntimeNotice(
+  input: RemoteCompatibilityInput["runtimeNotice"],
+): RemoteCompatibilityNotice | null {
+  if (!input) return null;
+  const { runtime, sourceKey, t } = input;
+  if (runtime && isSupportedServerRuntime(runtime)) return null;
+  const kind =
+    runtime?.version && (runtime.kind === "node" || runtime.kind === "bun")
+      ? runtime.kind
+      : "unknown";
+  const id = "server-runtime-node22";
+  return {
+    id,
+    severity: "recommended",
+    priority: 5,
+    // The runtime advisory stays until the runtime changes, so it offers a
+    // reminder rather than a dismissal and keeps the header reachable.
+    dismissal: "snooze-only",
+    floatingPlacement: "below-header",
+    title: t(
+      kind === "node"
+        ? "runtimeNoticeNodeTitle"
+        : kind === "bun"
+          ? "runtimeNoticeBunTitle"
+          : "runtimeNoticeUnknownTitle",
+    ),
+    body: t(
+      kind === "node"
+        ? "runtimeNoticeNodeBody"
+        : kind === "bun"
+          ? "runtimeNoticeBunBody"
+          : "runtimeNoticeUnknownBody",
+    ),
+    ...(kind !== "unknown"
+      ? {
+          versionSummary: t("runtimeNoticeObserved", {
+            runtime: kind === "bun" ? "Bun" : "Node.js",
+            version: runtime?.version ?? "",
+          }),
+        }
+      : {}),
+    action: {
+      label: t("runtimeNoticeInstructions"),
+      href: "https://github.com/kzahel/yepanywhere/blob/main/topics/server-runtime.md#upgrading-a-remote-server",
+    },
+    dismissKey: `remote-notice-dismissed:${encodeURIComponent(sourceKey)}:${id}:${kind}:${runtime?.version ?? "metadata-absent"}`,
+  };
+}

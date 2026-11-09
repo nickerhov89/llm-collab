@@ -1,0 +1,689 @@
+import {
+  isClaudeProviderName,
+  type ProviderName,
+  type UrlProjectId,
+} from "@yep-anywhere/shared";
+import type {
+  ISessionIndexService,
+  SessionIndexListOptions,
+} from "../indexes/types.js";
+import type { CodexSessionScanner } from "../projects/codex-scanner.js";
+import {
+  GROK_SESSIONS_DIR,
+  PI_SESSIONS_DIR,
+  canonicalizeProjectPath,
+} from "../projects/paths.js";
+import type { Project, SessionSummary } from "../supervisor/types.js";
+import { CodexSessionReader } from "./codex-reader.js";
+import { GeminiSessionReader } from "./gemini-reader.js";
+import { GrokSessionReader } from "./grok-reader.js";
+import { OPENCODE_STORAGE_DIR } from "./opencode-reader.js";
+import { PiSessionReader } from "./pi-reader.js";
+import { ClaudeSessionReader } from "./reader.js";
+import type { SummaryParserWorkerMode } from "./summary-parser-worker-protocol.js";
+import {
+  type GetSessionSummaryOptions,
+  type ISessionReader,
+  type SessionListSummary,
+  toSessionListSummary,
+} from "./types.js";
+
+type ProviderGroup = "claude" | "codex" | "gemini" | "opencode" | "grok" | "pi";
+const SESSION_LIST_READ_BATCH_SIZE = 8;
+
+export interface ProviderProjectCatalog {
+  codexPaths: Set<string>;
+  geminiPaths: Set<string>;
+  geminiHashToCwd?: Promise<Map<string, string>>;
+}
+
+export interface ProviderResolutionDeps {
+  readerFactory: (project: Project) => ISessionReader;
+  sessionIndexService?: ISessionIndexService;
+  codexScanner?: Pick<CodexSessionScanner, "getSessionProjectPath">;
+  codexSessionsDir?: string;
+  codexReaderFactory?: (projectPath: string) => CodexSessionReader;
+  geminiSessionsDir?: string;
+  geminiReaderFactory?: (projectPath: string) => GeminiSessionReader;
+  geminiHashToCwd?: Promise<Map<string, string>>;
+  grokSessionsDir?: string;
+  grokReaderFactory?: (projectPath: string) => GrokSessionReader;
+  piSessionsDir?: string;
+  piReaderFactory?: (projectPath: string) => PiSessionReader;
+  claudeSummaryParserWorkerMode?: SummaryParserWorkerMode;
+  codexSummaryParserWorkerMode?: SummaryParserWorkerMode;
+}
+
+export interface SessionSource {
+  provider: ProviderName;
+  reader: ISessionReader;
+  sessionDir: string;
+  kind: "primary" | "codex" | "gemini" | "opencode" | "grok" | "pi";
+}
+
+export interface ResolvedSessionSummary {
+  source: SessionSource;
+  summary: SessionSummary;
+}
+
+export interface ResolvedSessionListSummary {
+  source: SessionSource;
+  summary: SessionListSummary;
+}
+
+export interface NativeSessionProject {
+  provider: ProviderName;
+  projectPath: string;
+}
+
+function normalizeProviderGroup(
+  provider: ProviderName | string | undefined,
+): ProviderGroup | null {
+  if (!provider) return null;
+  if (provider === "codex" || provider === "codex-oss") return "codex";
+  if (provider === "gemini" || provider === "gemini-acp") return "gemini";
+  if (provider === "opencode") return "opencode";
+  if (isClaudeProviderName(provider)) return "claude";
+  if (provider === "grok" || provider === "grok-acp") return "grok";
+  if (provider === "pi") return "pi";
+  return null;
+}
+
+export async function findNativeSessionProjectAcrossProviders(
+  sessionId: string,
+  deps: ProviderResolutionDeps,
+  preferredProvider?: ProviderName | string,
+): Promise<NativeSessionProject | null> {
+  const preferredGroup = normalizeProviderGroup(preferredProvider);
+  const groups: ProviderGroup[] = preferredGroup
+    ? preferredGroup === "codex" ||
+      preferredGroup === "grok" ||
+      preferredGroup === "pi"
+      ? [preferredGroup]
+      : []
+    : ["codex", "grok", "pi"];
+  const matches: NativeSessionProject[] = [];
+
+  for (const group of groups) {
+    let projectPath: string | null = null;
+    if (group === "codex") {
+      projectPath = deps.codexScanner
+        ? await deps.codexScanner.getSessionProjectPath(sessionId)
+        : deps.codexSessionsDir
+          ? await new CodexSessionReader({
+              sessionsDir: deps.codexSessionsDir,
+            }).getSessionProjectPath(sessionId)
+          : null;
+    } else if (group === "grok") {
+      projectPath = deps.grokSessionsDir
+        ? await new GrokSessionReader({
+            sessionsDir: deps.grokSessionsDir,
+          }).getSessionProjectPath(sessionId)
+        : null;
+    } else if (group === "pi") {
+      projectPath = deps.piSessionsDir
+        ? await new PiSessionReader({
+            sessionsDir: deps.piSessionsDir,
+          }).getSessionProjectPath(sessionId)
+        : null;
+    }
+    if (projectPath) {
+      matches.push({
+        provider: group,
+        projectPath: canonicalizeProjectPath(projectPath),
+      });
+    }
+  }
+
+  return matches.length === 1 ? (matches[0] ?? null) : null;
+}
+
+function mayHaveCodexSessions(
+  project: Project,
+  catalog?: ProviderProjectCatalog,
+): boolean {
+  if (catalog) {
+    return catalog.codexPaths.has(canonicalizeProjectPath(project.path));
+  }
+  return normalizeProviderGroup(project.provider) === "claude";
+}
+
+function mayHaveGeminiSessions(
+  project: Project,
+  catalog?: ProviderProjectCatalog,
+): boolean {
+  if (catalog) {
+    return catalog.geminiPaths.has(canonicalizeProjectPath(project.path));
+  }
+  const provider = normalizeProviderGroup(project.provider);
+  return provider === "claude" || provider === "codex";
+}
+
+function mayHaveGrokSessions(_project: Project): boolean {
+  // Grok sessions are keyed by cwd under ~/.grok/sessions, so the reader's
+  // project-path filter is the real membership test. Include it for every
+  // provider group so mixed-provider projects survive YA restarts.
+  return true;
+}
+
+function mayHavePiSessions(_project: Project): boolean {
+  // pi sessions are keyed by cwd under ~/.pi/agent/sessions, so the reader's
+  // project-path filter is the real membership test. Include it for every
+  // provider group so pi sessions survive YA restarts (mirrors Grok).
+  return true;
+}
+
+function mayHaveOpenCodeSessions(_project: Project): boolean {
+  // OpenCode sessions live under its own storage keyed by a project whose
+  // worktree is the cwd; the reader matches that worktree, so its project-path
+  // filter is the real membership test. Include it for every provider group so
+  // OpenCode sessions appear (and resume) in any project that has them, even
+  // when YA's primary provider for the project is Claude/Codex/etc.
+  return true;
+}
+
+function createClaudeSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+): SessionSource {
+  return {
+    provider: project.provider,
+    reader: deps.readerFactory(project),
+    sessionDir: project.sessionDir,
+    kind: "primary",
+  };
+}
+
+function createCodexSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+): SessionSource | null {
+  const reader =
+    deps.codexReaderFactory?.(project.path) ??
+    (deps.codexSessionsDir
+      ? new CodexSessionReader({
+          sessionsDir: deps.codexSessionsDir,
+          projectPath: project.path,
+          summaryParserWorkerMode: deps.codexSummaryParserWorkerMode,
+        })
+      : null);
+  if (!reader) return null;
+  return {
+    provider: "codex",
+    reader,
+    sessionDir: deps.codexSessionsDir ?? project.sessionDir,
+    kind: "codex",
+  };
+}
+
+function createGeminiSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  catalog?: ProviderProjectCatalog,
+): SessionSource | null {
+  const reader =
+    deps.geminiReaderFactory?.(project.path) ??
+    (deps.geminiSessionsDir
+      ? new GeminiSessionReader({
+          sessionsDir: deps.geminiSessionsDir,
+          projectPath: project.path,
+          hashToCwd: catalog?.geminiHashToCwd ?? deps.geminiHashToCwd,
+        })
+      : null);
+  if (!reader) return null;
+  return {
+    provider: "gemini",
+    reader,
+    sessionDir: deps.geminiSessionsDir ?? project.sessionDir,
+    kind: "gemini",
+  };
+}
+
+function createGrokSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+): SessionSource | null {
+  const reader =
+    deps.grokReaderFactory?.(project.path) ??
+    new GrokSessionReader({
+      sessionsDir: deps.grokSessionsDir ?? GROK_SESSIONS_DIR,
+      projectPath: project.path,
+    });
+  return {
+    provider: "grok",
+    reader,
+    sessionDir: deps.grokSessionsDir ?? GROK_SESSIONS_DIR,
+    kind: "grok",
+  };
+}
+
+function createPiSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+): SessionSource {
+  const reader =
+    deps.piReaderFactory?.(project.path) ??
+    new PiSessionReader({
+      sessionsDir: deps.piSessionsDir ?? PI_SESSIONS_DIR,
+      projectPath: project.path,
+    });
+  return {
+    provider: "pi",
+    reader,
+    sessionDir: deps.piSessionsDir ?? PI_SESSIONS_DIR,
+    kind: "pi",
+  };
+}
+
+function createOpenCodeSource(
+  project: Project,
+  deps: ProviderResolutionDeps,
+): SessionSource {
+  return {
+    provider: "opencode",
+    reader: deps.readerFactory({ ...project, provider: "opencode" }),
+    // Use OpenCode's own storage dir (not the project's Claude-style dir) so the
+    // session-index cache key is distinct from the Claude source for the same
+    // project — otherwise the two would collide on (sessionDir, projectId).
+    sessionDir: OPENCODE_STORAGE_DIR,
+    kind: "opencode",
+  };
+}
+
+function buildCandidateGroups(
+  project: Project,
+  preferredProvider: ProviderName | string | undefined,
+  catalog?: ProviderProjectCatalog,
+): ProviderGroup[] {
+  const groups: ProviderGroup[] = [];
+  const pushGroup = (group: ProviderGroup | null) => {
+    if (!group || groups.includes(group)) return;
+    groups.push(group);
+  };
+
+  const preferredGroup = normalizeProviderGroup(preferredProvider);
+  const projectGroup = normalizeProviderGroup(project.provider);
+
+  pushGroup(preferredGroup);
+  pushGroup(projectGroup);
+
+  if (mayHaveCodexSessions(project, catalog)) {
+    pushGroup("codex");
+  }
+  if (mayHaveGeminiSessions(project, catalog)) {
+    pushGroup("gemini");
+  }
+  if (mayHaveGrokSessions(project)) {
+    pushGroup("grok");
+  }
+  if (mayHavePiSessions(project)) {
+    pushGroup("pi");
+  }
+  if (mayHaveOpenCodeSessions(project)) {
+    pushGroup("opencode");
+  }
+
+  return groups;
+}
+
+function getSourceForGroup(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  group: ProviderGroup,
+  catalog?: ProviderProjectCatalog,
+): SessionSource | null {
+  switch (group) {
+    case "claude":
+      return createClaudeSource(project, deps);
+    case "opencode":
+      return createOpenCodeSource(project, deps);
+    case "codex":
+      return createCodexSource(project, deps);
+    case "gemini":
+      return createGeminiSource(project, deps, catalog);
+    case "grok":
+      return createGrokSource(project, deps);
+    case "pi":
+      return createPiSource(project, deps);
+  }
+}
+
+export function getSessionSources(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  preferredProvider?: ProviderName | string,
+  catalog?: ProviderProjectCatalog,
+  allowedGroups?: ReadonlySet<string>,
+): SessionSource[] {
+  const sources: SessionSource[] = [];
+  for (const group of buildCandidateGroups(
+    project,
+    preferredProvider,
+    catalog,
+  )) {
+    if (allowedGroups && !allowedGroups.has(group)) continue;
+    const source = getSourceForGroup(project, deps, group, catalog);
+    if (!source) continue;
+    if (
+      sources.some(
+        (existing) =>
+          existing.kind === source.kind &&
+          existing.sessionDir === source.sessionDir,
+      )
+    ) {
+      continue;
+    }
+    sources.push(source);
+  }
+  return sources;
+}
+
+/**
+ * Selects the session source for one named provider, so a caller that knows
+ * which provider recorded a session reads it with that provider's reader.
+ * Returns null when the name belongs to no provider group, or when the group's
+ * reader is unavailable here; never substitutes another provider's reader.
+ */
+export function getSessionSourceForProvider(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  provider: ProviderName | string,
+  catalog?: ProviderProjectCatalog,
+): SessionSource | null {
+  const group = normalizeProviderGroup(provider);
+  if (!group) return null;
+  return getSourceForGroup(project, deps, group, catalog);
+}
+
+function filterActiveSessions(
+  sessions: SessionSummary[],
+  options?: SessionIndexListOptions,
+): SessionSummary[] {
+  const activeAfterMs = options?.activeAfterMs;
+  if (activeAfterMs === undefined) {
+    return sessions;
+  }
+  return sessions.filter(
+    (session) => Date.parse(session.updatedAt) >= activeAfterMs,
+  );
+}
+
+function filterActiveSessionListSummaries(
+  sessions: SessionListSummary[],
+  options?: SessionIndexListOptions,
+): SessionListSummary[] {
+  const activeAfterMs = options?.activeAfterMs;
+  if (activeAfterMs === undefined) {
+    return sessions;
+  }
+  return sessions.filter(
+    (session) => Date.parse(session.updatedAt) >= activeAfterMs,
+  );
+}
+
+async function listSessionsForSource(
+  project: Project,
+  source: SessionSource,
+  deps: ProviderResolutionDeps,
+  options?: SessionIndexListOptions,
+): Promise<SessionSummary[]> {
+  if (!deps.sessionIndexService) {
+    return filterActiveSessions(
+      await source.reader.listSessions(project.id),
+      options,
+    );
+  }
+
+  let sessions = await deps.sessionIndexService.getSessionsWithCache(
+    source.sessionDir,
+    project.id,
+    source.reader,
+    options,
+  );
+
+  if (
+    source.kind === "primary" &&
+    normalizeProviderGroup(project.provider) === "claude"
+  ) {
+    for (const dir of project.mergedSessionDirs ?? []) {
+      const mergedReader = new ClaudeSessionReader({
+        sessionDir: dir,
+        summaryParserWorkerMode: deps.claudeSummaryParserWorkerMode,
+      });
+      const merged = await deps.sessionIndexService.getSessionsWithCache(
+        dir,
+        project.id,
+        mergedReader,
+        options,
+      );
+      sessions = [...sessions, ...merged];
+    }
+  }
+
+  return sessions;
+}
+
+async function listSessionListSummariesForSource(
+  project: Project,
+  source: SessionSource,
+  deps: ProviderResolutionDeps,
+  options?: SessionIndexListOptions,
+): Promise<SessionListSummary[]> {
+  const listReader = source.reader.getSessionListSummary;
+  if (!listReader || !source.reader.listSessionFiles) {
+    return (await listSessionsForSource(project, source, deps, options)).map(
+      toSessionListSummary,
+    );
+  }
+
+  const sessionFiles = await source.reader.listSessionFiles(
+    source.sessionDir,
+    options,
+  );
+  const summaries: SessionListSummary[] = [];
+
+  for (
+    let offset = 0;
+    offset < sessionFiles.length;
+    offset += SESSION_LIST_READ_BATCH_SIZE
+  ) {
+    const batch = await Promise.all(
+      sessionFiles
+        .slice(offset, offset + SESSION_LIST_READ_BATCH_SIZE)
+        .map(async (entry) => {
+          const cached =
+            deps.sessionIndexService && !entry.sharedFilePath
+              ? await deps.sessionIndexService.getCachedSessionSummary(
+                  source.sessionDir,
+                  project.id,
+                  entry.sessionId,
+                  source.reader,
+                )
+              : null;
+          if (
+            cached &&
+            !(
+              (cached.provider === "codex" ||
+                cached.provider === "codex-oss") &&
+              cached.asyncQuestions === undefined
+            )
+          ) {
+            return toSessionListSummary(cached);
+          }
+          return listReader.call(
+            source.reader,
+            entry.sessionId,
+            project.id,
+            cached ? toSessionListSummary(cached) : undefined,
+          );
+        }),
+    );
+    for (const summary of batch) {
+      if (summary) {
+        summaries.push(summary);
+      }
+    }
+  }
+
+  const activeSummaries = filterActiveSessionListSummaries(summaries, options);
+  activeSummaries.sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  );
+  return activeSummaries;
+}
+
+export async function listSessionsAcrossProviders(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  catalog?: ProviderProjectCatalog,
+  options?: SessionIndexListOptions,
+): Promise<SessionSummary[]> {
+  const sessions: SessionSummary[] = [];
+  const seenSessionIds = new Set<string>();
+
+  for (const source of getSessionSources(project, deps, undefined, catalog)) {
+    const sourceSessions = await listSessionsForSource(
+      project,
+      source,
+      deps,
+      options,
+    );
+    for (const session of sourceSessions) {
+      if (seenSessionIds.has(session.id)) continue;
+      seenSessionIds.add(session.id);
+      sessions.push(session);
+    }
+  }
+
+  return sessions;
+}
+
+export async function listSessionListSummariesAcrossProviders(
+  project: Project,
+  deps: ProviderResolutionDeps,
+  catalog?: ProviderProjectCatalog,
+  options?: SessionIndexListOptions,
+): Promise<SessionListSummary[]> {
+  const sessions: SessionListSummary[] = [];
+  const seenSessionIds = new Set<string>();
+
+  for (const source of getSessionSources(project, deps, undefined, catalog)) {
+    const sourceSessions = await listSessionListSummariesForSource(
+      project,
+      source,
+      deps,
+      options,
+    );
+    for (const session of sourceSessions) {
+      if (seenSessionIds.has(session.id)) continue;
+      seenSessionIds.add(session.id);
+      sessions.push(session);
+    }
+  }
+
+  return sessions;
+}
+
+export async function findSessionListSummaryAcrossProviders(
+  project: Project,
+  sessionId: string,
+  projectId: UrlProjectId,
+  deps: ProviderResolutionDeps,
+  preferredProvider?: ProviderName | string,
+): Promise<ResolvedSessionListSummary | null> {
+  for (const source of getSessionSources(project, deps, preferredProvider)) {
+    if (source.reader.getSessionListSummary) {
+      const cachedSummary = deps.sessionIndexService
+        ? await deps.sessionIndexService.getCachedSessionSummary(
+            source.sessionDir,
+            projectId,
+            sessionId,
+            source.reader,
+          )
+        : null;
+      if (
+        cachedSummary &&
+        !(
+          (cachedSummary.provider === "codex" ||
+            cachedSummary.provider === "codex-oss") &&
+          cachedSummary.asyncQuestions === undefined
+        )
+      ) {
+        return {
+          source,
+          summary: toSessionListSummary(cachedSummary),
+        };
+      }
+
+      const summary = await source.reader.getSessionListSummary(
+        sessionId,
+        projectId,
+        cachedSummary ? toSessionListSummary(cachedSummary) : undefined,
+      );
+      if (summary) {
+        return { source, summary };
+      }
+      continue;
+    }
+
+    const completeSummary = deps.sessionIndexService
+      ? await deps.sessionIndexService.getSessionSummaryWithCache(
+          source.sessionDir,
+          projectId,
+          sessionId,
+          source.reader,
+        )
+      : await source.reader.getSessionSummary(sessionId, projectId);
+    if (completeSummary) {
+      return {
+        source,
+        summary: toSessionListSummary(completeSummary),
+      };
+    }
+  }
+
+  return null;
+}
+
+export async function findSessionSummaryAcrossProviders(
+  project: Project,
+  sessionId: string,
+  projectId: UrlProjectId,
+  deps: ProviderResolutionDeps,
+  preferredProvider?: ProviderName | string,
+  options?: GetSessionSummaryOptions,
+): Promise<ResolvedSessionSummary | null> {
+  for (const source of getSessionSources(project, deps, preferredProvider)) {
+    if (deps.sessionIndexService && options?.readMode === "head") {
+      const cachedSummary =
+        await deps.sessionIndexService.getCachedSessionSummary(
+          source.sessionDir,
+          projectId,
+          sessionId,
+          source.reader,
+        );
+      if (cachedSummary) {
+        return { source, summary: cachedSummary };
+      }
+    }
+
+    const summary =
+      deps.sessionIndexService &&
+      options?.readMode !== "head" &&
+      options?.contextUsageMode !== "manual-compaction"
+        ? await deps.sessionIndexService.getSessionSummaryWithCache(
+            source.sessionDir,
+            projectId,
+            sessionId,
+            source.reader,
+          )
+        : options
+          ? await source.reader.getSessionSummary(sessionId, projectId, options)
+          : await source.reader.getSessionSummary(sessionId, projectId);
+    if (summary) {
+      return { source, summary };
+    }
+  }
+
+  return null;
+}

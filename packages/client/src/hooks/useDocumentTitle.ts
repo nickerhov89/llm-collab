@@ -1,0 +1,71 @@
+import { sanitizeSessionTitle } from "@yep-anywhere/shared";
+import { useEffect } from "react";
+import { appendComposerBeacon } from "../lib/composerBeacon";
+import { useProjectCodeNamePreferences } from "./useProjectCodeNamePreferences";
+
+const POLZA_COWORK = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
+const BASE_TITLE = POLZA_COWORK ? "LLM Collab" : "Yep Anywhere";
+export const PROJECT_CODE_NAME_TITLE_ATTRIBUTE = "data-project-code-name";
+
+/**
+ * Truncates a string to a maximum length, adding ellipsis if needed.
+ */
+function truncate(str: string, maxLength: number): string {
+  if (str.length <= maxLength) return str;
+  return `${str.slice(0, maxLength - 1)}…`;
+}
+
+export function formatDocumentTitle(
+  projectName?: string | null,
+  projectCodeName?: string | null,
+  sessionName?: string | null,
+): string {
+  if (!projectName) return BASE_TITLE;
+  const safeProjectName = sanitizeSessionTitle(projectName);
+  if (!sessionName)
+    return POLZA_COWORK ? `${safeProjectName} · ${BASE_TITLE}` : safeProjectName;
+  const safeSessionName = sanitizeSessionTitle(sessionName);
+  if (projectCodeName) {
+    const safeCodeName = sanitizeSessionTitle(projectCodeName);
+    const title = `${safeCodeName}:${safeSessionName}`;
+    return POLZA_COWORK ? `${title} · ${BASE_TITLE}` : title;
+  }
+  const title = `${truncate(safeProjectName, 10)} - ${truncate(safeSessionName, 20)}`;
+  return POLZA_COWORK ? `${title} · ${BASE_TITLE}` : title;
+}
+
+export function useDocumentTitle(
+  projectName?: string | null,
+  projectCodeName?: string | null,
+  sessionName?: string | null,
+  enabled = true,
+) {
+  const { projectCodeNamesEnabled } = useProjectCodeNamePreferences();
+  const displayedProjectCodeName = projectCodeNamesEnabled
+    ? projectCodeName
+    : undefined;
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const titleElement = document.querySelector("title");
+    if (projectName && displayedProjectCodeName && sessionName) {
+      titleElement?.setAttribute(PROJECT_CODE_NAME_TITLE_ATTRIBUTE, "");
+    } else {
+      titleElement?.removeAttribute(PROJECT_CODE_NAME_TITLE_ATTRIBUTE);
+    }
+    // Only the human title is truncated; never publish a title missing an
+    // active beacon while waiting for the badge observer to run.
+    document.title = appendComposerBeacon(
+      formatDocumentTitle(projectName, displayedProjectCodeName, sessionName),
+    );
+
+    // Restore base title on unmount
+    return () => {
+      titleElement?.removeAttribute(PROJECT_CODE_NAME_TITLE_ATTRIBUTE);
+      document.title = appendComposerBeacon(BASE_TITLE);
+    };
+  }, [displayedProjectCodeName, enabled, projectName, sessionName]);
+}

@@ -1,0 +1,455 @@
+/* Conversation layout shared by live and resumed sessions in the Polza client. */
+.polza-ui {
+  --content-max-width: 940px;
+  --output-prose-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --output-prose-font-size: 17px;
+  --output-prose-line-height: 1.55;
+  --output-prose-paragraph-gap: 0.9em;
+}
+.polza-ui .session-messages {
+  padding: 28px clamp(22px, 4vw, 54px) 42px;
+}
+.polza-ui .main-content-constrained .session-messages .message-list {
+  max-width: 940px;
+}
+.polza-ui .main-content-constrained .session-input-inner {
+  max-width: 1100px;
+}
+.polza-ui .message {
+  margin-bottom: 28px;
+}
+.polza-ui .user-prompt-container {
+  padding-inline-end: var(--user-prompt-actions-space);
+}
+.polza-ui .message-user-prompt {
+  margin-inline-start: auto;
+  max-width: min(78%, 700px);
+  padding: 11px 16px;
+  border-radius: 18px;
+  background: #f1f1f2;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.polza-ui .message-user-prompt .text-block {
+  line-height: 1.5;
+}
+
+.polza-ui .assistant-turn {
+  padding-inline-start: 0;
+}
+
+.polza-ui .assistant-turn .text-block-assistant {
+  --text-block-quote-lane: 28px;
+  padding-inline-end: 28px;
+  margin-block: 0 13px;
+  color: #222428;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+}
+
+/* Keep response controls available without displaying an icon after every paragraph. */
+.polza-ui .text-block-quote.always-visible {
+  opacity: 0;
+  pointer-events: none;
+}
+.polza-ui .text-block:hover .text-block-quote,
+.polza-ui .text-block:focus-within .text-block-quote,
+.polza-ui .text-block-quote:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.polza-ui .assistant-turn .text-block-actions {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.polza-ui .assistant-turn .text-block-assistant:hover .text-block-actions,
+.polza-ui .assistant-turn .text-block-assistant:focus-within .text-block-actions {
+  opacity: 1;
+}
+
+.polza-ui .assistant-turn .text-block-assistant.timeline-item::before,
+.polza-ui .assistant-turn .text-block-assistant.timeline-item::after,
+.polza-ui .assistant-turn .tool-row.timeline-item::after,
+.polza-ui .assistant-turn .thinking-block.timeline-item::after {
+  display: none;
+}
+
+.polza-ui .assistant-turn .text-block-assistant .text-block-content {
+  overflow-wrap: anywhere;
+}
+
+.polza-ui .assistant-turn .text-block-assistant p {
+  margin-bottom: 0.7em;
+}
+
+.polza-ui .assistant-turn .tool-row,
+.polza-ui .assistant-turn .thinking-block {
+  color: #8c8f96;
+  font-size: 14px;
+}
+
+.polza-ui .assistant-turn .tool-row.timeline-item::before,
+.polza-ui .assistant-turn .thinking-block.timeline-item::before {
+  background: #b6b9bf;
+  width: 5px;
+  height: 5px;
+  left: -12px;
+}
+
+/* Expanded activity reads as a quiet action log, not another assistant answer. */
+.polza-ui .ran-tool-row {
+  margin-block: 13px 16px;
+}
+.polza-ui .ran-tool-row .tool-row-header {
+  width: 100%;
+  min-height: 26px;
+  padding: 3px 7px;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+}
+.polza-ui .ran-tool-row .tool-row-header:hover,
+.polza-ui .ran-tool-row .tool-row-header:focus-visible {
+  background: #f5f5f6;
+}
+.polza-ui .ran-tool-row .tool-name,
+.polza-ui .ran-tool-row .tool-summary {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #777b83;
+}
+.polza-ui .ran-tool-row .tool-summary-command {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+.polza-ui .ran-tool-row .tool-summary-command-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+.polza-ui .ran-tool-row .tool-result-suffix {
+  font-size: 11px;
+}
+.polza-ui .ran-tool-row .tool-row-collapsed-preview {
+  margin: 3px 0 0 7px;
+}
+.polza-ui .ran-tool-row .bash-collapsed-preview {
+  border-color: #ebebed;
+  border-radius: 8px;
+  background: #f8f8f9;
+}
+.polza-ui .ran-tool-row .bash-preview-row {
+  padding: 7px 10px;
+}
+.polza-ui .ran-tool-row .bash-preview-output pre {
+  font-size: 12px;
+  line-height: 1.45;
+  max-height: calc(1.45em * 2);
+  color: #686b72;
+}
+
+.polza-ui .conversation-activity-summary {
+  min-height: 28px;
+  padding: 2px 0;
+  margin: 15px 0 20px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #83868d;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.polza-ui .conversation-activity-summary:hover,
+.polza-ui .conversation-activity-summary:focus-visible {
+  background: transparent;
+  color: #44474e;
+}
+
+.polza-ui .system-message-error {
+  align-items: flex-start;
+  max-height: 110px;
+  overflow: auto;
+  margin: 12px 0 20px;
+  padding: 10px 12px;
+  border: 1px solid #f0d8d8;
+  border-radius: 12px;
+  background: #fff7f7;
+  color: #7c3434;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+/* Queued turns sit directly above the composer as a compact action list. */
+.polza-ui .session-messages:has(.deferred-message) { padding-bottom: 6px; }
+.polza-ui .deferred-message.message-render-row {
+  width: calc(100% + 160px);
+  margin: 0 0 8px -80px;
+}
+
+.polza-ui .deferred-message > .message-render-content {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon text actions"
+    ". attachments actions";
+  align-items: center;
+  column-gap: 10px;
+  min-height: 63px;
+  padding: 10px 15px;
+  border: 1px solid #e6e7e9;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 3px 14px #0000000a;
+}
+
+.polza-ui .deferred-message > .message-render-content::before {
+  grid-area: icon;
+  content: "↳";
+  color: #aaadb2;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.polza-ui .deferred-message .message-user-prompt {
+  grid-area: text;
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #26272b;
+  font-size: 17px;
+  line-height: 1.45;
+  opacity: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.polza-ui .deferred-message-attachments-list { grid-area: attachments; }
+.polza-ui .deferred-message .deferred-message-footer {
+  grid-area: actions;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin: 0;
+}
+.polza-ui .deferred-message:not(.project-queue-inline-message):not(.polza-queued-recovered) .deferred-message-status { display: none; }
+.polza-ui .deferred-message .deferred-message-actions { margin: 0; }
+.polza-ui .polza-queued-actions { gap: 8px; white-space: nowrap; }
+.polza-ui .polza-queued-action,
+.polza-ui .polza-queued-more > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #93959a;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+.polza-ui .polza-queued-action:hover,
+.polza-ui .polza-queued-more > summary:hover { background: #f3f3f4; color: #3b3d42; }
+.polza-ui .polza-queued-action:disabled { opacity: .45; cursor: default; }
+.polza-ui .polza-queued-steer > span:first-child { font-size: 23px; line-height: 1; }
+.polza-ui .polza-queued-more { position: relative; }
+.polza-ui .polza-queued-more > summary { list-style: none; min-width: 34px; font-size: 23px; line-height: 1; }
+.polza-ui .polza-queued-more > summary::-webkit-details-marker { display: none; }
+.polza-ui .polza-queued-more-menu {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 7px);
+  display: grid;
+  gap: 3px;
+  min-width: 145px;
+  padding: 7px;
+  border: 1px solid #e2e3e5;
+  border-radius: 13px;
+  background: #fff;
+  box-shadow: 0 10px 30px #0000001a;
+}
+.polza-ui .polza-queued-more-menu .deferred-message-action {
+  justify-content: flex-start;
+  border: 0;
+  background: transparent;
+  color: #45474d;
+  font-size: 14px;
+}
+
+@media (width <= 700px) {
+  .polza-ui .deferred-message.message-render-row { width: 100%; margin: 0 0 8px; }
+  .polza-ui .deferred-message > .message-render-content {
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-areas: "icon text" ". attachments" ". actions";
+    gap: 4px 7px;
+    padding: 9px 11px;
+    border-radius: 17px;
+  }
+  .polza-ui .deferred-message .message-user-prompt { font-size: 15px; }
+  .polza-ui .deferred-message .deferred-message-footer { justify-content: flex-end; }
+  .polza-ui .polza-queued-actions { flex-basis: auto; }
+  .polza-ui {
+    --output-prose-font-size: 16px;
+  }
+
+  .polza-ui .session-messages {
+    padding: 20px 17px 30px;
+  }
+
+  .polza-ui .message-user-prompt {
+    max-width: min(88%, 620px);
+    padding: 10px 13px;
+    font-size: 15px;
+  }
+
+  .polza-ui .message {
+    margin-bottom: 24px;
+  }
+
+  .polza-ui .assistant-turn .text-block-assistant {
+    padding-inline-end: 0;
+  }
+
+  .polza-ui .assistant-turn .text-block-actions {
+    opacity: 1;
+  }
+}
+
+/* Codex-style live progress: one reading column instead of detached cards. */
+.polza-ui .conversation-activity-row,
+.polza-ui .conversation-activity-row.is-wide-activity-previews {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 17px 0 24px;
+}
+.polza-ui .conversation-activity-column,
+.polza-ui .conversation-activity-row.is-wide-activity-previews > .conversation-activity-column {
+  width: 100%;
+  max-width: 100%;
+}
+.polza-ui .conversation-activity-summary {
+  display: inline-flex;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0 0 9px;
+  padding: 3px 6px;
+  color: #85888e;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.polza-ui .conversation-activity-summary.is-active { color: #83868d; }
+.polza-ui .conversation-activity-summary .activityPulse { background: #70a58e; }
+.polza-ui .conversation-recent-activities,
+.polza-ui .conversation-activity-row.is-wide-activity-previews .conversation-recent-activities {
+  width: 100%;
+  min-width: 0;
+  max-height: none;
+  margin: 3px 0 10px;
+  padding: 0 0 0 30px;
+  overflow: visible;
+  color: #909297;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.polza-ui .conversation-recent-activities li { align-items: center; gap: 8px; min-height: 29px; }
+.polza-ui .conversation-recent-activities li::before {
+  content: "✎";
+  flex: none;
+  width: 18px;
+  color: #85888d;
+  font-size: 20px;
+  line-height: 1;
+}
+.polza-ui .conversation-recent-activity-preview { color: #a0a2a7; }
+.polza-ui .conversation-thinking-preview,
+.polza-ui .conversation-thinking-preview.is-collapsed {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin: 1px 0 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.polza-ui .conversation-thinking-preview-header { min-height: 32px; }
+.polza-ui .conversation-thinking-preview-toggle {
+  gap: 10px;
+  padding: 3px 6px 3px 24px;
+  color: #8b8d93;
+  font-family: inherit;
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.45;
+}
+.polza-ui .conversation-thinking-preview-toggle:hover,
+.polza-ui .conversation-thinking-preview-toggle:focus-visible {
+  background: transparent;
+  color: #4a4c51;
+}
+.polza-ui .conversation-thinking-preview-dot,
+.polza-ui .conversation-thinking-preview.is-streaming .conversation-thinking-preview-dot {
+  width: 7px;
+  height: 7px;
+  background: #e6bd96;
+  box-shadow: none;
+}
+.polza-ui .conversation-thinking-preview-chevron { margin-left: 0; color: #999ba0; }
+.polza-ui .conversation-thinking-preview-dismiss { margin-left: auto; color: #a2a4a9; opacity: 0; }
+.polza-ui .conversation-thinking-preview:hover .conversation-thinking-preview-dismiss,
+.polza-ui .conversation-thinking-preview-dismiss:focus-visible { opacity: 1; }
+.polza-ui .conversation-thinking-preview-content,
+.polza-ui .conversation-thinking-preview[data-preview-slot="previous"] .conversation-thinking-preview-content {
+  max-height: min(40vh, 24rem);
+  padding: 5px 16px 8px 42px;
+  border: 0;
+  background: transparent;
+}
+.polza-ui .conversation-thinking-preview-content .thinking-text {
+  margin-top: 0;
+  color: #777a80;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.polza-ui .assistant-turn .thinking-block { margin: 7px 0 12px; }
+.polza-ui .assistant-turn .thinking-block .collapsible__summary {
+  gap: 9px;
+  color: #8b8d93;
+  font-family: inherit;
+  font-size: 15px;
+  font-style: italic;
+}
+.polza-ui .assistant-turn .thinking-block .collapsible__content { padding: 8px 0 10px 29px; }
+.polza-ui .ran-tool-row .tool-name,
+.polza-ui .ran-tool-row .tool-summary { color: #85888e; font-size: 15px; line-height: 1.5; }
+@media (width <= 700px) {
+  .polza-ui .conversation-activity-row { margin: 12px 0 19px; }
+  .polza-ui .conversation-activity-summary { font-size: 14px; }
+  .polza-ui .conversation-recent-activities { padding-left: 12px; font-size: 14px; }
+  .polza-ui .conversation-thinking-preview-toggle { padding-left: 8px; font-size: 14px; }
+  .polza-ui .conversation-thinking-preview-content { padding-left: 25px; }
+}

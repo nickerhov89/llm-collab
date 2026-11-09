@@ -1,0 +1,61 @@
+[package]
+name = "yep-anywhere-desktop"
+version = "0.6.0"
+description = "Yep Anywhere Desktop App"
+authors = ["Kyle Graehl <kgraehl@gmail.com>"]
+edition = "2021"
+
+[lib]
+name = "yep_anywhere_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "=2.11.5", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+dirs = "5.0"
+reqwest = { version = "0.12", features = ["rustls-tls", "stream", "json"] }
+rand = "0.8"
+semver = "1"
+url = "2"
+tempfile = "3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSApplication", "NSButton", "NSControl", "NSFont", "NSPopUpButton", "NSProgressIndicator", "NSTextField", "NSView", "NSWindow", "NSResponder"] }
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSObject", "NSString", "NSGeometry"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_SystemInformation",
+  "Win32_System_Threading",
+  "Win32_UI_Controls",
+  "Win32_UI_WindowsAndMessaging",
+] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-window-state = "2"
+
+# Keep routine dev and test builds small while retaining file/line backtraces.
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+# Opt into full source-level debugger data in an isolated output directory.
+[profile.debugging]
+inherits = "dev"
+opt-level = 0
+debug = "full"

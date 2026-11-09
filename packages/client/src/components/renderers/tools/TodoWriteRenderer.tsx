@@ -1,0 +1,153 @@
+import { toolDisplayContracts } from "./toolDisplayContracts";
+import { defineTool } from "./defineTool";
+import { useEffect, useState } from "react";
+import type { ZodError } from "zod";
+import { useSchemaValidationContext } from "../../../contexts/SchemaValidationContext";
+import { validateToolResult } from "../../../lib/validateToolResult";
+import { SchemaWarning } from "../../SchemaWarning";
+import type { Todo, TodoWriteInput, TodoWriteResult } from "./types";
+
+/**
+ * Get status icon for a todo item
+ */
+function getStatusIcon(status: Todo["status"]): string {
+  switch (status) {
+    case "pending":
+      return "□";
+    case "in_progress":
+      return "❋";
+    case "completed":
+      return "✓";
+    default:
+      return "□";
+  }
+}
+
+/**
+ * Single todo item
+ */
+function TodoItem({ todo }: { todo: Todo }) {
+  const statusClass = `todo-status-${todo.status}`;
+  const isCompleted = todo.status === "completed";
+
+  return (
+    <div className={`todo-item ${statusClass}`}>
+      <span className="todo-checkbox">{getStatusIcon(todo.status)}</span>
+      <span className={`todo-content ${isCompleted ? "todo-completed" : ""}`}>
+        {todo.content}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * TodoWrite tool use - shows intended todo changes
+ */
+function TodoWriteToolUse({ input }: { input: TodoWriteInput }) {
+  if (!input?.todos || input.todos.length === 0) {
+    return <div className="todo-empty">No todos specified</div>;
+  }
+
+  const inProgress = input.todos.filter((t) => t.status === "in_progress");
+  const pending = input.todos.filter((t) => t.status === "pending");
+  const completed = input.todos.filter((t) => t.status === "completed");
+
+  return (
+    <div className="todo-tool-use">
+      <span className="todo-summary">
+        {inProgress.length > 0 && `${inProgress.length} in progress`}
+        {inProgress.length > 0 &&
+          (pending.length > 0 || completed.length > 0) &&
+          ", "}
+        {pending.length > 0 && `${pending.length} pending`}
+        {pending.length > 0 && completed.length > 0 && ", "}
+        {completed.length > 0 && `${completed.length} completed`}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * TodoWrite tool result - shows the updated todo list
+ */
+function TodoWriteToolResult({ result }: { result: TodoWriteResult }) {
+  const { enabled, reportValidationError, isToolIgnored } =
+    useSchemaValidationContext();
+  const [validationErrors, setValidationErrors] = useState<ZodError | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (enabled && result) {
+      const validation = validateToolResult("TodoWrite", result);
+      if (!validation.valid && validation.errors) {
+        setValidationErrors(validation.errors);
+        reportValidationError("TodoWrite", validation.errors);
+      } else {
+        setValidationErrors(null);
+      }
+    }
+  }, [enabled, result, reportValidationError]);
+
+  const showValidationWarning =
+    enabled && validationErrors && !isToolIgnored("TodoWrite");
+
+  if (!result?.newTodos || result.newTodos.length === 0) {
+    return (
+      <div className="todo-empty">
+        {showValidationWarning && validationErrors && (
+          <SchemaWarning toolName="TodoWrite" errors={validationErrors} />
+        )}
+        No todos
+      </div>
+    );
+  }
+
+  return (
+    <div className="todo-result">
+      {showValidationWarning && validationErrors && (
+        <SchemaWarning toolName="TodoWrite" errors={validationErrors} />
+      )}
+      <div className="todo-list">
+        {result.newTodos.map((todo, index) => (
+          <TodoItem key={`${todo.content}-${index}`} todo={todo} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export const todoWriteRenderer = defineTool(toolDisplayContracts.TodoWrite, {
+  tool: "TodoWrite",
+  displayName: "Update Todos",
+
+  renderToolUse(input, _context) {
+    return <TodoWriteToolUse input={input} />;
+  },
+
+  renderToolResult(result, _isError, _context) {
+    return <TodoWriteToolResult result={result} />;
+  },
+
+  renderFailure(failure) {
+    return (
+      <div className="todo-error">
+        {failure.content || "Failed to update todos"}
+      </div>
+    );
+  },
+
+  getFailureSummary() {
+    return "Error";
+  },
+
+  getUseSummary(input) {
+    const todos = input.todos;
+    return todos ? `${todos.length} items` : "Todos";
+  },
+
+  getResultSummary(result) {
+    const r = result;
+    return r?.newTodos ? `${r.newTodos.length} items` : "Todos";
+  },
+});

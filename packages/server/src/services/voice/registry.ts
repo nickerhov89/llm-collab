@@ -1,0 +1,343 @@
+import { getLogger } from "../../logging/logger.js";
+import { DeepgramBackend } from "./deepgramBackend.js";
+import { DummyBackend } from "./dummyBackend.js";
+import { LocalGraniteBackend } from "./localGraniteBackend.js";
+import { LocalNemoBackend } from "./localNemoBackend.js";
+import { LocalParakeetBackend } from "./localParakeetBackend.js";
+import { LocalQwenBackend } from "./localQwenBackend.js";
+import { LocalWhisperBackend } from "./localWhisperBackend.js";
+import type {
+  SpeechBackend,
+  SpeechBackendCapabilities,
+  SpeechBackendInfo,
+  SpeechStreamOptions,
+  SpeechStreamHandlers,
+  SpeechStreamSession,
+  StreamingSpeechBackend,
+} from "./SpeechBackend.js";
+import { XaiSttBackend } from "./xaiSttBackend.js";
+
+const logger = getLogger();
+export interface SpeechVocabularyContext {
+  projectId?: string;
+  sessionId?: string;
+  sessionTerms?: string[];
+}
+
+/**
+ * Server-side registry of speech backends.
+ *
+ * On startup, each candidate backend is validated; only those that pass are
+ * advertised to clients via `voiceBackends` on the version response. The
+ * registry also serves as the dispatch table for speech transcription routes.
+ */
+export class SpeechBackendRegistry {
+  private readonly entries = new Map<
+    string,
+    { info: SpeechBackendInfo; backend: SpeechBackend }
+  >();
+  private readonly validations = new Set<Promise<void>>();
+  private vocabularySource?: (
+    context?: SpeechVocabularyContext,
+  ) => string[] | Promise<string[]>;
+
+  setVocabularySource(
+    source:
+      | ((context?: SpeechVocabularyContext) => string[] | Promise<string[]>)
+      | undefined,
+  ): void {
+    this.vocabularySource = source;
+  }
+
+  async keyterms(
+    backendId: string,
+    requested: string[] = [],
+    context?: SpeechVocabularyContext,
+  ): Promise<string[]> {
+    if (backendId !== "ya-grok" && backendId !== "ya-granite") {
+      return requested;
+    }
+    return [
+      ...new Set([
+        ...requested,
+        ...((await this.vocabularySource?.(context)) ?? []),
+      ]),
+    ]
+      .filter((term) => term.length > 0 && term.length <= 50)
+      .slice(0, 100);
+  }
+
+  /** Reference loading shares the handshake lifetime, without blocking audio frames. */
+  async stream(
+    backend: StreamingSpeechBackend,
+    options: SpeechStreamOptions,
+    handlers: SpeechStreamHandlers,
+    requestId: string,
+    isCurrent: () => boolean,
+    context?: SpeechVocabularyContext,
+  ): Promise<SpeechStreamSession> {
+    const keyterms = await this.keyterms(backend.id, options.keyterms, context);
+    if (!isCurrent()) throw new Error("Speech stream was closed or superseded");
+    logger.info(
+      { component: "speech", requestId, backendId: backend.id, keyterms },
+      "Speech streaming keyterms selected",
+    );
+    return backend.stream({ ...options, keyterms }, handlers);
+  }
+
+  /** Currently enabled backend ids in insertion order. */
+  enabledIds(): string[] {
+    return [...this.entries.values()]
+      .filter(({ info }) => info.enabled)
+      .map(({ info }) => info.id);
+  }
+
+  /** All configured backend ids, including pending and disabled entries. */
+  knownIds(): string[] {
+    return [...this.entries.keys()];
+  }
+
+  /** All known backends, including disabled ones, for diagnostics. */
+  allInfo(): SpeechBackendInfo[] {
+    return [...this.entries.values()].map(({ info }) => info);
+  }
+
+  /** Capabilities for currently enabled backend ids. */
+  enabledCapabilities(): Record<string, SpeechBackendCapabilities> {
+    return Object.fromEntries(
+      [...this.entries.values()]
+        .filter(({ info }) => info.enabled)
+        .map(({ info }) => [info.id, info.capabilities ?? {}]),
+    );
+  }
+
+  /** True when the given id is currently enabled. */
+  isEnabled(id: string): boolean {
+    return this.entries.get(id)?.info.enabled ?? false;
+  }
+
+  /** Administrative access also permits recovery from a failed validation. */
+  getConfiguredBackend(id: string): SpeechBackend | null {
+    return this.entries.get(id)?.backend ?? null;
+  }
+
+  /** Return an enabled backend by id, or null if unknown/disabled. */
+  getBackend(id: string): SpeechBackend | null {
+    const entry = this.entries.get(id);
+    if (!entry?.info.enabled) return null;
+    return entry.backend;
+  }
+
+  /** Retry a failed import probe after an explicit install, reusing its worker. */
+  revalidate(id: string): void {
+    const entry = this.entries.get(id);
+    if (entry && entry.info.validationStatus === "disabled") {
+      this.register(entry.backend);
+    }
+  }
+
+  register(backend: SpeechBackend): void {
+    // Record configured backends immediately for discovery, but keep them out
+    // of the routable set until validation succeeds. This separates "known"
+    // from "usable" instead of optimistically weakening enabled semantics.
+    const info: SpeechBackendInfo = {
+      id: backend.id,
+      label: backend.label,
+      enabled: false,
+      validationStatus: "pending",
+      capabilities: backend.capabilities ?? {},
+    };
+    this.entries.set(backend.id, { info, backend });
+
+    const validation = backend
+      .validate()
+      .then((result) => {
+        info.enabled = result.ok;
+        info.validationStatus = result.ok ? "enabled" : "disabled";
+        if (result.ok) {
+          info.disabledReason = undefined;
+          logger.info(`[Voice] Backend "${backend.id}" enabled`);
+        } else {
+          info.disabledReason = result.reason;
+          logger.warn(
+            `[Voice] Backend "${backend.id}" disabled: ${result.reason}`,
+          );
+        }
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : String(error ?? "unknown");
+        info.enabled = false;
+        info.validationStatus = "disabled";
+        info.disabledReason = message;
+        logger.warn(
+          `[Voice] Backend "${backend.id}" validate threw: ${message}`,
+        );
+      })
+      .finally(() => {
+        this.validations.delete(validation);
+      });
+    this.validations.add(validation);
+  }
+
+  /** Wait for startup validations currently in flight; useful for tests/tools. */
+  async waitForValidation(): Promise<void> {
+    await Promise.all(this.validations);
+  }
+}
+
+export interface SpeechRegistryInitOptions {
+  /** Master switch — when false, no backends are registered. */
+  voiceInputEnabled?: boolean;
+  /** Explicit backend ids from YEP_VOICE_BACKENDS (cloud keys auto-enable separately). */
+  voiceBackends?: string[];
+  /**
+   * Deepgram API key (from YEP_STT_DEEPGRAM_API_KEY) for ya-deepgram. When set,
+   * the backend is auto-enabled — presence of the key is the opt-in signal.
+   */
+  deepgramApiKey?: string;
+  /**
+   * xAI key (from YEP_STT_XAI_API_KEY) for ya-grok. When set, the backend is
+   * auto-enabled even if not listed in voiceBackends — presence of the key is
+   * the opt-in signal.
+   */
+  xaiSttApiKey?: string;
+  /** Whisper model name (default: distil-large-v3.5). */
+  whisperModel?: string;
+  /** Whisper device (default: cpu). */
+  whisperDevice?: string;
+  /** Whisper compute type (default: int8). */
+  whisperComputeType?: string;
+  /** Parakeet fallback model (default: ai-and-i-project/parakeet-tdt-0.6b-v2-hf). */
+  parakeetModel?: string;
+  /** Parakeet device (default: auto). */
+  parakeetDevice?: string;
+  /** NeMo Parakeet fallback model name (default: nvidia/parakeet-unified-en-0.6b). */
+  nemoModel?: string;
+  /** NeMo Parakeet device (default: auto). */
+  nemoDevice?: string;
+  /** Granite Speech model name (default: ibm-granite/granite-speech-4.1-2b). */
+  graniteModel?: string;
+  /** Granite Speech device (default: auto). */
+  graniteDevice?: string;
+  /** Qwen3 ASR model and device; defaults to 1.7B-hf and automatic CUDA. */
+  qwenModel?: string;
+  qwenDevice?: string;
+}
+
+export async function initSpeechBackendRegistry(
+  options: SpeechRegistryInitOptions = {},
+): Promise<SpeechBackendRegistry> {
+  const registry = new SpeechBackendRegistry();
+  await registerSpeechBackends(registry, options);
+  return registry;
+}
+
+export function getRequestedSpeechBackendIds(
+  options: SpeechRegistryInitOptions = {},
+): string[] {
+  if (options.voiceInputEnabled === false) {
+    return [];
+  }
+
+  // Cloud STT backends auto-enable when their key is present — a provisioned
+  // key is the opt-in signal. Local/test backends stay explicit via
+  // YEP_VOICE_BACKENDS. Set keeps insertion order and de-dupes when a key is
+  // also listed explicitly.
+  const requested = new Set(options.voiceBackends ?? []);
+  if (options.deepgramApiKey) {
+    requested.add("ya-deepgram");
+  }
+  if (options.xaiSttApiKey) {
+    requested.add("ya-grok");
+  }
+
+  return [...requested];
+}
+
+export async function registerSpeechBackends(
+  registry: SpeechBackendRegistry,
+  options: SpeechRegistryInitOptions = {},
+): Promise<void> {
+  for (const backendId of getRequestedSpeechBackendIds(options)) {
+    if (registry.knownIds().includes(backendId)) continue;
+    switch (backendId) {
+      case "ya-dummy":
+        registry.register(new DummyBackend());
+        break;
+
+      case "ya-deepgram": {
+        const key = options.deepgramApiKey ?? "";
+        if (!key) {
+          logger.warn(
+            "[Voice] ya-deepgram requested but YEP_STT_DEEPGRAM_API_KEY is not set",
+          );
+        } else {
+          registry.register(new DeepgramBackend(key));
+        }
+        break;
+      }
+
+      case "ya-grok": {
+        const key = options.xaiSttApiKey ?? "";
+        if (!key) {
+          logger.warn(
+            "[Voice] ya-grok requested but YEP_STT_XAI_API_KEY is not set",
+          );
+        } else {
+          registry.register(new XaiSttBackend(key));
+        }
+        break;
+      }
+
+      case "ya-whisper":
+        registry.register(
+          new LocalWhisperBackend({
+            model: options.whisperModel,
+            device: options.whisperDevice,
+            computeType: options.whisperComputeType,
+          }),
+        );
+        break;
+
+      case "ya-parakeet":
+        registry.register(
+          new LocalParakeetBackend({
+            model: options.parakeetModel,
+            device: options.parakeetDevice,
+          }),
+        );
+        break;
+
+      case "ya-nemo":
+        registry.register(
+          new LocalNemoBackend({
+            model: options.nemoModel,
+            device: options.nemoDevice,
+          }),
+        );
+        break;
+
+      case "ya-granite":
+        registry.register(
+          new LocalGraniteBackend({
+            model: options.graniteModel,
+            device: options.graniteDevice,
+          }),
+        );
+        break;
+
+      case "ya-qwen":
+        registry.register(
+          new LocalQwenBackend({
+            model: options.qwenModel,
+            device: options.qwenDevice,
+          }),
+        );
+        break;
+
+      default:
+        logger.warn(`[Voice] Unknown speech backend requested: ${backendId}`);
+    }
+  }
+}

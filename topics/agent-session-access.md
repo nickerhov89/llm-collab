@@ -1,0 +1,240 @@
+# Agent Session Access
+
+> Proposal: local agents — first consumer, a supervising boss agent — search,
+> browse, and message YA sessions through shipped scripts over a scoped channel
+> to the existing REST application service; a YA-written
+> filesystem/git mirror of session state is rejected.
+
+Topic: agent-session-access
+
+Status: direction proposal, 2026-08-24. Cross-session access remains unimplemented; the
+script layer, the search route, and the boss conventions below are
+candidate work, not contracts. The launch-time half (PATH injection,
+capability fragment, scoped endpoint channel, virgin instruction scope) lives in
+[`new-session-agent-tooling.md`](new-session-agent-tooling.md). Packaging and
+dispatch use the proposed shared
+[`agent command runtime sketch`](agent-command-runtime.sketches.md).
+
+The runtime's implemented first milestone is [own-session inspection](agent-self.md); its original proposal is
+[`ya-agent self`](agent-command-runtime.sketches.md#first-milestone-inspect-the-owning-session)
+(2026-09-08): read-only inspection of the owning session, with manual
+harness-global instructions for discovery. Catalog, transcript, search,
+messaging, session creation, and boss conventions below remain deferred;
+the self-inspection grant authorizes none of them.
+
+See also:
+[`core-service-api.md`](core-service-api.md) — the external-consumer
+seam (D0 thin client, D3 API doc, resolved localhost posture) this
+proposal rides on;
+[`ask-session.md`](ask-session.md) — the packaged ask/reply flow built
+on these primitives;
+[`boss-mode.md`](boss-mode.md) — the delegated-orchestration working
+mode;
+[`session-wake.md`](session-wake.md) — implemented automation-to-session
+turn delivery;
+[`all-session-content-search.md`](all-session-content-search.md) — the
+current search boundary;
+[`cross-host-delegation.md`](cross-host-delegation.md) — the adapter
+layering rule;
+[`claude-cross-session-messaging.md`](claude-cross-session-messaging.md)
+— the authority boundary and provider-native comparison;
+[`session-ownership.md`](session-ownership.md);
+[`project-queue.md`](project-queue.md);
+[`security.md`](security.md).
+
+## Direction: scripts over a scoped REST channel
+
+YA's `/api/*` routes already cover everything an agent-side consumer
+needs: the global session catalog (`createGlobalSessionsRoutes`), full
+normalized transcript reads (the session detail route in
+`routes/sessions.ts`), sending a user message
+(`POST /api/sessions/:sessionId/messages`), create/resume/fork,
+`pending-input`, `mark-seen`, and Project Queue enqueue
+(`routes/project-queue.ts`). On the default server this surface is
+reachable from localhost with no credential; the loopback bind is the
+trust boundary (`core-service-api.md`, resolved decision 3).
+
+The proposal is therefore not a second orchestration API but a supported,
+scoped consumer of the existing application service: proposed `ya-agent`
+subcommands (`sessions`, `transcript`, `search`, `send`, and `new`) that wrap
+those routes, plus the D3 API documentation deliverable already named in
+`core-service-api.md`. The shared dispatcher and PATH projection are owned by
+`agent-command-runtime.sketches.md`. This matches the standing layering rule: REST,
+CLI, MCP, and skills are consumers or adapters over one application service,
+never independent orchestration implementations (`cross-host-delegation.md`).
+
+The scripts never guess `localhost`, a port, or the active profile. A session
+must explicitly request these access capabilities; an eligible provider launch
+then receives the originating server's exact child-reachable base URL and an
+ephemeral launch token through the channel owned by
+`new-session-agent-tooling.md`. The token authorizes only the requested and
+effective catalog, transcript/search, message, session-create, and Project
+Queue operations the shipped scripts expose. It is not the operator's general
+login credential and cannot call settings, permission approval, provider
+control, or other ambient administration routes. Multiple servers and auth-
+enabled loopback listeners therefore remain unambiguous even though the
+ordinary single-server default also happens to accept unauthenticated loopback
+requests.
+
+That last fact limits what the per-session option can claim. It controls YA's
+supported command projection and the new capability-required agent routes; it
+does not remove the host authority an ordinary unsandboxed same-user process
+already has through existing auth-off loopback `/api/*` routes. A sandboxed
+session can have a real denial boundary only when localhost authentication and
+its network confinement remain enforced. Changing the general loopback trust
+model is separate from adding these commands.
+
+Scripts speak canonical YA session ids (usually equal to the provider
+session id), per `DEVELOPMENT.md` § Provider Session Identity. Provider-native
+ids stay internal resume/debug detail.
+
+## The search gap
+
+Catalog metadata search exists; transcript-content search does not
+(`all-session-content-search.md`). The dormant index design in its
+sketches companion is sized for keystroke-latency UI search. An agent
+tolerates seconds, so the agent-facing v1 can be much smaller: a bounded
+server-side scan route over normalized visible-turn text (or, before any
+server change, a script that pages session transcripts and greps
+client-side). The sketches' corpus rules still govern what search may
+return — visible user/assistant conversation text, not hidden context,
+thinking, or tool payloads — and any new route needs the normal
+capability review before the shipped web client may depend on it. If the
+bounded scan proves too slow at real corpus sizes, the sketched index
+becomes its backing store rather than a competing design.
+
+## The boss use case
+
+The motivating consumer is an optional supervising agent session — the
+*boss agent* ([`boss-mode.md`](boss-mode.md)) — that tracks other
+sessions' requests and deliverables.
+Its bookkeeping conventions (request files in a watched directory,
+replies at a related path, git-committed or not) are boss policy, not
+YA features: the boss maintains its own repository using the
+read/search/send primitives. YA deliberately does not write that
+directory — see the rejection below.
+
+Delivery paths the boss composes from existing YA machinery — packaged
+as the ask/reply flow in [`ask-session.md`](ask-session.md):
+
+- **Message a live or resumable session**: the messages route for
+  ordinary sends; the wake endpoint (`session-wake.md`) when the target
+  may need resume-from-idle or when only the wake credential pair is at
+  hand. Long payloads belong in files the worker reads; the message or
+  wake text is the doorbell plus a path.
+- **Dispatch new work**: Project Queue enqueue, which already hands
+  queued requests to an idle project (`project-queue.md`).
+- **File-based intake**: the request-intake half of the boss design
+  overlaps the recorded missing feature in
+  `gaps/sketches/yacron-scheduler.md` (durable future prompts through yacron); a boss
+  wanting YA-driven intake should extend that design rather than invent a
+  second scheduler or file-watch convention.
+
+## Authority and ownership boundaries
+
+Three contracts bound every boss interaction and must be
+restated in any implementation's docs:
+
+- **Boss text is agent-authored input, never human authority.** It
+  cannot approve permission requests, change the receiving session's
+  settings, or raise any ceiling the user set — the same boundary
+  `claude-cross-session-messaging.md` § The YA Authority Boundary draws
+  for peer messages. This adds no new enforcement burden: a localhost
+  process already holds single-operator power over YA (`security.md`),
+  so the scripts add convenience, not authority.
+- **One writer per provider transcript.** A boss agent interacts with a
+  YA-supervised session only through YA. Driving it via provider-native
+  resume/CLI risks a second writer forking or corrupting the transcript;
+  the ownership rules in `session-wake.md` § Provider-CLI injection
+  fallback apply verbatim.
+- **Scoped launch authority.** A tool-enabled child receives only its own
+  short-lived API token and exact server endpoint. Server-side capability scope,
+  not process ancestry, authenticates it. The scripts do not recover another
+  process's credentials, fall back to a guessed port, or broaden the token when
+  one operation is unavailable.
+
+## Rejected: YA-written filesystem/git mirror
+
+Considered and rejected (2026-08-24): a YA mode persisting a
+(git-controlled) directory view of session existence and activity, with
+bidirectional save/restore. Reasons:
+
+- It duplicates state the already-open localhost API serves, adding a
+  second surface with its own consistency and staleness burden.
+- Mirroring *activity* is high-rate; the bounded-resource mandates
+  (`architecture-mandates.md`) would force it down to a turn-boundary
+  existence ledger — at which point it is a strictly worse projection of
+  the global-sessions route.
+- The restore direction re-derives portable session bundles, which is
+  `federated-super-sessions.md`, a separately designed problem.
+- The boss can maintain its own git conventions from the scripts, so
+  YA writing files adds no capability.
+- Any YA-owned writes near a project would still need the explicit
+  opt-in `project-directory-storage.md` requires.
+
+A one-directional read-only export could be reconsidered only for a need
+the live API cannot serve (for example offline audit of a stopped
+server), and then as a new proposal, not a revival of this one.
+
+## Naming
+
+*Boss agent* (and *boss mailbox* for its request/deliverable store) is
+the confirmed vocabulary; the collision analysis — `Supervisor` class,
+Inbox view, and *steward* being reserved for the `~/agents` on-deck
+queue-tending mode — lives in [`boss-mode.md`](boss-mode.md) § Naming.
+
+## Operator API token
+
+Implemented 2026-09-28 (maintainer direction). With password auth on, an
+agent session has no way into YA's own API: loopback no longer says which
+process is connecting. Meanwhile a sandboxed session can read most of the
+operator's files, so no credential may live in a file. **Sessions can use the
+YA API**, in Settings → Local Access, closes that gap. It defaults off, and
+it appears only once local requests require a password.
+
+- **Who gets one.** While the setting is on, each provider launch that is
+  local (no remote executor) and outside any YA session sandbox receives its
+  own token as `AGENT_SERVER_TOKEN` in the provider process environment. A
+  limited user's launches are always sandboxed and a limited user cannot send
+  turns into an unsandboxed session ([limited users](limited-users.md)
+  § Authorization), so only the superuser's own unsandboxed sessions hold one.
+  Claude and Codex launches receive it; other providers receive none. Codex's
+  default shell-environment policy is recalled (not verified here) to drop
+  variables named like `*TOKEN*` from tool shells, so a Codex agent may not
+  see it without widening that policy.
+- **Where it lives.** The token is in the server's memory (as a SHA-256 digest)
+  and in that one provider process's environment, which its tool shells
+  inherit. It is never written to a file: not the Bash bridge file, logs,
+  settings, or a response. The sandbox runs in its own PID namespace, so it
+  cannot read another process's environment. Child filtering strips an
+  inherited `AGENT_SERVER_TOKEN`, so a YA server started from an agent shell
+  cannot pass its caller's token on.
+- **What it grants.** Sent as `Authorization: Bearer $AGENT_SERVER_TOKEN`
+  (with the `X-Yep-Anywhere: true` header every API request needs), it
+  authenticates as the superuser for the whole `/api/*` surface: an agent
+  holding it can do anything the operator can. `AGENT_SERVER_URL` names the
+  server.
+- **Lifetime.** A token is revoked when its process unregisters. Turning the
+  setting off revokes every token, and turning it back on revives none. A
+  server restart forgets all of them; a retained provider process then holds
+  a dead token until the session launches again.
+- **Residual risk.** An agent can still print its token into a transcript or
+  file that a sandboxed session can read. Scoping to one process and revoking
+  at exit bound that exposure; they do not prevent it.
+
+```bash
+curl -H "Authorization: Bearer $AGENT_SERVER_TOKEN" -H 'X-Yep-Anywhere: true' \
+  "$AGENT_SERVER_URL/api/sessions?limit=5"
+```
+
+Gate: `agent-server-access` (version-implied, 0.9.4). Against an older server
+the client hides the toggle and never sends `agentServerAccessEnabled`.
+
+## Compatibility and defaults
+
+New routes (the bounded search scan) are additive and capability-gated
+per `server-capabilities.md` before the shipped client uses them; the
+scripts themselves are same-host consumers and may ride the current
+surface immediately. Shipped-script exposure inside sessions is
+launch-time behavior owned by `new-session-agent-tooling.md` and ships
+default-off per `vanilla-defaults.md`.

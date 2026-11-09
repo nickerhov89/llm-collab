@@ -1,0 +1,279 @@
+import { mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { quoteShellWord } from "../../utils/posixShell.js";
+import { VHOST_ENV_NAMES } from "../../artifacts/vhosts.js";
+import type { SessionSandboxRuntime } from "../../session-sandbox.js";
+
+const AGENTCTL_SESSION_ID_ENV = "AGENTCTL_SESSION_ID";
+const ORIGINAL_BASH_ENV_ENV = "YEP_ORIGINAL_BASH_ENV";
+/**
+ * Session-scoped names the bridge file owns. `extendEnv` drops them from a
+ * spawn environment so a reused process cannot inherit a previous session's
+ * values; the bridge writes the current ones back for each shell.
+ *
+ * `AGENTCTL_SESSION_ID` is here because an inherited one is worse than none:
+ * the YA server itself may have been started from an agent's shell, and a
+ * provider worker forked from it would otherwise hand that launcher's id to
+ * every tool shell of a session that has not reported its own id yet. A tool
+ * acting on it edits a live peer's coordination state. No id makes agentctl
+ * refuse; a foreign id makes it confidently wrong.
+ */
+const SESSION_CHILD_ENV_NAMES = [
+  AGENTCTL_SESSION_ID_ENV,
+  "AGENT_SERVER_URL",
+  "AGENT_ARTIFACT_VIEWER_ORIGIN",
+  "YEP_SESSION_WAKE_URL",
+  "YEP_SESSION_WAKE_TOKEN",
+  "YEP_BROWSER_DEBUG_AGENT_URL",
+  "YEP_BROWSER_DEBUG_CALLER_TOKEN",
+] as const;
+/**
+ * The subset whose value is the same for every session on this server, so it
+ * survives the provider-runtime-host boundary: the host narrows the computed
+ * child environment to these names before handing it to the worker, which has
+ * no other way to learn them. Keep this a subset of the names above, and keep
+ * genuinely per-session values (the minted wake token and its URL) out of it.
+ */
+const STATIC_AGENT_ENV_NAMES = [
+  "AGENT_SERVER_URL",
+  "AGENT_ARTIFACT_VIEWER_ORIGIN",
+  "YEP_BROWSER_DEBUG_AGENT_URL",
+  "YEP_BROWSER_DEBUG_CALLER_TOKEN",
+] as const;
+
+export interface AgentctlSessionEnvBridge {
+  /** Host directory holding this launch's bridge files. */
+  readonly directory: string;
+  /** `BASH_ENV` value, as the launched provider's shells see it. */
+  readonly bashEnvPath: string;
+  extendEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv;
+  publishSessionId(
+    sessionId: string,
+    browserDebugEnvironment?: Record<string, string>,
+  ): void;
+  cleanup(): void;
+}
+
+const PER_SESSION_AGENT_ENV_NAMES = new Set([
+  "YEP_SESSION_WAKE_URL",
+  "YEP_SESSION_WAKE_TOKEN",
+]);
+
+export function pickStaticAgentEnvironment(
+  environment: Record<string, string> | NodeJS.ProcessEnv | undefined,
+): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const name of STATIC_AGENT_ENV_NAMES) {
+    const value = environment?.[name];
+    if (typeof value === "string" && value) picked[name] = value;
+  }
+  const configuredNames = environment?.[VHOST_ENV_NAMES];
+  if (!configuredNames) return picked;
+  const names: unknown = JSON.parse(configuredNames);
+  if (
+    !Array.isArray(names) ||
+    names.some(
+      (name) => typeof name !== "string" || !/^[A-Z_][A-Z0-9_]*$/u.test(name),
+    )
+  ) {
+    throw new Error("Invalid configured vhost environment names");
+  }
+  const forwardedNames: string[] = [];
+  for (const name of names) {
+    const value = environment?.[name];
+    if (typeof value !== "string" || !value) continue;
+    if (PER_SESSION_AGENT_ENV_NAMES.has(name)) continue;
+    if (name in picked) continue;
+    picked[name] = value;
+    forwardedNames.push(name);
+  }
+  if (forwardedNames.length)
+    picked[VHOST_ENV_NAMES] = JSON.stringify(forwardedNames);
+  return picked;
+}
+
+export interface AgentctlSessionEnvBridgeOptions {
+  /**
+   * Where the launched provider's shells see the bridge directory, when that
+   * differs from the host path. Paths written into the bridge and returned as
+   * `bashEnvPath` use it; the server keeps writing through the host path.
+   */
+  visibleDirectory?: string;
+}
+
+export function createAgentctlSessionEnvBridge(
+  initialSessionId?: string,
+  getSessionEnv?: (sessionId: string) => Record<string, string>,
+  options: AgentctlSessionEnvBridgeOptions = {},
+): AgentctlSessionEnvBridge {
+  const dir = mkdtempSync(join(tmpdir(), "ya-agentctl-session-"));
+  const hostBashEnvPath = join(dir, "bash-env.sh");
+  const visibleDirectory = options.visibleDirectory ?? dir;
+  const bashEnvPath = join(visibleDirectory, "bash-env.sh");
+  const sessionEnvPath = join(visibleDirectory, "agentctl-session.env");
+
+  const writeBashEnv = (environment: NodeJS.ProcessEnv) =>
+    writeFileSync(
+      hostBashEnvPath,
+      [
+        "# yep-anywhere agentctl session bridge",
+        // Capture the original file at launch. A shared environment variable
+        // would point an outer bridge back at itself in a nested YA launch.
+        ...(environment.BASH_ENV
+          ? [
+              `if [ -r ${quoteShellWord(environment.BASH_ENV)} ]; then`,
+              `  . ${quoteShellWord(environment.BASH_ENV)}`,
+              "fi",
+            ]
+          : []),
+        // An inherited startup file can restore an outer YA capability after
+        // child filtering. Reassert only this launch's self grant, even before
+        // the canonical session-id file exists.
+        ...["AGENT_YA_API_URL", "AGENT_YA_API_TOKEN"].map((name) =>
+          environment[name]
+            ? `export ${name}=${quoteShellWord(environment[name])}`
+            : `unset ${name}`,
+        ),
+        // The canonical session-id file is the only sanctioned source of this
+        // session's id. Clear any inherited value first so a shell that starts
+        // before the provider reports an id reports none, rather than the id of
+        // whatever session launched the server.
+        `unset ${AGENTCTL_SESSION_ID_ENV}`,
+        `if [ -r ${quoteShellWord(sessionEnvPath)} ]; then`,
+        `  . ${quoteShellWord(sessionEnvPath)}`,
+        "fi",
+        "",
+      ].join("\n"),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+
+  writeBashEnv({});
+
+  const publishSessionId = (
+    sessionId: string,
+    browserDebugEnvironment?: Record<string, string>,
+  ): void => {
+    const tempPath = join(dir, "agentctl-session.env.tmp");
+    const sessionEnv = {
+      [AGENTCTL_SESSION_ID_ENV]: sessionId,
+      ...getSessionEnv?.(sessionId),
+      ...pickStaticAgentEnvironment(browserDebugEnvironment),
+    };
+    writeFileSync(
+      tempPath,
+      [
+        ...Object.entries(sessionEnv).flatMap(([name, value]) => {
+          if (!/^[A-Z_][A-Z0-9_]*$/u.test(name)) {
+            throw new Error(`Invalid child environment variable name: ${name}`);
+          }
+          return [`${name}=${quoteShellWord(value)}`, `export ${name}`];
+        }),
+        "",
+      ].join("\n"),
+      { encoding: "utf-8", mode: 0o600 },
+    );
+    renameSync(tempPath, join(dir, "agentctl-session.env"));
+  };
+
+  if (initialSessionId) {
+    publishSessionId(initialSessionId);
+  }
+
+  return {
+    directory: dir,
+    bashEnvPath,
+    extendEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+      writeBashEnv(env);
+      const extended: NodeJS.ProcessEnv = {
+        ...env,
+        ...(env.BASH_ENV
+          ? { [ORIGINAL_BASH_ENV_ENV]: env.BASH_ENV }
+          : undefined),
+        BASH_ENV: bashEnvPath,
+      };
+      for (const name of SESSION_CHILD_ENV_NAMES) delete extended[name];
+      return extended;
+    },
+    publishSessionId,
+    cleanup(): void {
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * Create one provider launch's bridge. A YA session sandbox replaces `/tmp`,
+ * hiding the host temp directory the bridge lives in, so a sandboxed launch
+ * also gets a runtime that mounts this bridge directory, and no other,
+ * read-only at the sandbox's bridge path. Spawn through the returned runtime.
+ */
+export function createLaunchAgentctlSessionEnvBridge(options: {
+  initialSessionId?: string;
+  getSessionEnv?: (sessionId: string) => Record<string, string>;
+  sessionSandbox?: SessionSandboxRuntime;
+}): {
+  bridge: AgentctlSessionEnvBridge;
+  sessionSandbox?: SessionSandboxRuntime;
+} {
+  const bridge = createAgentctlSessionEnvBridge(
+    options.initialSessionId,
+    options.getSessionEnv,
+    { visibleDirectory: options.sessionSandbox?.sessionEnvBridgeDirectory },
+  );
+  if (!options.sessionSandbox) return { bridge };
+  try {
+    return {
+      bridge,
+      sessionSandbox: options.sessionSandbox.withSessionEnvBridge(
+        bridge.directory,
+      ),
+    };
+  } catch (error) {
+    bridge.cleanup();
+    throw error;
+  }
+}
+
+/**
+ * Install the Bash bridge path onto a child overlay or the worker process
+ * environment without stripping session-scoped values from `target` itself.
+ * `extendEnv` still drops those names from the object it returns so a full
+ * spawn env cannot leak a stale wake/debug pair; this helper only copies the
+ * bridge path and an already-known resume id.
+ */
+export function copyAgentctlBashEnvInto(
+  target: NodeJS.ProcessEnv | Record<string, string>,
+  bridge: AgentctlSessionEnvBridge,
+  options?: { sessionId?: string; baseEnv?: NodeJS.ProcessEnv },
+): void {
+  const bridged = bridge.extendEnv({
+    ...(options?.baseEnv ?? process.env),
+    ...target,
+  });
+  if (typeof bridged.BASH_ENV === "string" && bridged.BASH_ENV) {
+    target.BASH_ENV = bridged.BASH_ENV;
+  }
+  if (
+    typeof bridged.YEP_ORIGINAL_BASH_ENV === "string" &&
+    bridged.YEP_ORIGINAL_BASH_ENV
+  ) {
+    target.YEP_ORIGINAL_BASH_ENV = bridged.YEP_ORIGINAL_BASH_ENV;
+  } else {
+    delete target.YEP_ORIGINAL_BASH_ENV;
+  }
+  if (options?.sessionId) {
+    // Publish as well as copy: the bridge file clears an inherited id before
+    // sourcing its own, so a Bash tool shell learns the id from the file, and
+    // an id only ever set on the spawn overlay would be cleared and not
+    // restored. The overlay copy still covers shells that never source
+    // BASH_ENV (codex's sandbox can strip it).
+    bridge.publishSessionId(options.sessionId);
+    target.AGENTCTL_SESSION_ID = options.sessionId;
+  } else {
+    // Without a known id, leave none: `target` is often the worker's own
+    // `process.env`, which can carry the id of the session that started the
+    // server. See SESSION_CHILD_ENV_NAMES.
+    delete target.AGENTCTL_SESSION_ID;
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "legacyGlobalStyles": {
+    "packages/client/src/styles/emulator.css": {
+      "maxLines": 17,
+      "reason": "Device stream video vocabulary produced by EmulatorStream."
+    },
+    "packages/client/src/styles/index.css": {
+      "maxLines": 15233,
+      "reason": "Legacy application shell plus global tokens, themes, and base rules."
+    },
+    "packages/client/src/styles/provider-colors.css": {
+      "maxLines": 38,
+      "reason": "Theme-dependent provider badge color tokens shared by every badge surface."
+    },
+    "packages/client/src/styles/polza-codex.css": {
+      "maxLines": 220,
+      "reason": "Reviewed product-wide Codex workspace skin spanning navigation, transcript, composer and login; scoped to the self-hosted Polza UI."
+    },
+    "packages/client/src/styles/polza-transcript.css": {
+      "maxLines": 129,
+      "reason": "Reviewed shared transcript presentation for the self-hosted Polza UI; dynamic turn and renderer classes cross component boundaries."
+    },
+    "packages/client/src/styles/renderers.css": {
+      "maxLines": 5866,
+      "reason": "Legacy generated-content and renderer class vocabulary."
+    },
+    "packages/client/src/styles/tool-rows.css": {
+      "maxLines": 791,
+      "reason": "Shared tool-row state and generated renderer composition."
+    }
+  },
+  "updated": "2026-11-07",
+  "note": "Chapter 11 containment baseline for authored non-module CSS under packages/client/src. Limits may only ratchet downward. New client stylesheets must be CSS Modules unless a reviewed generated-content or truly global exception is added here with a reason."
+}

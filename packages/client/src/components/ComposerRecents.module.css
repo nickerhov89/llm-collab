@@ -1,0 +1,131 @@
+.recents {
+  position: relative;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.recents button {
+  font: inherit;
+  color: var(--text-primary);
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+.heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.recents small {
+  display: block;
+  color: var(--text-secondary);
+  margin: 6px 0;
+}
+.gallery {
+  padding: 12px;
+  margin: 8px 0;
+  border: 1px solid var(--border-input);
+  background: var(--bg-primary);
+  border-radius: 8px;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 8px;
+  max-height: min(220px, 28vh);
+  overflow: auto;
+  margin-top: 8px;
+}
+.tiles button {
+  min-width: 0;
+  text-align: left;
+}
+.tiles img,
+.file {
+  display: block;
+  width: 100%;
+  height: 85px;
+  object-fit: contain;
+  background: var(--bg-tertiary);
+}
+.tiles span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 5px;
+}
+.heading .close {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text-error, #ef7777);
+}
+.recents .disclosure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin: 8px 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 0;
+  min-height: 36px;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.actions button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  min-height: 64px;
+  padding: 12px;
+}
+.actions .memo {
+  border-color: var(--text-error, #ef7777);
+}
+.tiles .metadata {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.preview {
+  position: fixed;
+  z-index: 10000;
+  pointer-events: none;
+  background: var(--bg-primary);
+  box-shadow: 0 8px 32px #0008;
+  outline: 2px solid var(--border-input);
+}
+.preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+@media (width <= 550px) {
+  .actions {
+    flex-direction: column;
+  }
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .disclosure small {
+    max-width: 140px;
+  }
+}

@@ -1,0 +1,43 @@
+.container {
+  position: relative;
+}
+.trigger:global(.mode-button) {
+  min-height: 36px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+.dropdown:global(.mode-selector-dropdown) {
+  box-sizing: border-box;
+  width: min(360px, calc(100dvw - 40px));
+  min-width: 0;
+  padding: 12px;
+  border-radius: 18px;
+  background: var(--bg-surface);
+  box-shadow: 0 10px 30px #00000014;
+}
+.heading {
+  padding: 4px 8px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+.optionCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-block: 4px;
+}
+.description {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+}
+@media (pointer: coarse) {
+  .trigger:global(.mode-button) {
+    min-height: 44px;
+  }
+}

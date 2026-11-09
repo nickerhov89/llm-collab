@@ -1,0 +1,195 @@
+.card {
+  position: relative;
+}
+
+.link {
+  display: block;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.link:hover {
+  background: var(--bg-hover);
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+  font-size: var(--font-size-base);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Truncates the name itself so the code-name chip beside it stays visible. */
+.nameText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Its own row under the title line, which would clip it, and above the caption. */
+.codeNameError {
+  display: block;
+  max-width: 28rem;
+  margin-top: 2px;
+  color: var(--error-color);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.attentionBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--color-error, #ef4444);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.queueBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid
+    color-mix(in srgb, var(--project-queue-action-bg) 45%, var(--border-color));
+  border-radius: 10px;
+  background: color-mix(
+    in srgb,
+    var(--project-queue-action-bg) 12%,
+    var(--bg-surface)
+  );
+  color: var(--project-queue-action-bg);
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.queueWarningBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--warning-color);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warning-color) 14%, var(--bg-surface));
+  color: var(--warning-color);
+  font-size: 12px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.newSession,
+.settingsTrigger,
+.deleteTrigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.newSession {
+  margin-left: auto;
+}
+
+.newSession:hover,
+.settingsTrigger:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.deleteTrigger:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--error-color);
+  border-color: var(--error-color);
+}
+
+.deleteTrigger:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* One footer line: path on the left, session stats right-aligned. */
+.meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+}
+
+.path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Truncate the head, keeping the project's own directory visible. The
+     `bdi` around the path keeps it reading left to right inside this box. */
+  direction: rtl;
+  text-align: left;
+}
+
+.stats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.separator {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+.sessions,
+.time {
+  white-space: nowrap;
+}
+
+.thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}

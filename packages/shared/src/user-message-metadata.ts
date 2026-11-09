@@ -1,0 +1,183 @@
+import type { TurnEffort } from "./turn-effort.js";
+
+export type UserMessageDeliveryIntent =
+  | "direct"
+  | "steer"
+  | "deferred"
+  | "patient";
+
+/**
+ * Default quiet period a patient queued message waits for after the session
+ * reaches verified idle, when the item carries no explicit patienceSeconds.
+ *
+ * Kept short on purpose: the window only needs to outlast the race between an
+ * idle-looking edge (e.g. a background task's completion clearing retention)
+ * and the follow-up turn or next task that edge can trigger registering as
+ * in-turn. Any provider event in the window restarts the count, so a couple of
+ * seconds covers the race without adding perceptible delay once the agent is
+ * genuinely done.
+ */
+export const DEFAULT_PATIENT_QUEUE_PATIENCE_SECONDS = 2;
+
+export const MAX_PATIENT_QUEUE_PATIENCE_SECONDS = 24 * 60 * 60;
+
+/**
+ * Normalize a user-supplied patience value to whole seconds in
+ * [0, MAX_PATIENT_QUEUE_PATIENCE_SECONDS], or undefined when not a finite
+ * number.
+ */
+export function clampPatientPatienceSeconds(
+  value: unknown,
+): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  return Math.min(
+    MAX_PATIENT_QUEUE_PATIENCE_SECONDS,
+    Math.max(0, Math.round(value)),
+  );
+}
+
+export const PATIENT_QUEUE_PREFIX = "when done, ";
+
+export const PATIENT_QUEUE_PREFIXES = [
+  PATIENT_QUEUE_PREFIX,
+  "when you are at a natural wrap-up point, ",
+  "as soon as previous requested requests are satisfied, ",
+  "as soon as prev. requested requests are satisfied, ",
+  "zzz:",
+  "zzz: ",
+] as const;
+
+export function hasPatientQueuePrefix(message: string): boolean {
+  const normalized = message.trimStart().toLocaleLowerCase();
+  // Any message already opening with "when done" carries the deferred
+  // semantics, so adding the prefix would read as "when done, when done ...".
+  if (normalized.startsWith("when done")) return true;
+  return PATIENT_QUEUE_PREFIXES.some((prefix) =>
+    normalized.startsWith(prefix.toLocaleLowerCase()),
+  );
+}
+
+export function applyPatientQueuePrefix(
+  message: string,
+  enabled: boolean,
+): string {
+  if (!enabled || !message || hasPatientQueuePrefix(message)) return message;
+  return `${PATIENT_QUEUE_PREFIX}${message}`;
+}
+
+export function stripPatientQueuePrefix(message: string): string {
+  const leading = message.match(/^\s*/)?.[0] ?? "";
+  const body = message.slice(leading.length);
+  const lowerBody = body.toLocaleLowerCase();
+
+  if (lowerBody.startsWith("when done")) {
+    const stripped = body.slice("when done".length).replace(/^\s*,?\s*/, "");
+    return stripped.trim() ? `${leading}${stripped}` : message;
+  }
+
+  const prefix = PATIENT_QUEUE_PREFIXES.find((candidate) =>
+    lowerBody.startsWith(candidate.toLocaleLowerCase()),
+  );
+  if (!prefix) return message;
+
+  const stripped = body.slice(prefix.length);
+  return stripped.trim() ? `${leading}${stripped}` : message;
+}
+
+/**
+ * Which entry point created a patient queue item: the explicit "Next topic
+ * when done" action, or an ordinary queue send while the patient queue
+ * default is on. Each source has its own compaction threshold setting.
+ */
+export type PatientQueueSource = "topic-shift" | "patient-default";
+
+/**
+ * Normalize a compact-before-delivery threshold to a whole percent in 1–99.
+ * 100 and above mean Off (not "compact at full context"), so an estimate
+ * above the reported limit can never trigger compaction; anything else that
+ * is not a usable percent is Off too.
+ */
+export function normalizePatientCompactPercent(
+  value: unknown,
+): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  const percent = Math.round(value);
+  return percent >= 1 && percent <= 99 ? percent : undefined;
+}
+
+export interface UserMessageCompositionMetadata {
+  typingStartedAt?: string;
+  typingEndedAt?: string;
+  lastEditedAt?: string;
+  submittedAt?: string;
+}
+
+export interface UserMessageSpeechMetadata {
+  /** Client-generated id shared by speech transcriptions in one composer turn. */
+  clientTurnId?: string;
+  /** Server transcription ids returned by /api/speech/transcribe. */
+  transcriptionIds?: string[];
+}
+
+export interface NonHumanUserTurn {
+  messageId: string;
+  timestamp: string;
+  sourceSessionId: string;
+}
+
+export interface UserMessageMetadata {
+  /** Routing provenance; a provider user role does not imply human input. */
+  origin?: "user" | "coordination" | "rendezvous" | "automation";
+  /** Caller-declared cross-session provenance; never a grant of authority. */
+  sourceSessionId?: string;
+  /** One-turn effort selection, resolved at provider admission. */
+  turnEffort?: TurnEffort;
+  /** Stable idempotency key for a source-review submission turn. */
+  sourceReviewSubmissionId?: string;
+  deliveryIntent?: UserMessageDeliveryIntent;
+  /**
+   * Quiet seconds after verified idle that a patient queued item waits for
+   * before delivery. Stamped at queue time; later setting changes do not
+   * mutate already queued items.
+   */
+  patienceSeconds?: number;
+  /** Entry point that created a patient item; absent on older items. */
+  patientSource?: PatientQueueSource;
+  /**
+   * Compact first when context usage at the delivery boundary is at or above
+   * this percent (1–99) of the session's context window. Stamped at queue
+   * time from the source's setting; absent means deliver without YA
+   * compaction. Only meaningful with deliveryIntent "patient".
+   */
+  compactAboveContextPercent?: number;
+  /**
+   * Steer with the provider's most-urgent lane (Claude `priority: "now"`:
+   * abort in-flight sampling, auto-background running tools). Only
+   * meaningful with deliveryIntent "steer" on providers reporting
+   * supportsSteerNow.
+   */
+  steerNow?: boolean;
+  composition?: UserMessageCompositionMetadata;
+  speech?: UserMessageSpeechMetadata;
+  /** Browser-side request timestamp in server-clock epoch ms, when supplied. */
+  clientTimestamp?: number;
+  /** Server receive time for the REST request that accepted this user turn. */
+  serverReceivedAt?: string;
+  /**
+   * Limited user who sent this turn, stamped by the route from the acting
+   * principal and never read from the request body. Absent means the
+   * superuser sent it, which is also what every turn predating limited users
+   * means. topics/limited-users.md § Delivery v1 — Usage.
+   */
+  sentByUser?: string;
+  /**
+   * Hidden from the transcript UI as a YA-injected control message — currently
+   * the `/compact` command YA queues for a threshold-triggered or resume-time
+   * compaction, which native auto-compaction shows no user turn for. This is
+   * the single signal the echo/render path checks (see Process
+   * `isHiddenInjectedMessage`), so a future "show hidden" UI can reveal these
+   * consistently rather than each call site deciding ad hoc.
+   * See topics/injected-message-visibility.md.
+   */
+  hidden?: boolean;
+}

@@ -1,0 +1,40 @@
+.preview {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 240px;
+  overflow: hidden;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-size: 13px;
+}
+
+.frame {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+  border: 0;
+  background: white;
+}
+
+.notice {
+  padding: var(--space-3);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.notice a {
+  display: inline-block;
+  padding-block: var(--space-2);
+  color: var(--link-color);
+}
