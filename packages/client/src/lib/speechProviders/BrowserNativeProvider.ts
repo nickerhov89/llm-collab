@@ -1,3 +1,4 @@
+import { startNativeSpeechMeter } from "./nativeSpeechMeter";
 import { computeSpeechDelta } from "../speechRecognition";
 import {
   INITIAL_SPEECH_STATE,
@@ -109,6 +110,8 @@ export class BrowserNativeProvider implements SpeechProvider {
   private disposed = false;
   private speechActivityTimer: ReturnType<typeof setTimeout> | null = null;
   private finalizationTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopAudioMeter: (() => void) | null = null;
+  private captureStartTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(options: SpeechProviderOptions = {}) {
     this.options = options;
@@ -144,8 +147,9 @@ export class BrowserNativeProvider implements SpeechProvider {
     }
 
     if (this.recognition) {
-      this.recognition.abort();
+      const previous = this.recognition;
       this.recognition = null;
+      previous.abort();
     }
 
     this.isStopping = false;
@@ -304,6 +308,7 @@ export class BrowserNativeProvider implements SpeechProvider {
 
     recognition.onerror = (event) => {
       if (this.recognition !== recognition) return;
+      this.clearCaptureStartTimer();
       if (event.error === "aborted") return;
 
       if (event.error === "no-speech") {
@@ -342,6 +347,7 @@ export class BrowserNativeProvider implements SpeechProvider {
 
     recognition.onend = () => {
       if (this.recognition !== recognition || this.disposed) return;
+      this.clearCaptureStartTimer();
       this.clearFinalizationTimer();
       this.clearSpeechActivityTimer();
       if (!this.isStopping && this.recognition === recognition) {
@@ -352,8 +358,10 @@ export class BrowserNativeProvider implements SpeechProvider {
         this.lastFinalResultPrefix = "";
         this.lastCommittedFinalChunk = "";
         try {
+          this.armCaptureStartTimer();
           recognition.start();
         } catch {
+          this.clearCaptureStartTimer();
           this.setState({
             isListening: false,
             interimTranscript: "",
@@ -373,8 +381,10 @@ export class BrowserNativeProvider implements SpeechProvider {
     };
 
     try {
+      this.armCaptureStartTimer();
       recognition.start();
     } catch {
+      this.clearCaptureStartTimer();
       this.setState({
         error: "Failed to start speech recognition",
         status: "error",
@@ -386,6 +396,7 @@ export class BrowserNativeProvider implements SpeechProvider {
   stop(): void {
     if (this.disposed || this.isStopping || !this.recognition) return;
     this.isStopping = true;
+    this.clearCaptureStartTimer();
     this.clearSpeechActivityTimer();
     this.setState({
       isListening: false,
@@ -398,7 +409,13 @@ export class BrowserNativeProvider implements SpeechProvider {
       this.abandon(error);
       this.options.onError?.(error);
     }, 5000);
-    this.recognition.stop();
+    try {
+      this.recognition.stop();
+    } catch {
+      const error = "Speech recognition could not stop. Try again.";
+      this.abandon(error);
+      this.options.onError?.(error);
+    }
   }
 
   cancel(): void {
@@ -406,6 +423,7 @@ export class BrowserNativeProvider implements SpeechProvider {
   }
 
   private abandon(error: string | null): void {
+    this.clearCaptureStartTimer();
     this.clearFinalizationTimer();
     this.clearSpeechActivityTimer();
     this.isStopping = true;
@@ -436,6 +454,8 @@ export class BrowserNativeProvider implements SpeechProvider {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.stopMeter();
+    this.clearCaptureStartTimer();
     this.clearFinalizationTimer();
     this.isStopping = true;
     this.clearSpeechActivityTimer();
@@ -447,7 +467,30 @@ export class BrowserNativeProvider implements SpeechProvider {
   }
 
   private markAudioStarted(status: "listening" | "receiving"): void {
+    this.clearCaptureStartTimer();
     this.setState({ isListening: true, status });
+    if (!this.stopAudioMeter && this.options.onAudioSamples) {
+      this.stopAudioMeter = startNativeSpeechMeter(
+        this.options.onAudioSamples,
+        this.options.micDeviceId,
+        this.options.reducePlayback,
+      );
+    }
+  }
+
+  private armCaptureStartTimer(): void {
+    this.clearCaptureStartTimer();
+    this.captureStartTimer = setTimeout(() => {
+      const error =
+        "Microphone did not start. Check browser permissions and try again.";
+      this.abandon(error);
+      this.options.onError?.(error);
+    }, 10_000);
+  }
+
+  private clearCaptureStartTimer(): void {
+    if (this.captureStartTimer !== null) clearTimeout(this.captureStartTimer);
+    this.captureStartTimer = null;
   }
 
   private markSpeechActivity(recognition: SpeechRecognition): void {
@@ -473,7 +516,19 @@ export class BrowserNativeProvider implements SpeechProvider {
     }
   }
 
+  private stopMeter(): void {
+    this.stopAudioMeter?.();
+    this.stopAudioMeter = null;
+  }
+
   private setState(patch: Partial<SpeechProviderState>): void {
+    if (
+      patch.status === "idle" ||
+      patch.status === "error" ||
+      patch.status === "finalizing"
+    ) {
+      this.stopMeter();
+    }
     this.state = { ...this.state, ...patch };
     for (const subscriber of this.subscribers) {
       subscriber(this.state);

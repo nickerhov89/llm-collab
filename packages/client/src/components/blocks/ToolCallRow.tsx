@@ -962,7 +962,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
   const [previewExpanded, setPreviewExpanded] = useRememberedDisclosureState(
     id,
     "rich-preview",
-    import.meta.env.VITE_POLZA_ADMIN_UI !== "true",
+    true,
   );
   // Tools with collapsed preview or interactive summary don't expand
   const isNonExpandable =
@@ -1090,18 +1090,6 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
     sessionMetadata?.projectPath,
     prepared,
   ]);
-  const polzaQuietBash =
-    import.meta.env.VITE_POLZA_ADMIN_UI === "true" && isBashTool;
-  const displaySummary = polzaQuietBash
-    ? showBashExitCode || status === "error" || toolResult?.isError
-      ? "Command failed · details"
-      : status === "pending"
-        ? "Running command"
-        : "Ran command"
-    : summary;
-  const polzaCommandFailed =
-    polzaQuietBash &&
-    (showBashExitCode || status === "error" || Boolean(toolResult?.isError));
   const headerCommand = isBashTool
     ? getDisplayBashCommandFromInput(toolInput)
     : "";
@@ -1114,10 +1102,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
     typeof toolInput.description === "string" &&
     toolInput.description.trim().length > 0;
   const showBashCommandTarget =
-    isBashTool &&
-    !polzaQuietBash &&
-    !hasBashDescription &&
-    headerCommand.length > 0;
+    isBashTool && !hasBashDescription && headerCommand.length > 0;
   const bashCommandPreview = useMemo(
     () => getCommandPreview(headerCommand, outputToolPreviewLineCount),
     [headerCommand, outputToolPreviewLineCount],
@@ -1347,7 +1332,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
       ref={rowRef}
       onPointerEnter={hydrateNow}
       onFocus={hydrateNow}
-      className={`tool-row timeline-item ${expanded ? "expanded" : "collapsed"} status-${status} ${isNonExpandable ? "interactive" : ""} ${shouldHydrateRichContent ? "" : "rich-deferred"} ${isBashTool ? "ran-tool-row" : ""} ${polzaCommandFailed ? "is-command-failed" : ""}`}
+      className={`tool-row timeline-item ${expanded ? "expanded" : "collapsed"} status-${status} ${isNonExpandable ? "interactive" : ""} ${shouldHydrateRichContent ? "" : "rich-deferred"} ${isBashTool ? "ran-tool-row" : ""}`}
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: interactive header has role, tabIndex, and keyboard handlers when enabled */}
       <div
@@ -1568,7 +1553,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
                 : undefined
             }
           >
-            {displaySummary}
+            {summary}
             {status === "aborted" && (
               <span className="tool-aborted-label"> (interrupted)</span>
             )}
@@ -1584,7 +1569,7 @@ const ToolCallRowContent = memo(function ToolCallRowContent({
         {noOutputBashResult && (
           <span className="tool-result-suffix">(no output)</span>
         )}
-        {showBashExitCode && !polzaQuietBash && (
+        {showBashExitCode && (
           <span className="tool-result-suffix tool-result-suffix-rc">
             rc={bashExitCode}
           </span>

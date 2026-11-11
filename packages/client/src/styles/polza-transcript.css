@@ -98,16 +98,12 @@
 
 /* Expanded activity reads as a quiet action log, not another assistant answer. */
 .polza-ui .ran-tool-row {
-  margin-block: 7px 10px;
-}
-.polza-ui .ran-tool-row.timeline-item::before,
-.polza-ui .ran-tool-row.timeline-item::after {
-  display: none;
+  margin-block: 13px 16px;
 }
 .polza-ui .ran-tool-row .tool-row-header {
   width: 100%;
   min-height: 26px;
-  padding: 4px 2px;
+  padding: 3px 7px;
   flex-wrap: nowrap;
   align-items: center;
   gap: 5px;
@@ -125,11 +121,7 @@
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #73777e;
-}
-.polza-ui .ran-tool-row.is-command-failed .tool-summary,
-.polza-ui .ran-tool-row:has(.tool-result-suffix-rc) .tool-summary {
-  color: #a45c50;
+  color: #777b83;
 }
 .polza-ui .ran-tool-row .tool-summary-command {
   flex-wrap: nowrap;
@@ -200,8 +192,9 @@
 /* Queued turns sit directly above the composer as a compact action list. */
 .polza-ui .session-messages:has(.deferred-message) { padding-bottom: 6px; }
 .polza-ui .deferred-message.message-render-row {
-  width: calc(100% + 160px);
-  margin: 0 0 8px -80px;
+  /* Keep the queued turn on the same rails as the conversation and composer. */
+  width: 100%;
+  margin: 0 0 8px;
 }
 
 .polza-ui .deferred-message > .message-render-content {
@@ -235,6 +228,7 @@
   max-width: none;
   margin: 0;
   padding: 0;
+  display: -webkit-box;
   overflow: hidden;
   border: 0;
   border-radius: 0;
@@ -244,7 +238,10 @@
   line-height: 1.45;
   opacity: 1;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .polza-ui .deferred-message-attachments-list { grid-area: attachments; }

@@ -376,7 +376,7 @@ export function ProjectsPage() {
       {createOpen && <Modal title="Создать проект" onClose={closeCreate}>
         <form className="polza-create-project" onSubmit={(event) => { event.preventDefault(); const name = polzaName.trim(); const path = polzaPath.trim(); if (name && path) void handleAddProject({ name, path }); }}>
           <label>Название проекта<input autoFocus value={polzaName} placeholder="Название проекта" onChange={(event) => { const value = event.target.value; setPolzaName(value); if (!polzaPathEdited) setPolzaPath(pathForProjectName(value, newProjectBase, projects, false)); }} required /></label>
-          <label>Рабочая папка на сервере<input value={polzaPath} placeholder="/workspace/projects/name" onChange={(event) => { setPolzaPath(event.target.value); setPolzaPathEdited(true); }} required /></label>
+          <label>Рабочая папка на сервере<input value={polzaPath} placeholder="/work/название" onChange={(event) => { setPolzaPath(event.target.value); setPolzaPathEdited(true); }} required /></label>
           <p>Файлы проекта и чаты будут связаны с этой папкой. Если папки ещё нет, она будет создана.</p>
           {addError && <p role="alert" className="polza-project-error">{addError}</p>}
           <div className="polza-create-project-actions"><button type="button" onClick={closeCreate}>Отмена</button><button type="submit" disabled={adding || !polzaName.trim() || !polzaPath.trim()}>{adding ? 'Создаю…' : 'Создать проект'}</button></div>

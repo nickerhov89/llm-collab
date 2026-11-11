@@ -4,7 +4,7 @@ import { appendComposerBeacon } from "../lib/composerBeacon";
 import { useProjectCodeNamePreferences } from "./useProjectCodeNamePreferences";
 
 const POLZA_COWORK = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
-const BASE_TITLE = POLZA_COWORK ? "LLM Collab" : "Yep Anywhere";
+const BASE_TITLE = POLZA_COWORK ? "Polza Cowork" : "Yep Anywhere";
 export const PROJECT_CODE_NAME_TITLE_ATTRIBUTE = "data-project-code-name";
 
 /**

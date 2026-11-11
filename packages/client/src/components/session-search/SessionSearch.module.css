@@ -630,7 +630,10 @@
   .results :global(.session-list-item) > label:has(input[type="checkbox"]) {
     width: 32px;
   }
-  .results :global(.session-list-item) > label:has(input[type="checkbox"]) input {
+  .results
+    :global(.session-list-item)
+    > label:has(input[type="checkbox"])
+    input {
     left: 5px;
     top: 50%;
     transform: translateY(-50%);
@@ -660,5 +663,123 @@
   }
   .statusFilters button {
     width: 26px;
+  }
+}
+
+/* Use the same quiet browsing surface on desktop and phone. Advanced search
+   stays mounted so folding the panel preserves its query and selections. */
+@media (width > 700px) {
+  .mobilePageHeader :global(.session-header-inner) {
+    position: relative;
+    align-items: flex-start;
+    padding: 22px 28px 18px;
+  }
+  .mobilePageHeader :global(.session-header-left) {
+    flex: 1;
+    min-width: 0;
+  }
+  .mobileSearchHeader {
+    flex: 1;
+    min-width: 0;
+  }
+  .mobileTitle {
+    display: block;
+    margin-bottom: 18px;
+    color: var(--text-primary);
+    font-size: 24px;
+    font-weight: 600;
+  }
+  .mobileHeaderActions {
+    position: absolute;
+    top: 22px;
+    right: 28px;
+    display: flex;
+    gap: 8px;
+  }
+  .mobileHeaderActions button {
+    min-height: 36px;
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .mobileHeaderActions button[aria-expanded="true"],
+  .mobileHeaderActions button[aria-pressed="true"] {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .mobilePageHeader .header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .mobilePageHeader .needleRow {
+    order: 1;
+    flex-basis: auto;
+  }
+  .mobilePageHeader .search {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding-inline: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--bg-secondary);
+  }
+  .mobilePageHeader .search:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+  .mobilePageHeader .fields {
+    display: none;
+    order: 2;
+  }
+  .mobilePageHeader.mobileFiltersOpen .fields {
+    display: flex;
+  }
+  .mobileAdvanced,
+  .mobileSelection {
+    display: none;
+  }
+  .mobileAdvancedOpen,
+  .mobileSelectionOpen {
+    display: block;
+    padding-block: 10px;
+  }
+  .content {
+    padding: 0 28px 28px;
+  }
+  .results {
+    gap: 0;
+    margin: 0;
+  }
+  .results :global(.session-list-item) {
+    min-height: 70px;
+    padding-block: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: transparent;
+  }
+  .results :global(.session-list-item__link) {
+    background: transparent;
+  }
+  .results :global(.session-list-item__title) {
+    font-size: 15px;
+    font-weight: 500;
+  }
+  .results :global(.session-list-item__meta) {
+    margin-top: 5px;
+    color: var(--text-muted);
+    font-size: 12px;
+  }
+  .results :global(.session-list-item__provider-badge),
+  .results :global(.session-list-item__age) {
+    display: none;
+  }
+  .helpSlot {
+    display: none;
   }
 }

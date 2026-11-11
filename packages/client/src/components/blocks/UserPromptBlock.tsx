@@ -20,6 +20,7 @@ import { CopyTextButton } from "../ui/CopyTextButton";
 import { ForkTurnMenu } from "./ForkTurnMenu";
 import { useUserPromptActionPacking } from "./useUserPromptActionPacking";
 import { UserPromptLinkedText } from "./UserPromptLinkedText";
+import styles from "./UserPromptBlock.module.css";
 
 const MAX_LINES = 12;
 const MAX_CHARS = MAX_LINES * 100;
@@ -395,6 +396,8 @@ function UserPromptActionButtons({
 }) {
   const { t } = useI18n();
 
+  if (import.meta.env.VITE_POLZA_ADMIN_UI === "true") return null;
+
   if (
     !onCorrect &&
     !onCancelUnconfirmed &&
@@ -612,7 +615,11 @@ export const UserPromptBlock = memo(function UserPromptBlock({
               : block.type,
           )
           .join("\0");
-  const actionPacking = useUserPromptActionPacking(actionCount, measurementKey);
+  const hideActions = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
+  const actionPacking = useUserPromptActionPacking(
+    hideActions ? 0 : actionCount,
+    measurementKey,
+  );
   if (typeof content === "string") {
     const { text, openedFiles, uploadedFiles } = parseUserPrompt(content);
 
@@ -630,7 +637,7 @@ export const UserPromptBlock = memo(function UserPromptBlock({
     return (
       <div
         ref={actionPacking.containerRef}
-        className="user-prompt-container"
+        className={`user-prompt-container${hideActions ? ` ${styles.plainPrompt}` : ""}`}
         style={actionPacking.style}
       >
         <div
@@ -696,7 +703,7 @@ export const UserPromptBlock = memo(function UserPromptBlock({
   return (
     <div
       ref={actionPacking.containerRef}
-      className="user-prompt-container"
+      className={`user-prompt-container${hideActions ? ` ${styles.plainPrompt}` : ""}`}
       style={actionPacking.style}
     >
       <div

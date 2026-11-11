@@ -60,7 +60,6 @@ import {
   clearSpeechWaveform,
   publishSpeechWaveformSamples,
 } from "../lib/speechWaveform";
-import { startSpeechWaveformMonitor } from "../lib/speechProviders/sharedMicCapture";
 import styles from "./VoiceInputButton.module.css";
 import { SpeechWaveform } from "./SpeechWaveform";
 import type {
@@ -230,6 +229,7 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
             {
               directXaiAvailable: hasBrowserXaiSttApiKey,
               browserNativeAvailable: isBrowserNativeSpeechAvailable(),
+              fallbackToBrowserNative: polzaUi,
             },
           );
     if (resolved === null) return null;
@@ -314,6 +314,22 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
     [onInterimTranscript],
   );
 
+  const [nativeWaveformReady, setNativeWaveformReady] = useState(false);
+  const nativeWaveformReadyRef = useRef(false);
+  const handleAudioSamples = useCallback(
+    (samples: Float32Array) => {
+      publishSpeechWaveformSamples(samples);
+      if (
+        speechMethod === DEFAULT_SPEECH_METHOD &&
+        !nativeWaveformReadyRef.current
+      ) {
+        nativeWaveformReadyRef.current = true;
+        setNativeWaveformReady(true);
+      }
+    },
+    [speechMethod],
+  );
+
   const speechLanguage = useSyncExternalStore(
     subscribePolzaSpeechLanguage,
     getPolzaSpeechLanguage,
@@ -347,7 +363,7 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
     micDeviceId,
     reducePlayback,
     unspokenPunctuation,
-    onAudioSamples: showWaveform ? publishSpeechWaveformSamples : undefined,
+    onAudioSamples: showWaveform ? handleAudioSamples : undefined,
     parakeetModel:
       speechMethod !== null && isParakeetModelBackend(speechMethod)
         ? requestedParakeetModel(parakeetSpeechModel, recentModels)
@@ -367,43 +383,6 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
     isListening ||
     status === "listening" ||
     (status === "receiving" && isListening);
-  useEffect(() => {
-    if (
-      !polzaUi ||
-      !showWaveform ||
-      speechMethod !== "browser-native" ||
-      !isCapturing ||
-      !navigator.mediaDevices?.getUserMedia
-    ) {
-      return;
-    }
-    let disposed = false;
-    let stream: MediaStream | null = null;
-    let stopMonitor: (() => void) | null = null;
-    void navigator.mediaDevices
-      .getUserMedia({
-        audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
-      })
-      .then((captured) => {
-        if (disposed) {
-          captured.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        stream = captured;
-        stopMonitor = startSpeechWaveformMonitor(
-          captured,
-          publishSpeechWaveformSamples,
-        );
-      })
-      .catch(() => {
-        // Recognition can still work when a separate level monitor cannot.
-      });
-    return () => {
-      disposed = true;
-      stopMonitor?.();
-      stream?.getTracks().forEach((track) => track.stop());
-    };
-  }, [polzaUi, showWaveform, speechMethod, isCapturing, micDeviceId]);
   const isFinalizing = status === "finalizing";
   const isBusy = isCaptureStarting || isFinalizing;
   const isActive = isCapturing || isBusy;
@@ -438,7 +417,7 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
   const waveformVisible =
     showWaveform &&
     speechMethod !== null &&
-    (speechMethod !== DEFAULT_SPEECH_METHOD || polzaUi) &&
+    (speechMethod !== DEFAULT_SPEECH_METHOD || nativeWaveformReady) &&
     (isCapturing || (followUpEnabled && retainWaveformSlot && !error));
   const showPostCaptureStatus =
     isProcessing || (isFinalizing && !waveformVisible);
@@ -573,6 +552,10 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
     if (wasCapturingRef.current && !isCapturing) {
       clearSpeechWaveform();
     }
+    if (!isCapturing) {
+      nativeWaveformReadyRef.current = false;
+      setNativeWaveformReady(false);
+    }
     wasCapturingRef.current = isCapturing;
     return () => {
       if (isCapturing) clearSpeechWaveform();
@@ -680,11 +663,12 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
   );
 
   useEffect(() => {
-    onWaveformActiveChange?.(waveformVisible);
+    const inlineWaveformActive = inlineWaveform && waveformVisible;
+    onWaveformActiveChange?.(inlineWaveformActive);
     return () => {
-      if (waveformVisible) onWaveformActiveChange?.(false);
+      if (inlineWaveformActive) onWaveformActiveChange?.(false);
     };
-  }, [onWaveformActiveChange, waveformVisible]);
+  }, [inlineWaveform, onWaveformActiveChange, waveformVisible]);
 
   // A disabled setting or a host without speech support removes the control.
   // Provider discovery leaves a disabled Mic in place until it can run.
@@ -747,9 +731,11 @@ export const VoiceInputButton = forwardRef(function VoiceInputButton(
       aria-describedby={showSeparateStatus ? speechStatusId : undefined}
       data-speech-streaming={serverStreaming}
     >
-      <span className={styles.backendLabel} aria-hidden="true">
-        {compactCaptureStatus ? statusLabel : compactSpeechMethodLabel}
-      </span>
+      {!polzaUi && (
+        <span className={styles.backendLabel} aria-hidden="true">
+          {compactCaptureStatus ? statusLabel : compactSpeechMethodLabel}
+        </span>
+      )}
       <svg
         width="18"
         height="18"

@@ -1,6 +1,6 @@
 {
-  "name": "LLM Collab",
-  "short_name": "LLM Collab",
+  "name": "Polza Cowork",
+  "short_name": "Polza Cowork",
   "description": "Командное рабочее пространство Polza",
   "start_url": ".",
   "display": "standalone",

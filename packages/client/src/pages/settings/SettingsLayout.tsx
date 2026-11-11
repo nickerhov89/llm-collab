@@ -137,7 +137,11 @@ const CATEGORY_COMPONENTS: Record<string, React.ComponentType> = {
     })),
   ),
   speech: lazy(() =>
-    import("./SpeechSettings").then((m) => ({ default: m.SpeechSettings })),
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+      ? import("./PolzaSpeechSettings").then((m) => ({
+          default: m.PolzaSpeechSettings,
+        }))
+      : import("./SpeechSettings").then((m) => ({ default: m.SpeechSettings })),
   ),
   "remote-executors": lazy(() =>
     import("./RemoteExecutorsSettings").then((m) => ({
@@ -165,7 +169,7 @@ const CATEGORY_COMPONENTS: Record<string, React.ComponentType> = {
 // This deployment is an agency workspace. Keep host administration focused on
 // people and access; the upstream application's diagnostic categories remain
 // available in source but are intentionally absent from the agency UI.
-const ADMIN_CATEGORIES = new Set(["users", "providers", "model"]);
+const ADMIN_CATEGORIES = new Set(["users", "providers", "model", "speech"]);
 const PERSONAL_CATEGORIES = new Set(["users", "speech", "appearance"]);
 const POLZA_ADMIN_UI = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
 
@@ -349,7 +353,7 @@ export function SettingsLayout() {
     visibleCategories.sort((left, right) => {
       const order = actingAsLimitedUser
         ? ["users", "speech", "appearance"]
-        : ["users", "providers", "model"];
+        : ["users", "providers", "model", "speech"];
       return order.indexOf(left.id) - order.indexOf(right.id);
     });
   const settingsTitle =

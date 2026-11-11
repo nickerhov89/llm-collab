@@ -235,11 +235,7 @@ export function ModeSelector({
       tabIndex={-1}
       aria-label={t("modeSelectLabel" as never)}
     >
-      <div className={styles.heading}>
-        {polzaMode
-          ? "How should ChatGPT actions be approved?"
-          : t("polzaPermissionsHeading")}
-      </div>
+      <div className={styles.heading}>{t("polzaPermissionsHeading")}</div>
       <div className="mode-selector-options">{optionsContent}</div>
     </div>
   ) : null;
@@ -263,7 +259,7 @@ export function ModeSelector({
         ) : (
           <span className={`mode-dot ${displayDotClass}`} />
         )}
-        <span className="mode-button-label">
+        <span className={`mode-button-label ${styles.label}`}>
           {polzaMode ? polzaLabels[mode] : displayLabel}
           {modeChangePending ? ` ${t("modePendingSuffix" as never)}` : null}
         </span>

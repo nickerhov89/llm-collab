@@ -1,3 +1,4 @@
+import { isPolzaAutoModel, autoModelForProvider } from "../lib/polzaAutoModel";
 import { RoutedSessionContext } from "../contexts/RoutedSessionContext";
 import { DRAFT_STORAGE_EVENT } from "../lib/draftSyncStorage";
 import { SessionIssuesLink } from "../components/SessionIssuesLink";
@@ -631,6 +632,11 @@ function SessionPageContent({
   });
   const [projectAppVoice, setProjectAppVoice] =
     useState<VoiceInputButtonRef | null>(null);
+  useEffect(() => {
+    if (isDomLingerParked && projectAppVoice?.isListening) {
+      projectAppVoice.stopAndFinalize();
+    }
+  }, [isDomLingerParked, projectAppVoice]);
   const projectServiceSupported = serverHasCapability(
     versionInfo,
     SERVER_CAPABILITIES.projectService.name,
@@ -793,6 +799,50 @@ function SessionPageContent({
     streamingMarkdownCallbacks,
     sessionOptions,
   );
+  const autoRestoreAttemptedRef = useRef(new Set<string>());
+  const currentRestoreSessionRef = useRef(actualSessionId);
+  currentRestoreSessionRef.current = actualSessionId;
+  useEffect(() => {
+    if (
+      loading ||
+      !session ||
+      status.owner !== "none" ||
+      autoRestoreAttemptedRef.current.has(actualSessionId)
+    ) {
+      return;
+    }
+    const restoringSessionId = actualSessionId;
+    autoRestoreAttemptedRef.current.add(restoringSessionId);
+    void api
+      .getProcessInfo(restoringSessionId)
+      .then(async ({ restartOnRestore }) => {
+        if (
+          restartOnRestore !== true ||
+          currentRestoreSessionRef.current !== restoringSessionId
+        ) {
+          return;
+        }
+        const result = await api.reactivateSession(
+          projectId,
+          restoringSessionId,
+        );
+        if (currentRestoreSessionRef.current !== restoringSessionId) return;
+        setStatus({
+          owner: "self",
+          processId: result.processId,
+          permissionMode: result.permissionMode,
+          appliedPermissionMode: result.appliedPermissionMode,
+          modeVersion: result.modeVersion,
+          recapAfterSeconds: result.recapAfterSeconds,
+        });
+      })
+      .catch((error: unknown) => {
+        console.warn(
+          "Could not automatically restore the crashed provider process",
+          error,
+        );
+      });
+  }, [actualSessionId, loading, projectId, session, setStatus, status.owner]);
   const savedLaunchSettings = session?.effectiveLaunchSettings;
   const permissionMode =
     status.owner === "self"
@@ -2837,6 +2887,34 @@ function SessionPageContent({
         updatePendingMessage(tempId, { attachments: uploadedAttachments });
       }
 
+      let autoModel: string | undefined;
+      if (
+        import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+        isPolzaAutoModel(actualSessionId) &&
+        !localControl &&
+        !preserveComposer &&
+        !outgoingText.startsWith("/") &&
+        effectiveProvider &&
+        processState !== "in-turn" &&
+        processState !== "waiting-input"
+      ) {
+        const info = currentProviderInfo?.models?.length
+          ? currentProviderInfo
+          : (await api.getProvider(effectiveProvider)).provider;
+        autoModel = autoModelForProvider(
+          effectiveProvider,
+          info.models ?? [],
+          outgoingText,
+        );
+        if (
+          status.owner === "self" &&
+          autoModel &&
+          autoModel !== effectiveModelConfig?.model
+        ) {
+          const result = await api.setProcessModel(status.processId, autoModel);
+          handleModelChanged(result);
+        }
+      }
       const requestSentAtMs = Date.now();
       if (status.owner === "none") {
         // Saved settings stay server-owned; only deliberate edits override them.
@@ -2848,6 +2926,7 @@ function SessionPageContent({
           outgoingText,
           {
             ...getResumeSettings(prepared.thinking),
+            ...(autoModel ? { model: autoModel } : {}),
             showThinking,
             provider: effectiveProvider,
             executor: session?.executor,
@@ -3411,7 +3490,7 @@ function SessionPageContent({
       metadata = {
         composition: {},
         ...metadata,
-        deliveryIntent: "deferred",
+        deliveryIntent: metadata?.deliveryIntent ?? "deferred",
         turnEffort: prepared.turnEffort,
         steerNow: undefined,
       };
@@ -6504,35 +6583,36 @@ function SessionPageContent({
                 />
               )}
               {import.meta.env.VITE_POLZA_ADMIN_UI !== "true" &&
-                !loading && effectiveProvider && (
-                <button
-                  type="button"
-                  className={`provider-badge-button ${sessionHeaderStyles.modelButton}`}
-                  onClick={() => {
-                    setModelPanelInitialTab("model");
-                    setShowModelSwitchModal(true);
-                  }}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setModelPanelInitialTab("info");
-                    setShowModelSwitchModal(true);
-                  }}
-                  title={
-                    status.owner === "self" && status.processId
-                      ? t("sessionConfigureModel")
-                      : t("sessionViewInfo")
-                  }
-                >
-                  <ProviderBadge
-                    condensed={condensedHeader}
-                    provider={effectiveProvider}
-                    model={liveBadgeModel}
-                    thinking={effectiveModelConfig?.thinking}
-                    effort={effectiveModelConfig?.effort}
-                    isThinking={canStopOwnedProcess}
-                  />
-                </button>
-              )}
+                !loading &&
+                effectiveProvider && (
+                  <button
+                    type="button"
+                    className={`provider-badge-button ${sessionHeaderStyles.modelButton}`}
+                    onClick={() => {
+                      setModelPanelInitialTab("model");
+                      setShowModelSwitchModal(true);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      setModelPanelInitialTab("info");
+                      setShowModelSwitchModal(true);
+                    }}
+                    title={
+                      status.owner === "self" && status.processId
+                        ? t("sessionConfigureModel")
+                        : t("sessionViewInfo")
+                    }
+                  >
+                    <ProviderBadge
+                      condensed={condensedHeader}
+                      provider={effectiveProvider}
+                      model={liveBadgeModel}
+                      thinking={effectiveModelConfig?.thinking}
+                      effort={effectiveModelConfig?.effort}
+                      isThinking={canStopOwnedProcess}
+                    />
+                  </button>
+                )}
               {!loading && (
                 <SessionMenu
                   sessionId={sessionId}
@@ -6715,7 +6795,11 @@ function SessionPageContent({
             sessionProvider={effectiveProvider}
             onModelChanged={handleModelChanged}
             onStartWithProvider={(provider, model) => {
-              const params = new URLSearchParams({ projectId, provider, model });
+              const params = new URLSearchParams({
+                projectId,
+                provider,
+                model,
+              });
               params.set("separateProjectDraft", "1");
               navigate(`${basePath}/new-session?${params.toString()}`);
             }}

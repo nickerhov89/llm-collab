@@ -17,6 +17,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import styles from "./ModelSwitchModal.module.css";
 import { api } from "../api/client";
 import {
   getEffortLevel,
@@ -45,6 +46,7 @@ import {
   startsAdditionalModelGroup,
   withVisibleModelSelection,
 } from "../lib/modelCatalog";
+import { usePolzaAutoModel } from "../lib/polzaAutoModel";
 import { polzaModelLabel } from "../lib/polzaModelLabel";
 import {
   isStandardServiceTier,
@@ -138,6 +140,7 @@ export function ModelSwitchModal({
   onClose,
 }: ModelSwitchModalProps) {
   const { t } = useI18n();
+  const [autoModel, setAutoModel] = usePolzaAutoModel(sessionId);
   const { providers: availableProviders } = useProviders();
   const { setThinkingMode, setEffortLevel } = useModelSettings();
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -166,6 +169,7 @@ export function ModelSwitchModal({
   const contentRef = useRef<HTMLDivElement>(null);
   const quickMenuRef = useRef<HTMLDivElement>(null);
   const quickActivationStartedRef = useRef(false);
+  const [, updateQuickMenuViewport] = useState(0);
   const dismissedRef = useRef(false);
   const [activating, setActivating] = useState(false);
   const [activateError, setActivateError] = useState<string | null>(null);
@@ -180,12 +184,17 @@ export function ModelSwitchModal({
     SERVER_CAPABILITIES.processServiceTierChange,
   );
   const polzaQuickMenu =
-    import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-    initialTab !== "info";
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true" && initialTab !== "info";
   const otherCliGroups = (["codex", "claude", "gemini", "codex-oss"] as const)
     .filter((name) => name !== sessionProvider)
     .map((name) => availableProviders.find((item) => item.name === name))
-    .filter((item) => item?.enabled && item.installed && item.authenticated && item.models?.length);
+    .filter(
+      (item) =>
+        item?.enabled &&
+        item.installed &&
+        item.authenticated &&
+        item.models?.length,
+    );
 
   useEffect(() => {
     if (!polzaQuickMenu) return;
@@ -197,9 +206,16 @@ export function ModelSwitchModal({
     };
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("mousedown", onMouseDown);
+    const reposition = () => updateQuickMenuViewport((value) => value + 1);
+    window.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
     };
   }, [onClose, polzaQuickMenu]);
 
@@ -545,6 +561,7 @@ export function ModelSwitchModal({
       });
       setThinkingMode(nextMode);
       setEffortLevel(nextEffort);
+      setAutoModel(false);
       onModelChanged(result);
       onClose();
     } catch (err) {
@@ -556,23 +573,58 @@ export function ModelSwitchModal({
   };
 
   if (polzaQuickMenu) {
-    const anchor = document
-      .querySelector(".polza-combined-model-button")
+    const anchor = Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".polza-combined-model-button,.polza-model-button",
+      ),
+    )
+      .find((button) => button.getClientRects().length > 0)
       ?.getBoundingClientRect();
     return createPortal(
       <div
         ref={quickMenuRef}
-        className="polza-model-menu"
+        className={`polza-model-menu ${styles.quickMenu}`}
         role="dialog"
         aria-label="Select model"
         style={{
-          right: anchor ? Math.max(12, window.innerWidth - anchor.right) : 12,
+          right: anchor
+            ? Math.min(
+                Math.max(12, window.innerWidth - anchor.right),
+                Math.max(
+                  12,
+                  window.innerWidth -
+                    Math.min(400, window.innerWidth - 24) -
+                    12,
+                ),
+              )
+            : 12,
           bottom: anchor
             ? Math.max(12, window.innerHeight - anchor.top + 8)
             : 88,
+          maxHeight: Math.max(
+            80,
+            Math.min(
+              520,
+              (anchor?.top ?? window.innerHeight - 88) -
+                (window.visualViewport?.offsetTop ?? 0) -
+                20,
+            ),
+          ),
         }}
       >
-        <div className="polza-model-menu-heading">Select model</div>
+        <div className="polza-model-menu-heading">Выбор модели</div>
+        <button
+          type="button"
+          className="polza-model-menu-item"
+          aria-current={autoModel ? "true" : undefined}
+          onClick={() => {
+            setAutoModel(true);
+            onClose();
+          }}
+        >
+          <span>Авто</span>
+          <span aria-hidden="true">{autoModel ? "✓" : ""}</span>
+        </button>
         {loading ? (
           <div className="polza-model-menu-message">
             {t("modelSwitchLoading")}
@@ -611,10 +663,12 @@ export function ModelSwitchModal({
                 className="polza-model-menu-item"
                 onClick={() => void selectQuickModel(model)}
                 disabled={switching}
-                aria-current={currentModelId === model.id ? "true" : undefined}
+                aria-current={
+                  !autoModel && currentModelId === model.id ? "true" : undefined
+                }
               >
                 <span>{polzaModelLabel(model.name)}</span>
-                {currentModelId === model.id && (
+                {!autoModel && currentModelId === model.id && (
                   <span aria-hidden="true">✓</span>
                 )}
               </button>
@@ -623,25 +677,37 @@ export function ModelSwitchModal({
         )}
         {onStartWithProvider && otherCliGroups.length > 0 && (
           <div className="polza-model-menu-other">
-            <div className="polza-model-menu-heading">Новый чат в этой папке</div>
-            {otherCliGroups.map((cli) => cli && (
-              <div key={cli.name} className="polza-model-menu-group">
-                <div className="polza-model-menu-group-title">
-                  {cli.name === "codex-oss" ? "OpenRouter" : cli.displayName}
-                </div>
-                {cli.models?.map((model) => (
-                  <button
-                    key={`${cli.name}:${model.id}`}
-                    type="button"
-                    className="polza-model-menu-item"
-                    onClick={() => onStartWithProvider(cli.name, model.id)}
-                  >
-                    <span>{polzaModelLabel(model.name)}</span>
-                    <span className="polza-model-menu-new" aria-hidden="true">↗</span>
-                  </button>
-                ))}
-              </div>
-            ))}
+            <div className="polza-model-menu-heading">
+              Новый чат в этой папке
+            </div>
+            {otherCliGroups.map(
+              (cli) =>
+                cli && (
+                  <div key={cli.name} className="polza-model-menu-group">
+                    <div className="polza-model-menu-group-title">
+                      {cli.name === "codex-oss"
+                        ? "OpenRouter"
+                        : cli.displayName}
+                    </div>
+                    {cli.models?.map((model) => (
+                      <button
+                        key={`${cli.name}:${model.id}`}
+                        type="button"
+                        className="polza-model-menu-item"
+                        onClick={() => onStartWithProvider(cli.name, model.id)}
+                      >
+                        <span>{polzaModelLabel(model.name)}</span>
+                        <span
+                          className="polza-model-menu-new"
+                          aria-hidden="true"
+                        >
+                          ↗
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ),
+            )}
           </div>
         )}
       </div>,

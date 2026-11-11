@@ -97,7 +97,7 @@ export function LoginPage() {
     <div className="login-page">
       <div className="login-container">
         <div className="login-logo">
-          <span className="polza-login-brand">LLM Collab</span>
+          <span className="polza-login-brand">Polza Cowork</span>
         </div>
         <p className="login-subtitle">
           {isSetupMode ? t("loginSetupSubtitle") : t("loginSubtitle")}

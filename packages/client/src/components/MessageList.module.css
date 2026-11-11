@@ -12,6 +12,17 @@
   --queue-bubble-accent: var(--project-queue-action-bg);
 }
 
+.queuedControls {
+  min-width: 0;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+.queuedControls.queuedControls :global(button),
+.queuedControls.queuedControls :global(summary) {
+  min-height: 44px;
+}
+
 /* m/M progress badge on the /clearloop queue entry (topics/session-rewind.md). */
 .clearloopBadge {
   display: inline-block;
@@ -24,4 +35,83 @@
   font-variant-numeric: tabular-nums;
   line-height: 1.6;
   vertical-align: baseline;
+}
+
+/* Compact queue rows keep the delivery state server-owned and all actions
+   reachable. Status remains visible for recovered, patient and command work. */
+.queueRow:global(.deferred-message) {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-bottom: 0;
+  background: var(--bg-surface);
+}
+.queueRow:global(.deferred-message):not(:has(+ .queueRow)) {
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0 0 16px 16px;
+}
+.queueRow > :global(.message-render-content) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+}
+.queueRow .queuedBubble:global(.message-user-prompt) {
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  opacity: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+}
+.queueRow :global(.deferred-message-attachments-list) {
+  grid-column: 1;
+  max-height: 64px;
+  overflow: auto;
+}
+.queueRow :global(.deferred-message-footer) {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  justify-content: flex-end;
+  margin: 0;
+}
+.queueRow[data-queue-kind="regular"] :global(.deferred-message-status) {
+  display: none;
+}
+.queueActions {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+.queueActions :global(.deferred-message-action) {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.queueActions :global(.deferred-message-action-cancel) > span {
+  display: none;
+}
+@media (pointer: coarse) {
+  .queueActions :global(.deferred-message-action) {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+@media (width <= 700px) {
+  .queueRow > :global(.message-render-content) {
+    column-gap: 4px;
+  }
+  .queueRow :global(.deferred-message-footer) {
+    max-width: 154px;
+  }
+  .queueRow :global(.deferred-message-status) {
+    flex-basis: 100%;
+    font-size: 10px;
+  }
 }

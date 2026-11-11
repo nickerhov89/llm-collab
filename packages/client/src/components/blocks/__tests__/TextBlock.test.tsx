@@ -61,7 +61,8 @@ describe("TextBlock", () => {
   });
 
   it("renders Markdown immediately when the server has not sent HTML", () => {
-    const text = "**Главное**\n\n| Этап | Статус |\n| --- | --- |\n| Запуск | Готово |";
+    const text =
+      "**Главное**\n\n| Этап | Статус |\n| --- | --- |\n| Запуск | Готово |";
     const { container, rerender } = render(
       <I18nProvider>
         <TextBlock text={text} isStreaming />
@@ -98,7 +99,7 @@ describe("TextBlock", () => {
       </I18nProvider>,
     );
 
-    expect(container.querySelector(".text-block-toggle")).toBeTruthy();
+    expect(container.querySelector(".text-block-toggle")).toBeNull();
     expect(container.querySelector(".text-block-local-rendered")).toBeTruthy();
     expect(container.querySelector(".katex")).toBeTruthy();
   });
@@ -172,7 +173,7 @@ describe("TextBlock", () => {
     );
   });
 
-  it("shows render toggle for completed server markdown", () => {
+  it("keeps completed server markdown rendered without a per-message toggle", () => {
     const { container } = render(
       <I18nProvider>
         <TextBlock
@@ -182,7 +183,7 @@ describe("TextBlock", () => {
       </I18nProvider>,
     );
 
-    expect(container.querySelector(".text-block-toggle")).toBeTruthy();
+    expect(container.querySelector(".text-block-toggle")).toBeNull();
     expect(container.querySelector("strong")?.textContent).toBe("win");
   });
 

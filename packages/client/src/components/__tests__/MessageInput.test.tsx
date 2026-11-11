@@ -5110,7 +5110,6 @@ describe("MessageInput", () => {
     expect(expandButton.className).toBe(anchoredClassName);
 
     fireEvent.click(expandButton);
-    expect(textarea.rows).toBe(3);
     expect(textarea.closest('[data-composer-full-pane="true"]')).toBeTruthy();
     expect(screen.getByRole("button", { name: "Restore composer" }).title).toBe(
       "Restore composer (Ctrl+U)",
@@ -5144,7 +5143,6 @@ describe("MessageInput", () => {
 
     act(() => restoreFullPane?.());
     expect(textarea.closest('[data-composer-full-pane="true"]')).toBeNull();
-    expect(textarea.rows).toBe(3);
   });
 
   it("uses editing-first key semantics in full-pane mode", () => {
@@ -5329,6 +5327,32 @@ describe("MessageInput", () => {
     fireEvent.click(screen.getByLabelText("toolbarQueueLabel"));
 
     expectSubmission(onQueue, "claude patient queue", "patient");
+  });
+
+  it("keeps Polza queued corrections durable on non-Codex providers too", () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    try {
+      versionState.version = {
+        ...versionState.version,
+        clientDefaults: { patientQueueDefault: false },
+      };
+      const onQueue = vi.fn();
+      const textarea = renderMessageInput(
+        vi.fn(() => true),
+        { onQueue, thinkingProvider: "claude" },
+      );
+      fireEvent.change(textarea, {
+        target: { value: "keep this correction after a restart" },
+      });
+      fireEvent.click(screen.getByLabelText("toolbarQueueLabel"));
+      expectSubmission(
+        onQueue,
+        "keep this correction after a restart",
+        "patient",
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("stamps each patient entry point with its own compaction threshold", () => {

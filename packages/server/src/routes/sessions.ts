@@ -118,6 +118,7 @@ import {
 } from "../sessions/recap-overlays.js";
 import { sessionOwnershipFromProcess } from "../sessions/session-runtime-overlay.js";
 import { isAutomaticSessionResumeAllowed } from "../sessions/resume-exemption.js";
+import { shouldRestartProviderOnRestore } from "../sessions/process-recovery.js";
 import {
   type PaginationInfo,
   sliceAfterMessageIdWithMatch,
@@ -8730,11 +8731,22 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     const sessionId = c.req.param("sessionId");
 
     const process = deps.supervisor.getProcessForSession(sessionId);
-    if (!process) {
-      return c.json({ process: null });
-    }
-
-    return c.json({ process: process.getInfo() });
+    const lastTermination = process?.isTerminated
+      ? process.getInfo()
+      : deps.supervisor.getRecentlyTerminatedProcessForSession(sessionId);
+    const metadata = deps.supervisor
+      .getSessionMetadataService()
+      ?.getMetadata(sessionId);
+    return c.json({
+      process: process?.getInfo() ?? null,
+      restartOnRestore:
+        shouldRestartProviderOnRestore({
+          terminationReason: lastTermination?.terminationReason,
+          archived: metadata?.isArchived === true,
+          autoResumeAllowed: isAutomaticSessionResumeAllowed(metadata),
+        }) &&
+        (!process || process.isTerminated),
+    });
   });
 
   // POST /api/sessions/:sessionId/input - Respond to input request

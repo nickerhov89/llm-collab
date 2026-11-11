@@ -1228,7 +1228,7 @@ export function Sidebar({
                 title={t("sidebarNewSession")}
               >
                 <span className="polza-sidebar-brand">
-                  LLM Collab <span aria-hidden="true">⌄</span>
+                  Polza Cowork <span aria-hidden="true">⌄</span>
                 </span>
               </Link>
               <Link
@@ -1267,7 +1267,7 @@ export function Sidebar({
                 onClick={onNavigate}
               >
                 <span className="polza-sidebar-brand">
-                  LLM Collab <span aria-hidden="true">⌄</span>
+                  Polza Cowork <span aria-hidden="true">⌄</span>
                 </span>
               </Link>
               <button

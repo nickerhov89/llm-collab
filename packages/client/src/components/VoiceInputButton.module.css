@@ -71,17 +71,38 @@
   max-width: 6.25rem;
 }
 
-.polzaButton .backendLabel {
-  text-overflow: ellipsis;
+.polzaButton.polzaButton.polzaButton {
+  box-sizing: border-box;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  padding-inline: 0;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.polzaButton.polzaButton.polzaButton:not([data-inline-waveform="true"]) {
+  max-width: 44px;
 }
 
 .polzaButton.inlineWaveform.inlineWaveform {
-  width: 100%;
-  max-width: none;
+  width: 44px;
+  max-width: 44px;
+  flex: 0 0 44px;
 }
 
 .polzaButton.inlineWaveform [data-speech-waveform="true"] {
-  max-width: none;
+  position: absolute;
+  inset: 7px;
+  width: 30px;
+  height: 30px;
+  max-width: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--bg-surface);
 }
 
 .polzaStatus.polzaStatus {
@@ -93,6 +114,20 @@
 }
 
 @media (width <= 700px), (pointer: coarse) {
+  .polzaStatus.polzaStatus {
+    position: fixed;
+    right: 12px;
+    bottom: calc(116px + env(safe-area-inset-bottom));
+    left: 12px;
+    z-index: 1200;
+    width: auto;
+    max-width: none;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--bg-surface);
+    box-shadow: 0 8px 24px #00000014;
+  }
   .polzaButton.polzaButton {
     min-height: 44px;
   }

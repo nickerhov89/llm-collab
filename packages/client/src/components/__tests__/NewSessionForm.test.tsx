@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { setPolzaAutoModel } from "../../lib/polzaAutoModel";
 
 import {
   act,
@@ -390,6 +391,11 @@ vi.mock("../../api/client", () => ({
     queueMessage: mockQueueMessage,
     createProjectQueueItem: mockCreateProjectQueueItem,
     getProjectWorkstreams: mockGetProjectWorkstreams,
+    getProvider: vi.fn(async (name: string) => ({
+      provider: providersState.providers.find(
+        (provider) => provider.name === name,
+      ),
+    })),
   },
 }));
 
@@ -740,9 +746,10 @@ function dropdownOption(label: string, option: string): HTMLButtonElement {
 }
 
 function openAdvancedOptions(): void {
-  fireEvent.click(
-    screen.getByRole("button", { name: "newSessionShowAdvancedOptions" }),
-  );
+  const toggle = screen.queryByRole("button", {
+    name: "newSessionShowAdvancedOptions",
+  });
+  if (toggle) fireEvent.click(toggle);
 }
 
 vi.mock("../../lib/newSessionPrefill", () => ({
@@ -1009,11 +1016,60 @@ describe("NewSessionForm", () => {
     window.localStorage.setItem(UI_KEYS.speechMessagePrefixMode, "asr");
   });
 
+  it.each([true, false])(
+    "Polza launch binds auto=%s to the actual provider/model request",
+    async (auto) => {
+      vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+      setPolzaAutoModel("new", auto);
+      providersState.providers = providersState.providers.map((provider) => ({
+        ...provider,
+        enabled: true,
+        models:
+          provider.name === "claude"
+            ? [{ id: "haiku", name: "Haiku" }]
+            : [
+                { id: "gpt-6-luna", name: "Luna" },
+                { id: "gpt-6.1-sol", name: "Sol" },
+              ],
+      }));
+      serverSettingsState.settings = {
+        newSessionDefaults: {
+          provider: "claude",
+          providers: {
+            claude: { model: "haiku" },
+            codex: { model: "gpt-6-luna" },
+          },
+        },
+      };
+      serverSettingsState.isLoading = false;
+      render(
+        <NewSessionForm
+          projectId="project-1"
+          selectedProject={chooserProjects[0]}
+          projects={[...chooserProjects]}
+        />,
+      );
+      const composer = screen.getByPlaceholderText("polzaNewChatPlaceholder");
+      fireEvent.change(composer, { target: { value: "Fix CSS footer" } });
+      fireEvent.click(
+        screen.getByRole("button", { name: "newSessionStartAction" }),
+      );
+      await waitFor(() => expect(mockStartSession).toHaveBeenCalled());
+      const args = mockStartSession.mock.calls[0];
+      expect(args?.[2]).toMatchObject({
+        provider: auto ? "codex" : "claude",
+        model: auto ? "gpt-6-luna" : "haiku",
+      });
+      expect(JSON.stringify(args)).not.toContain("polza:auto");
+    },
+  );
+
   afterEach(() => {
     cleanup();
     window.localStorage.clear();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("shows where the model list came from and refreshes it", () => {
@@ -1272,6 +1328,7 @@ describe("NewSessionForm", () => {
     serverSettingsState.settings = { newSessionDefaults: standard };
     view.unmount();
     const next = render(<NewSessionForm projectId="project-1" />);
+    openAdvancedOptions();
     expect(selectedDropdownValue("newSessionServiceTierTitle")).toBe("");
     fireEvent.click(dropdownOption("newSessionServiceTierTitle", "Fast"));
     await waitFor(() =>
@@ -1348,6 +1405,7 @@ describe("NewSessionForm", () => {
     });
     view.unmount();
     const next = render(<NewSessionForm projectId="project-1" />);
+    openAdvancedOptions();
     await waitFor(() =>
       expect(selectedDropdownValue("routerPool")).toBe("work"),
     );
@@ -4254,8 +4312,8 @@ describe("NewSessionForm", () => {
       ),
       (element) => element.textContent,
     );
-    expect(secondaryHeadings[0]).toBe("newSessionModeTitle");
-    expect(secondaryHeadings[1]).toBe("showThinkingTitle");
+    expect(primaryHeadings).toContain("newSessionModeTitle");
+    expect(secondaryHeadings[0]).toBe("showThinkingTitle");
     expect(secondaryHeadings.indexOf("newSessionRecapTitle")).toBeGreaterThan(
       secondaryHeadings.indexOf("showThinkingTitle"),
     );
@@ -4303,7 +4361,7 @@ describe("NewSessionForm", () => {
   it("remembers whether Advanced options is expanded across form mounts", () => {
     const first = render(<NewSessionForm projectId="project-1" />);
     const advanced = screen
-      .getByTestId("filter-newSessionModeTitle")
+      .getByTestId("filter-showThinkingTitle")
       .closest<HTMLElement>('[data-new-session-secondary-options="true"]');
     expect(advanced?.id).toBe("new-session-advanced-options");
     expect(advanced?.hidden).toBe(true);

@@ -1,8 +1,10 @@
 import type {
   EffortLevel,
   ModelInfo,
+  ProviderName,
   NewSessionDefaults,
 } from "@yep-anywhere/shared";
+import { getModelEffortLevels } from "@yep-anywhere/shared";
 import { useState } from "react";
 import { useProviders } from "../../hooks/useProviders";
 import { useServerSettings } from "../../hooks/useServerSettings";
@@ -117,7 +119,7 @@ export function PolzaCodexAccountSettings() {
 
 export function PolzaCodexModelSettings() {
   useSettingsPaneTitle("Модели");
-  const { codex, loading, error: providerError, refetch } = useCodexProvider();
+  const { providers, loading, error: providerError, refetch } = useProviders();
   const {
     settings,
     isLoading: settingsLoading,
@@ -127,21 +129,28 @@ export function PolzaCodexModelSettings() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const models = codex?.models ?? [];
   const defaults = settings?.newSessionDefaults;
-  const scoped = defaults?.providers?.codex;
+  const providerName = defaults?.provider ?? "codex";
+  const provider = providers.find((item) => item.name === providerName);
+  const models = provider?.models ?? [];
+  const connected = providers.filter(
+    (item) => item.installed && (item.authenticated || item.enabled),
+  );
+  const scoped = defaults?.providers?.[providerName];
   const modelId =
     scoped?.model ??
-    (defaults?.provider === "codex" ? defaults?.model : undefined) ??
+    (defaults?.provider === providerName ? defaults?.model : undefined) ??
     models.find((item) => item.isDefault)?.id ??
     models[0]?.id ??
     "";
   const model: ModelInfo | undefined = models.find(
     (item) => item.id === modelId,
   );
-  const supportedEfforts = model?.supportedEffortLevels?.length
-    ? model.supportedEffortLevels
-    : EFFORTS;
+  const supportedEfforts = getModelEffortLevels(model).length
+    ? getModelEffortLevels(model)
+    : providerName === "codex"
+      ? EFFORTS
+      : [];
   const effort =
     scoped?.effortLevel ??
     model?.defaultEffortLevel ??
@@ -150,6 +159,7 @@ export function PolzaCodexModelSettings() {
       : (supportedEfforts[0] ?? "low"));
 
   const save = async (change: {
+    provider?: ProviderName;
     model?: string;
     effortLevel?: EffortLevel;
   }) => {
@@ -157,21 +167,47 @@ export function PolzaCodexModelSettings() {
     setSaving(true);
     setSaved(false);
     setSaveError(null);
-    const nextModel = change.model ?? modelId;
-    const nextInfo = models.find((item) => item.id === nextModel);
-    const nextEfforts = nextInfo?.supportedEffortLevels?.length
-      ? nextInfo.supportedEffortLevels
-      : EFFORTS;
-    const proposedEffort = change.effortLevel ?? effort;
+    const nextProviderName = change.provider ?? providerName;
+    const target = providers.find((item) => item.name === nextProviderName);
+    const targetModels = target?.models ?? [];
+    const targetScoped = defaults?.providers?.[nextProviderName];
+    const candidateModel =
+      change.model ??
+      targetScoped?.model ??
+      targetModels.find((item) => item.isDefault)?.id ??
+      targetModels[0]?.id;
+    const nextModel =
+      targetModels.find((item) => item.id === candidateModel)?.id ??
+      targetModels[0]?.id;
+    if (!nextModel) {
+      setSaving(false);
+      return;
+    }
+    const nextInfo = targetModels.find((item) => item.id === nextModel);
+    const modelEfforts = getModelEffortLevels(nextInfo);
+    const nextEfforts = modelEfforts.length
+      ? modelEfforts
+      : nextProviderName === "codex"
+        ? EFFORTS
+        : [];
+    const proposedEffort =
+      change.effortLevel ??
+      targetScoped?.effortLevel ??
+      nextInfo?.defaultEffortLevel ??
+      "medium";
     const nextEffort = nextEfforts.includes(proposedEffort)
       ? proposedEffort
-      : (nextInfo?.defaultEffortLevel ?? nextEfforts[0] ?? "low");
+      : nextEfforts[0];
     const next: NewSessionDefaults = {
       ...defaults,
-      provider: "codex",
+      provider: nextProviderName,
       providers: {
         ...defaults?.providers,
-        codex: { ...scoped, model: nextModel, effortLevel: nextEffort },
+        [nextProviderName]: {
+          ...targetScoped,
+          model: nextModel,
+          ...(nextEffort ? { effortLevel: nextEffort } : {}),
+        },
       },
     };
     try {
@@ -207,11 +243,33 @@ export function PolzaCodexModelSettings() {
             {saveError || providerError?.message || settingsError}
           </p>
         )}
-        {!loading && !settingsLoading && !codex?.authenticated && (
+        {!loading && !settingsLoading && !provider?.authenticated && (
           <p className={styles.warning}>
-            Codex CLI пока не подключён. Подключи его в разделе «Аккаунт Codex».
+            Этот сервис пока не подключён. Выбери доступный сервис или проверь
+            его аккаунт.
           </p>
         )}
+        <label className={styles.field}>
+          <span>Сервис</span>
+          <select
+            value={providerName}
+            disabled={loading || settingsLoading || saving}
+            onChange={(event) =>
+              void save({ provider: event.target.value as ProviderName })
+            }
+          >
+            {!connected.some((item) => item.name === providerName) && (
+              <option value={providerName}>
+                {provider?.displayName ?? providerName}
+              </option>
+            )}
+            {connected.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className={styles.field}>
           <span>Модель</span>
           <select
@@ -231,32 +289,34 @@ export function PolzaCodexModelSettings() {
             ))}
           </select>
         </label>
-        <label className={styles.field}>
-          <span>Глубина рассуждения</span>
-          <select
-            value={effort}
-            disabled={
-              loading || settingsLoading || saving || models.length === 0
-            }
-            onChange={(event) =>
-              void save({ effortLevel: event.target.value as EffortLevel })
-            }
-          >
-            {supportedEfforts.map((item) => (
-              <option key={item} value={item}>
-                {item === "low"
-                  ? "Низкая"
-                  : item === "medium"
-                    ? "Средняя"
-                    : item === "high"
-                      ? "Высокая"
-                      : item === "xhigh"
-                        ? "Очень высокая"
-                        : "Максимальная"}
-              </option>
-            ))}
-          </select>
-        </label>
+        {supportedEfforts.length > 0 && (
+          <label className={styles.field}>
+            <span>Глубина рассуждения</span>
+            <select
+              value={effort}
+              disabled={
+                loading || settingsLoading || saving || models.length === 0
+              }
+              onChange={(event) =>
+                void save({ effortLevel: event.target.value as EffortLevel })
+              }
+            >
+              {supportedEfforts.map((item) => (
+                <option key={item} value={item}>
+                  {item === "low"
+                    ? "Низкая"
+                    : item === "medium"
+                      ? "Средняя"
+                      : item === "high"
+                        ? "Высокая"
+                        : item === "xhigh"
+                          ? "Очень высокая"
+                          : "Максимальная"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {saved && (
           <p role="status" className={styles.success}>
             Сохранено для новых чатов

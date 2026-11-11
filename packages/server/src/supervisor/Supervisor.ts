@@ -4442,6 +4442,14 @@ export class Supervisor {
     return this.processes.get(processId);
   }
 
+  getRecentlyTerminatedProcessForSession(
+    sessionId: string,
+  ): ProcessInfo | undefined {
+    return this.getRecentlyTerminatedProcesses().find(
+      (process) => process.sessionId === sessionId,
+    );
+  }
+
   /**
    * Durable session state for projections a live subscription must build from
    * the same sources the request routes use — a queued boundary outlives the

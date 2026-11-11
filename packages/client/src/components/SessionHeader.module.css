@@ -26,6 +26,13 @@
   min-height: var(--header-control-size);
 }
 
+@media (width <= 700px), (pointer: coarse) {
+  .row :global(button.session-title),
+  .row :global(.session-title-chevron-trigger) {
+    min-height: 44px;
+  }
+}
+
 :global(.session-header-inner).noLeadingControl {
   padding-left: 0.75rem;
 }

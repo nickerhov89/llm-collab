@@ -322,7 +322,7 @@ export function MessageDeliverySettings() {
   const serverBangCommandsEnabled =
     settings?.clientDefaults?.bangCommandsEnabled ?? false;
   const serverBusyDefaultAction =
-    settings?.clientDefaults?.busyComposerDefaultAction ?? "steer";
+    settings?.clientDefaults?.busyComposerDefaultAction ?? "queue";
   const serverSteerNowDefault =
     settings?.clientDefaults?.steerNowDefault ?? DEFAULT_STEER_NOW_ENABLED;
   const serverPatientQueueDefault =
@@ -348,7 +348,7 @@ export function MessageDeliverySettings() {
         bangCommandsEnabled:
           settings.clientDefaults?.bangCommandsEnabled ?? false,
         busyComposerDefaultAction:
-          settings.clientDefaults?.busyComposerDefaultAction ?? "steer",
+          settings.clientDefaults?.busyComposerDefaultAction ?? "queue",
         steerNowDefault:
           settings.clientDefaults?.steerNowDefault ?? DEFAULT_STEER_NOW_ENABLED,
         patientQueueDefault:

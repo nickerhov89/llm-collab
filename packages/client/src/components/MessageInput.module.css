@@ -7,6 +7,77 @@
 }
 
 @media (width <= 700px) {
+  .polzaComposer :global(.message-input-left) {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .polzaComposer
+    :global(
+      .message-input-left [data-session-toolbar-control="thinkingToggle"]
+    ) {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 128px);
+    margin-left: 0;
+  }
+
+  .polzaComposer
+    :global(.message-input-left [data-session-toolbar-control="thinkingToggle"])
+    > div {
+    min-width: 0;
+    width: auto;
+  }
+
+  .polzaComposer :global(.message-input-left .polza-combined-model-button) {
+    min-width: 0;
+    max-width: 100%;
+    width: auto;
+  }
+
+  .polzaComposer :global(.message-input-left .polza-combined-effort-name) {
+    display: none;
+  }
+
+  .polzaComposer :global(.message-input-left .mode-button) {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0;
+  }
+
+  .polzaComposer :global(.message-input-left .mode-button .mode-button-label) {
+    display: none;
+  }
+
+  .polzaComposer :global(.message-input-actions) {
+    flex-shrink: 0;
+  }
+
+  .polzaComposer :global([data-session-toolbar-control="microphone"]) {
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+
+  .polzaComposer :global(.message-input-actions .send-button),
+  .polzaComposer :global(.message-input-actions .stop-button) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 0;
+    aspect-ratio: 1;
+  }
+
+  .polzaComposer :global(.message-input-left .voice-input-button) {
+    margin-left: 4px;
+  }
+}
+
+@media (width <= 700px) {
   .polzaComposer {
     padding: 8px 10px 9px;
     border-radius: 21px;

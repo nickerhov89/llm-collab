@@ -273,7 +273,7 @@ export function ToolbarSettings() {
     serverSupportsProjectQueueNewSessionShortcutSetting(version);
 
   const busyComposerDefaultAction =
-    settings?.clientDefaults?.busyComposerDefaultAction ?? "steer";
+    settings?.clientDefaults?.busyComposerDefaultAction ?? "queue";
   const collapsedComposerButton =
     settings?.clientDefaults?.collapsedComposerButton ?? "primary";
 

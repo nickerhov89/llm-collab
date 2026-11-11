@@ -243,6 +243,33 @@ describe("speech provider method selection", () => {
     ).toBe(XAI_DIRECT_STREAMING_SPEECH_METHOD);
   });
 
+  it("falls back to available browser dictation only when explicitly enabled", () => {
+    const availability = {
+      browserNativeAvailable: true,
+      fallbackToBrowserNative: true,
+    };
+    expect(resolveSpeechMethod("ya-granite", [], true, availability)).toBe(
+      DEFAULT_SPEECH_METHOD,
+    );
+    expect(
+      resolveSpeechMethod("ya-granite", ["ya-granite"], true, availability),
+    ).toBe("ya-granite");
+    expect(
+      resolveSpeechMethod("ya-granite", undefined, true, availability),
+    ).toBe("ya-granite");
+    expect(
+      resolveSpeechMethod("ya-granite", [], true, {
+        ...availability,
+        browserNativeAvailable: false,
+      }),
+    ).toBeNull();
+    expect(
+      resolveSpeechMethod("ya-granite", [], true, {
+        browserNativeAvailable: true,
+      }),
+    ).toBeNull();
+  });
+
   it("preserves available explicit choices and reports unavailable ones", () => {
     expect(
       resolveSpeechMethod("ya-deepgram", ["ya-grok", "ya-deepgram"], true),
@@ -664,6 +691,68 @@ describe("browser-native speech provider", () => {
       provider.dispose();
       vi.useRealTimers();
     }
+  });
+
+  it("recovers a silent microphone startup without a browser reload", () => {
+    vi.useFakeTimers();
+    const Recognition = installFakeSpeechRecognition();
+    const onError = vi.fn();
+    const provider = new BrowserNativeProvider({ onError });
+    try {
+      provider.start();
+      const stale = Recognition.instance!;
+      vi.advanceTimersByTime(10_000);
+      expect(provider.getState()).toMatchObject({
+        status: "error",
+        isListening: false,
+      });
+      expect(onError).toHaveBeenCalledOnce();
+      provider.start();
+      Recognition.instance?.onaudiostart?.(new Event("audiostart"));
+      stale.onend?.(new Event("end"));
+      expect(provider.getState()).toMatchObject({
+        status: "listening",
+        isListening: true,
+      });
+      vi.advanceTimersByTime(10_000);
+      expect(provider.getState().status).toBe("listening");
+    } finally {
+      provider.dispose();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps repeated microphone start and stop cycles independent", () => {
+    const Recognition = installFakeSpeechRecognition();
+    const onResult = vi.fn();
+    const provider = new BrowserNativeProvider({ onResult });
+    for (let index = 0; index < 20; index++) {
+      provider.start();
+      Recognition.instance?.onaudiostart?.(new Event("audiostart"));
+      expect(provider.getState().isListening).toBe(true);
+      provider.stop();
+      expect(provider.getState().status).toBe("idle");
+    }
+    expect(onResult).not.toHaveBeenCalled();
+    provider.dispose();
+  });
+
+  it("can retry after the browser throws while stopping", () => {
+    class BrokenStop extends FakeSpeechRecognition {
+      stop() {
+        throw new Error("invalid state");
+      }
+    }
+    const Recognition = installFakeSpeechRecognition(BrokenStop);
+    const provider = new BrowserNativeProvider();
+    provider.start();
+    Recognition.instance?.onaudiostart?.(new Event("audiostart"));
+    provider.stop();
+    expect(provider.getState().status).toBe("error");
+    provider.start();
+    Recognition.instance?.onaudiostart?.(new Event("audiostart"));
+    expect(provider.getState().isListening).toBe(true);
+    provider.dispose();
   });
 
   it("does not expose prewarm, avoiding browser-owned recording indicators", () => {

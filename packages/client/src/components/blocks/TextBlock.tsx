@@ -38,7 +38,6 @@ import {
   useLocalResourceClick,
 } from "../LocalMediaModal";
 import { renderFixedFontMath } from "../ui/FixedFontMathToggle";
-import { RenderModeGlyph } from "../ui/RenderModeGlyph";
 import { useTurnImageGalleryNavigation } from "../TurnImageGallery";
 import { ParagraphQuoteRail } from "../ParagraphQuoteRail";
 import styles from "./TextBlock.module.css";
@@ -310,18 +309,16 @@ export const TextBlock = memo(function TextBlock({
     [localMarkdownHtml, text],
   );
   const canToggleRendered =
-    !isStreaming && (serverMarkdownChanged || localMarkdownChanged || localMathPreview.changed);
-  const { showRendered, toggleLocalMode } = useRenderModeToggle(
-    canToggleRendered,
-    {
-      participateInGlobalMode: false,
-      resetDependencies: [
-        isStreaming,
-        isStreaming ? "" : text,
-        augmentHtml ?? "",
-      ],
-    },
-  );
+    !isStreaming &&
+    (serverMarkdownChanged || localMarkdownChanged || localMathPreview.changed);
+  const { showRendered } = useRenderModeToggle(canToggleRendered, {
+    participateInGlobalMode: false,
+    resetDependencies: [
+      isStreaming,
+      isStreaming ? "" : text,
+      augmentHtml ?? "",
+    ],
+  });
 
   // Always render streaming container when isStreaming so refs are attached
   // before first augment arrives. Hidden until useStreamingContent becomes true.
@@ -421,18 +418,6 @@ export const TextBlock = memo(function TextBlock({
         />
       ) : null}
       <div className="text-block-actions">
-        {canToggleRendered && (
-          <button
-            type="button"
-            className={`text-block-toggle ${showRendered ? "is-rendered" : ""}`}
-            onClick={toggleLocalMode}
-            title={showRendered ? "Show source" : "Show rendered"}
-            aria-label={showRendered ? "Show source" : "Show rendered"}
-            aria-pressed={showRendered}
-          >
-            <RenderModeGlyph />
-          </button>
-        )}
         <button
           type="button"
           className={`text-block-copy ${copied ? "copied" : ""}`}

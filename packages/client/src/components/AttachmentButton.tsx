@@ -1,25 +1,52 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useI18n } from "../i18n";
 import { hasCoarsePointer } from "../lib/deviceDetection";
 import { useAttachmentAction } from "../hooks/useAttachmentAction";
 import { useSourceContextMenu } from "./SourceContextMenu";
+import styles from "./AttachmentButton.module.css";
 
 interface Props {
   className: string;
   disabled: boolean;
   count: number;
-  onFiles?: () => void;
+  onFiles?: (kind?: "files" | "photos" | "camera") => void;
   onMemo?: () => void;
   onHide?: () => void;
   onPanel?: () => void;
   onFolder?: () => void;
   onGoal?: () => void;
   onPlan?: () => void;
+  onDeepResearch?: () => void;
   planActive?: boolean;
 }
 
-function AddMenuIcon({ kind }: { kind: "file" | "folder" | "goal" | "plan" }) {
+function AddMenuIcon({
+  kind,
+}: {
+  kind:
+    | "file"
+    | "folder"
+    | "goal"
+    | "plan"
+    | "photos"
+    | "camera"
+    | "research";
+}) {
   const paths = {
+    camera: (
+      <>
+        <path d="M14 4h-4L8 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-4Z" />
+        <circle cx="12" cy="13" r="4" />
+      </>
+    ),
+    photos: (
+      <>
+        <rect x="3" y="3" width="18" height="18" rx="4" />
+        <circle cx="8" cy="8" r="1.5" />
+        <path d="m3 17 5-5 4 4 4-6 5 7" />
+      </>
+    ),
     file: (
       <>
         <path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8l-5-5H8Z" />
@@ -37,6 +64,12 @@ function AddMenuIcon({ kind }: { kind: "file" | "folder" | "goal" | "plan" }) {
     plan: (
       <>
         <path d="M9 18h6M10 21h4M8 15c-1.8-1.3-3-3-3-5a7 7 0 0 1 14 0c0 2-1.2 3.7-3 5-.6.5-1 1.1-1 2H9c0-.9-.4-1.5-1-2Z" />
+      </>
+    ),
+    research: (
+      <>
+        <circle cx="10.8" cy="10.8" r="6.8" />
+        <path d="m16 16 5 5" />
       </>
     ),
   };
@@ -69,6 +102,7 @@ export function AttachmentButton({
   onFolder,
   onGoal,
   onPlan,
+  onDeepResearch,
   planActive = false,
 }: Props) {
   const { t } = useI18n();
@@ -90,9 +124,14 @@ export function AttachmentButton({
     };
     document.addEventListener("pointerdown", closeOutside);
     document.addEventListener("keydown", closeEscape);
+    const closeOnResize = () => setAddOpen(false);
+    window.addEventListener("resize", closeOnResize);
+    window.visualViewport?.addEventListener("resize", closeOnResize);
     return () => {
       document.removeEventListener("pointerdown", closeOutside);
       document.removeEventListener("keydown", closeEscape);
+      window.removeEventListener("resize", closeOnResize);
+      window.visualViewport?.removeEventListener("resize", closeOnResize);
     };
   }, [addOpen]);
   const [preference] = useAttachmentAction();
@@ -123,6 +162,7 @@ export function AttachmentButton({
       : []),
   ];
   const gestures = menu.targetProps(actions, () => {});
+  const anchor = addOpen ? addButtonRef.current?.getBoundingClientRect() : null;
   return (
     <>
       <button
@@ -136,7 +176,7 @@ export function AttachmentButton({
           } else gestures.onContextMenu?.(event);
         }}
         type="button"
-        className={className}
+        className={`${className}${polzaMenu ? ` ${styles.trigger}` : ""}`}
         data-session-toolbar-control="attachments"
         data-session-toolbar-special-context="true"
         data-attachment-menu="true"
@@ -183,66 +223,128 @@ export function AttachmentButton({
         </svg>
         {count > 0 && <span className="attach-count">{count}</span>}
       </button>
-      {polzaMenu && addOpen ? (
-        <div
-          ref={addMenuRef}
-          className="polza-add-menu"
-          role="menu"
-          aria-label="Add to chat"
-        >
-          <div className="polza-add-menu-heading">Add</div>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={disabled || !onFiles}
-            onClick={() => {
-              setAddOpen(false);
-              onFiles?.();
-            }}
-          >
-            <AddMenuIcon kind="file" /> Files
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={disabled || !onFolder}
-            onClick={() => {
-              setAddOpen(false);
-              onFolder?.();
-            }}
-          >
-            <AddMenuIcon kind="folder" /> Folder
-          </button>
-          {onGoal && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setAddOpen(false);
-                onGoal();
+      {polzaMenu && addOpen
+        ? createPortal(
+            <div
+              ref={addMenuRef}
+              className={`polza-add-menu ${styles.menu}`}
+              role="menu"
+              aria-label="Add to chat"
+              style={{
+                position: "fixed",
+                left: Math.max(
+                  16,
+                  Math.min(anchor?.left ?? 16, window.innerWidth - 336),
+                ),
+                bottom:
+                  window.innerHeight -
+                  (anchor?.top ?? window.innerHeight - 80) +
+                  8,
+                maxHeight: Math.max(
+                  80,
+                  (anchor?.top ?? window.innerHeight - 80) -
+                    (window.visualViewport?.offsetTop ?? 0) -
+                    20,
+                ),
               }}
             >
-              <AddMenuIcon kind="goal" /> Goal{" "}
-              <small>Set a goal to keep pursuing</small>
-            </button>
-          )}
-          {onPlan && (
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setAddOpen(false);
-                onPlan();
-              }}
-            >
-              <AddMenuIcon kind="plan" /> Plan mode{" "}
-              <small>
-                {planActive ? "Turn plan mode off" : "Turn plan mode on"}
-              </small>
-            </button>
-          )}
-        </div>
-      ) : null}
+              {(["camera", "photos"] as const).map((kind) => (
+                <button
+                  key={kind}
+                  type="button"
+                  role="menuitem"
+                  disabled={disabled || !onFiles}
+                  onClick={() => {
+                    setAddOpen(false);
+                    onFiles?.(kind);
+                  }}
+                >
+                  <span className={styles.icon}>
+                    <AddMenuIcon kind={kind} />
+                  </span>
+                  {t(
+                    kind === "camera" ? "attachmentCamera" : "attachmentPhotos",
+                  )}
+                </button>
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                disabled={disabled || !onFiles}
+                onClick={() => {
+                  setAddOpen(false);
+                  onFiles?.("files");
+                }}
+              >
+                <span className={styles.icon}>
+                  <AddMenuIcon kind="file" />
+                </span>{" "}
+                {t("attachmentFiles")}
+              </button>
+              {onDeepResearch && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={disabled}
+                  onClick={() => {
+                    setAddOpen(false);
+                    onDeepResearch();
+                  }}
+                >
+                  <span className={styles.icon}>
+                    <AddMenuIcon kind="research" />
+                  </span>
+                  <span>
+                    {t("attachmentDeepResearch")}
+                    <small>{t("attachmentDeepResearchDescription")}</small>
+                  </span>
+                </button>
+              )}
+              {onFolder && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={disabled || !onFolder}
+                  onClick={() => {
+                    setAddOpen(false);
+                    onFolder?.();
+                  }}
+                >
+                  <AddMenuIcon kind="folder" /> Folder
+                </button>
+              )}
+              {onGoal && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddOpen(false);
+                    onGoal();
+                  }}
+                >
+                  <AddMenuIcon kind="goal" /> Goal{" "}
+                  <small>Set a goal to keep pursuing</small>
+                </button>
+              )}
+              {onPlan && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setAddOpen(false);
+                    onPlan();
+                  }}
+                >
+                  <AddMenuIcon kind="plan" /> Plan mode{" "}
+                  <small>
+                    {planActive ? "Turn plan mode off" : "Turn plan mode on"}
+                  </small>
+                </button>
+              )}
+            </div>,
+            document.querySelector(".polza-ui") ?? document.body,
+          )
+        : null}
       {!polzaMenu && menu.menu}
     </>
   );

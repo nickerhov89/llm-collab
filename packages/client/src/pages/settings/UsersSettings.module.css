@@ -443,3 +443,9 @@
 .usageUser {
   overflow-wrap: normal;
 }
+
+@media (width <= 700px), (pointer: coarse) {
+  .directoryHeader :global(.settings-button) {
+    min-height: 44px;
+  }
+}

@@ -8,6 +8,16 @@
   border-radius: 999px;
   background: var(--bg-secondary);
 }
+
+:global(.polza-ui .message-input-toolbar .mode-selector-container)
+  .trigger:global(.mode-button),
+:global(.polza-ui) .container .trigger:global(.mode-button),
+:global(.polza-ui) .container .trigger :global(.polza-mode-button-icon),
+:global(.polza-ui .message-input-toolbar)
+  .trigger
+  :global(.polza-mode-button-icon) {
+  color: var(--text-secondary);
+}
 .dropdown:global(.mode-selector-dropdown) {
   box-sizing: border-box;
   width: min(360px, calc(100dvw - 40px));
@@ -39,5 +49,18 @@
 @media (pointer: coarse) {
   .trigger:global(.mode-button) {
     min-height: 44px;
+  }
+}
+
+@media (width <= 700px) {
+  :global(.polza-ui) .trigger:global(.mode-button) {
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding-inline: 0;
+  }
+
+  :global(.polza-ui) .trigger .label {
+    display: none;
   }
 }

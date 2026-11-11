@@ -171,6 +171,18 @@
   background: rgba(217, 119, 87, 0.08);
 }
 
+:global(.polza-ui) .option.selected,
+:global(body):has(:global(.polza-ui)) .option.selected {
+  background: var(--bg-hover);
+}
+
+:global(.polza-ui) .sheet,
+:global(body):has(:global(.polza-ui)) .sheet {
+  box-sizing: border-box;
+  border-radius: 24px 24px 0 0;
+  padding: 8px 8px max(12px, env(safe-area-inset-bottom));
+}
+
 .checkbox {
   width: 18px;
   height: 18px;

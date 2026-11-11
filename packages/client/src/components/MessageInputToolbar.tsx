@@ -99,6 +99,7 @@ import {
   parseTimestampMs,
 } from "../lib/messageAge";
 import { normalizeProviderKey } from "../lib/modelIndicatorText";
+import { usePolzaAutoModel } from "../lib/polzaAutoModel";
 import { polzaModelLabel } from "../lib/polzaModelLabel";
 import {
   describeProviderRuntimeStatus,
@@ -259,7 +260,7 @@ export interface MessageInputToolbarProps {
   // Attachments
   canAttach?: boolean;
   attachmentCount?: number;
-  onAttachClick?: () => void;
+  onAttachClick?: (kind?: "files" | "photos" | "camera") => void;
   onFolderClick?: () => void;
   onGoalClick?: () => void;
 
@@ -553,7 +554,7 @@ interface ToolbarAttachmentControl {
   onRecordAudioMemo?: () => void;
   canAttach?: boolean;
   attachmentCount: number;
-  onAttachClick?: () => void;
+  onAttachClick?: (kind?: "files" | "photos" | "camera") => void;
   onFolderClick?: () => void;
   onGoalClick?: () => void;
 }
@@ -779,7 +780,11 @@ export interface MessageInputToolbarViewProps {
   attachmentControl: ToolbarAttachmentControl;
   slashControl?: ToolbarSlashControl | null;
   thinkingControl?: ToolbarThinkingControl | null;
-  modelSelector?: { label: string; onOpen: () => void } | null;
+  modelSelector?: {
+    label: string;
+    onOpen: () => void;
+    disabled?: boolean;
+  } | null;
   renderModeControl?: ToolbarRenderModeControl | null;
   conversationViewControl?: ToolbarConversationViewControl | null;
   browserDebugControl?: ToolbarBrowserDebugControl | null;
@@ -1150,7 +1155,11 @@ function ThinkingToolbarControl({
 }: {
   control: ToolbarThinkingControl;
   t: ToolbarTranslate;
-  modelSelector?: { label: string; onOpen: () => void } | null;
+  modelSelector?: {
+    label: string;
+    onOpen: () => void;
+    disabled?: boolean;
+  } | null;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1159,9 +1168,7 @@ function ThinkingToolbarControl({
   const suppressTouchClickRef = useRef(false);
   const title = getToolbarThinkingTitle(t, control);
   const polzaModelControl =
-    import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-    !!modelSelector &&
-    control.provider === "codex";
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true" && !!modelSelector;
   const effortIndex = Math.max(
     0,
     control.effortOptions.findIndex((option) => option.value === control.level),
@@ -1306,6 +1313,10 @@ function ThinkingToolbarControl({
         className={`thinking-toggle-button ${polzaModelControl ? "polza-combined-model-button" : ""} ${control.mode !== "off" ? `active ${control.mode}` : ""}`}
         data-thinking-mode={control.mode}
         onClick={(event) => {
+          if (polzaModelControl) {
+            modelSelector.onOpen();
+            return;
+          }
           if (suppressTouchClickRef.current) {
             suppressTouchClickRef.current = false;
             return;
@@ -1313,15 +1324,18 @@ function ThinkingToolbarControl({
           event.currentTarget.blur();
           setOpen((current) => !current);
         }}
-        onContextMenu={handleContextMenu}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={clearLongPress}
-        onTouchMove={clearLongPress}
-        title={title}
-        aria-label={title}
-        aria-haspopup="menu"
-        aria-expanded={open}
+        onContextMenu={polzaModelControl ? undefined : handleContextMenu}
+        onTouchStart={polzaModelControl ? undefined : handleTouchStart}
+        onTouchEnd={polzaModelControl ? undefined : handleTouchEnd}
+        onTouchCancel={polzaModelControl ? undefined : clearLongPress}
+        onTouchMove={polzaModelControl ? undefined : clearLongPress}
+        title={polzaModelControl ? t("sessionConfigureModel" as never) : title}
+        aria-label={
+          polzaModelControl ? t("sessionConfigureModel" as never) : title
+        }
+        aria-haspopup={polzaModelControl ? "dialog" : "menu"}
+        aria-expanded={polzaModelControl ? undefined : open}
+        disabled={polzaModelControl && modelSelector.disabled}
       >
         {polzaModelControl ? (
           <>
@@ -1522,6 +1536,14 @@ export function MessageInputToolbarView({
     ? ({
         "--waveform-control-surface-opacity": `${normalizedWaveformButtonBackgroundOpacity}%`,
       } as CSSProperties)
+    : undefined;
+  const deepResearchCommand = slashControl?.commands.find(
+    (command) =>
+      command.name.replace(/^\/+/, "").toLowerCase() === "deep-research" &&
+      command.invocation?.kind === "skill",
+  );
+  const onDeepResearch = deepResearchCommand && slashControl
+    ? () => slashControl.onSelectCommand(deepResearchCommand)
     : undefined;
   const controlPriority = priority ?? DEFAULT_SESSION_TOOLBAR_PRIORITY;
   const effectivePriority = (
@@ -2283,6 +2305,7 @@ export function MessageInputToolbarView({
               onFiles={attachmentControl.onAttachClick}
               onFolder={attachmentControl.onFolderClick}
               onGoal={attachmentControl.onGoalClick}
+              onDeepResearch={onDeepResearch}
               onPlan={
                 modeControl
                   ? () =>
@@ -2318,6 +2341,7 @@ export function MessageInputToolbarView({
               type="button"
               className="polza-model-button"
               onClick={modelSelector.onOpen}
+              disabled={modelSelector.disabled}
               title={t("sessionConfigureModel" as never)}
               aria-label={t("sessionConfigureModel" as never)}
             >
@@ -2606,6 +2630,7 @@ export function MessageInputToolbarView({
                       className={menuTierClass("attachments", "attach-button")}
                       onFiles={attachmentControl.onAttachClick}
                       onMemo={attachmentControl.onRecordAudioMemo}
+                      onDeepResearch={onDeepResearch}
                       onPanel={attachmentControl.onAttachmentPanel}
                       onHide={
                         onHideControl
@@ -3510,6 +3535,7 @@ export function MessageInputToolbar({
     null,
   );
   const [speechCaptureActive, setSpeechCaptureActive] = useState(false);
+  const [autoModel] = usePolzaAutoModel(sessionId ?? "new");
   const lastNonOffThinkingModeRef =
     useRef<Exclude<ThinkingMode, "off">>("auto");
   const toolbarRef = useRef<HTMLDivElement | null>(null);
@@ -3870,6 +3896,8 @@ export function MessageInputToolbar({
         {
           directXaiAvailable: hasBrowserXaiSttApiKey,
           browserNativeAvailable: isBrowserNativeSpeechAvailable(),
+          fallbackToBrowserNative:
+            import.meta.env.VITE_POLZA_ADMIN_UI === "true",
         },
       ),
     [
@@ -4211,10 +4239,16 @@ export function MessageInputToolbar({
           : null
       }
       modelSelector={
-        onOpenModelSelector && thinkingModel
+        onOpenModelSelector
           ? {
-              label: displayModelId(thinkingModel),
+              label:
+                import.meta.env.VITE_POLZA_ADMIN_UI === "true" && autoModel
+                  ? "Авто"
+                  : thinkingModel
+                    ? displayModelId(thinkingModel)
+                    : t("newSessionModelTitle" as never),
               onOpen: onOpenModelSelector,
+              disabled: !thinkingModel,
             }
           : null
       }

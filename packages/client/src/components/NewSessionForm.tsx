@@ -1,4 +1,13 @@
+import {
+  POLZA_AUTO_MODEL,
+  usePolzaAutoModel,
+  setPolzaAutoModel,
+  resolvePolzaAutoRoute,
+} from "../lib/polzaAutoModel";
 import { useRouterDiscovery } from "../hooks/useRouterDiscovery";
+import { AttachmentButton } from "./AttachmentButton";
+import { ModeSelector } from "./ModeSelector";
+import { polzaModelLabel } from "../lib/polzaModelLabel";
 import {
   RouterPoolSelector,
   preferredRouterSelection,
@@ -222,7 +231,6 @@ import {
   recordServerClockSample,
 } from "../lib/serverClock";
 import { createSessionNavigationState } from "../lib/sessionNavigationState";
-import { choosePolzaAutoRoute } from "../lib/polzaAutoRouter";
 import {
   canSpeechMethodStream,
   getSpeechMethodCapabilities,
@@ -479,6 +487,10 @@ export function NewSessionForm({
   const polzaSimple =
     import.meta.env.VITE_POLZA_ADMIN_UI === "true" && !launch && !compact;
   const sessionDefaultCopy = getSessionDefaultControlCopy(t);
+  const [autoModel, setAutoModel] = usePolzaAutoModel("new");
+  useEffect(() => {
+    if (preferredProvider || preferredModel) setAutoModel(false);
+  }, [preferredProvider, preferredModel, setAutoModel]);
   // New project starts a folder YA has not seen, from the explicit panel or
   // from an unmatched path typed into the project search
   // (topics/project-names.md § New project).
@@ -541,9 +553,6 @@ export function NewSessionForm({
     setRouterSelectionCustomized(false);
   }, [clientSummarySourceKey]);
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
-  const [polzaAutoRouting, setPolzaAutoRouting] = useState(
-    polzaSimple && !preferredProvider && !preferredModel,
-  );
   const [selectedServiceTier, setSelectedServiceTier] = useState<string | null>(
     null,
   );
@@ -580,7 +589,16 @@ export function NewSessionForm({
   const [fullPane, setFullPane] = useState(false);
   const [fullPaneWide, setFullPaneWide] = useState(false);
   const [showOptionCaptions, setShowOptionCaptions] = useState(false);
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(() => {
+    try {
+      return (
+        localStorage.getItem(UI_KEYS.newSessionAdvancedOptionsExpanded) ===
+        "true"
+      );
+    } catch {
+      return false;
+    }
+  });
   const [fullPaneBaseWidth, setFullPaneBaseWidth] = useState<number | null>(
     null,
   );
@@ -651,7 +669,6 @@ export function NewSessionForm({
   const mainStackRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const voiceButtonRef = useRef<VoiceInputButtonRef>(null);
-  const [polzaWaveformActive, setPolzaWaveformActive] = useState(false);
   const sharedVoiceRef = useComposerVoiceRef(voiceButtonRef, onVoiceControl);
   const speechTurnIdRef = useRef<string | null>(null);
   const speechInsertionRangeRef = useRef<SpeechInsertionRange | null>(null);
@@ -1238,7 +1255,9 @@ export function NewSessionForm({
     default: polzaSimple ? "Ask for approval" : t("modeDefaultLabel"),
     acceptEdits: t("modeAcceptEditsLabel"),
     plan: t("modePlanLabel"),
-    bypassPermissions: polzaSimple ? "Full access" : t("modeBypassPermissionsLabel"),
+    bypassPermissions: polzaSimple
+      ? "Full access"
+      : t("modeBypassPermissionsLabel"),
     auto: polzaSimple ? "Approve for me" : t("modeAutoLabel"),
   };
   const modeDescriptions: Record<PermissionMode, string> = {
@@ -1290,17 +1309,6 @@ export function NewSessionForm({
         : providers.find((provider) => provider.name === descriptor.name)),
     }),
   );
-  const polzaAutoRoute = useMemo(
-    () => polzaAutoRouting && polzaSimple ? choosePolzaAutoRoute(message, providers) : null,
-    [message, polzaAutoRouting, polzaSimple, providers],
-  );
-  useEffect(() => {
-    if (!polzaAutoRouting || !polzaAutoRoute || isStarting || launchLock.limited) return;
-    if (selectedProvider !== polzaAutoRoute.provider) setSelectedProvider(polzaAutoRoute.provider);
-    if (selectedModel !== polzaAutoRoute.model) setSelectedModel(polzaAutoRoute.model);
-    if (selectedThinkingMode !== "on") setSelectedThinkingMode("on");
-    if (selectedEffortLevel !== polzaAutoRoute.effort) setSelectedEffortLevel(polzaAutoRoute.effort);
-  }, [polzaAutoRouting, polzaAutoRoute, isStarting, launchLock.limited, selectedProvider, selectedModel, selectedThinkingMode, selectedEffortLevel]);
   const routerEnabled =
     serverHasCapability(
       versionInfo,
@@ -1323,9 +1331,7 @@ export function NewSessionForm({
       : null;
   const routerSelection = useMemo(
     () =>
-      polzaAutoRouting
-        ? null
-        : routerSelectionCustomized
+      routerSelectionCustomized
         ? currentRouterPreference
         : routerEnabled && !launch
           ? restoreRouterSelection(
@@ -1337,7 +1343,6 @@ export function NewSessionForm({
             )
           : null,
     [
-      polzaAutoRouting,
       routerSelectionCustomized,
       currentRouterPreference,
       routerEnabled,
@@ -1350,8 +1355,7 @@ export function NewSessionForm({
     ],
   );
   const routerRestorePending = Boolean(
-    !polzaAutoRouting &&
-      !routerSelectionCustomized &&
+    !routerSelectionCustomized &&
       currentRouterPreference &&
       routerEnabled &&
       !launch &&
@@ -2266,8 +2270,8 @@ export function NewSessionForm({
 
   // When provider changes, reset model based on user settings
   const handleProviderSelect = (providerName: ProviderName) => {
-    setPolzaAutoRouting(false);
     hasUserCustomizedDefaultsRef.current = true;
+    setAutoModel(false);
     setSelectedProvider(providerName);
     const provider = providers.find((p) => p.name === providerName);
     const providerModels = provider?.models ?? [];
@@ -2373,7 +2377,7 @@ export function NewSessionForm({
 
   // Build model options for FilterDropdown
   const modelOptions = useMemo((): FilterOption<string>[] => {
-    const choices = visibleModels.map((model, index) => {
+    return visibleModels.map((model, index) => {
       const label = model.size
         ? `${model.name} (${(model.size / (1024 * 1024 * 1024)).toFixed(1)} GB)`
         : model.name;
@@ -2415,11 +2419,7 @@ export function NewSessionForm({
         ),
       };
     });
-    return polzaSimple
-      ? [{ value: "__polza_auto__", label: "Auto", description: "Выбор по задаче; качество по проверенным бенчмаркам, затем стоимость результата" }, ...choices]
-      : choices;
   }, [
-    polzaSimple,
     routerModelList.unavailable,
     selectedProvider,
     subscriptionUsage,
@@ -2427,16 +2427,53 @@ export function NewSessionForm({
     visibleModels,
   ]);
 
+  const resolveAutoLaunch = useCallback(
+    async (text: string) => {
+      if (
+        !polzaSimple ||
+        !autoModel ||
+        routerSelection ||
+        launchLock.limited ||
+        machineControlSelected ||
+        !selectedProvider
+      )
+        return null;
+      return resolvePolzaAutoRoute(text, async (name) => {
+        if (
+          selectedProviderInfo?.name === name &&
+          selectedProviderInfo.installed &&
+          selectedProviderInfo.enabled &&
+          selectedProviderInfo.authenticated &&
+          selectedProviderInfo.models?.length
+        )
+          return selectedProviderInfo;
+        return (await api.getProvider(name)).provider;
+      });
+    },
+    [
+      polzaSimple,
+      autoModel,
+      routerSelection,
+      launchLock,
+      machineControlSelected,
+      selectedProvider,
+      selectedProviderInfo,
+    ],
+  );
+
   // Handle model selection from FilterDropdown
-  const handleModelSelect = useCallback((selected: string[]) => {
-    hasUserCustomizedDefaultsRef.current = true;
-    if (selected[0] === "__polza_auto__") {
-      setPolzaAutoRouting(true);
-      return;
-    }
-    setPolzaAutoRouting(false);
-    setSelectedModel(selected[0] ?? null);
-  }, []);
+  const handleModelSelect = useCallback(
+    (selected: string[]) => {
+      hasUserCustomizedDefaultsRef.current = true;
+      if (selected[0] === POLZA_AUTO_MODEL) {
+        setAutoModel(true);
+        return;
+      }
+      setAutoModel(false);
+      setSelectedModel(selected[0] ?? null);
+    },
+    [setAutoModel],
+  );
 
   // Build STT backend options for the mic-attached speech menu.
   const speechMethodOptions = useMemo((): FilterOption<SpeechMethodId>[] => {
@@ -2459,6 +2496,8 @@ export function NewSessionForm({
         {
           directXaiAvailable: hasBrowserXaiSttApiKey,
           browserNativeAvailable: isBrowserNativeSpeechAvailable(),
+          fallbackToBrowserNative:
+            import.meta.env.VITE_POLZA_ADMIN_UI === "true",
         },
       ),
     [
@@ -2647,6 +2686,16 @@ export function NewSessionForm({
     e.target.value = ""; // Reset for re-selection
   };
 
+  const openFilePicker = (kind: "files" | "photos" | "camera" = "files") => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.accept = kind === "files" ? "" : "image/*";
+    input.multiple = kind !== "camera";
+    if (kind === "camera") input.setAttribute("capture", "environment");
+    else input.removeAttribute("capture");
+    input.click();
+  };
+
   const handleRemoveFile = (id: string) => {
     const removed = pendingFilesRef.current.find((file) => file.id === id);
     if (removed?.kind === "uploading") {
@@ -2684,7 +2733,6 @@ export function NewSessionForm({
   useEffect(() => {
     if (
       !hasUserCustomizedDefaultsRef.current ||
-      polzaAutoRouting ||
       !selectedProvider ||
       displayDefaultsPending
     )
@@ -2738,7 +2786,6 @@ export function NewSessionForm({
       console.error("Failed to save new session defaults:", err);
     });
   }, [
-    polzaAutoRouting,
     getLegacyProviderDefaultSeed,
     helperSideModel,
     displayDefaultsPending,
@@ -2989,11 +3036,6 @@ export function NewSessionForm({
         return;
       }
       const finalMessage = (override ?? draftControls.getDraft()).trimEnd();
-      const submitAutoRoute = polzaAutoRouting && !launchLock.limited
-        ? choosePolzaAutoRoute(finalMessage, providers)
-        : null;
-      const launchProvider = submitAutoRoute?.provider ?? selectedProvider;
-      const launchModel = submitAutoRoute?.model ?? selectedModel;
 
       const submissionFiles = pendingFilesRef.current;
       const hasContent = finalMessage.trim() || submissionFiles.length > 0;
@@ -3005,7 +3047,7 @@ export function NewSessionForm({
         templateProjectBusy ||
         isStarting ||
         displayDefaultsPending ||
-        (!hasSelectedProviderModel && !submitAutoRoute) ||
+        !hasSelectedProviderModel ||
         projectPending
       ) {
         if (propagateFailure) throw new Error(t("composerMemoCannotStart"));
@@ -3032,7 +3074,7 @@ export function NewSessionForm({
         ) ||
           launch ||
           !["codex", "claude", "claude-gateway", "claude-ollama"].includes(
-            launchProvider ?? "",
+            selectedProvider ?? "",
           ))
       ) {
         showToast(t("turnEffortUnavailable"), "error");
@@ -3088,10 +3130,13 @@ export function NewSessionForm({
         let initialModeVersion = 0;
         const uploadedFiles: UploadedFile[] = [];
 
+        const autoRoute = await resolveAutoLaunch(trimmedMessage);
+
         // Get model and thinking settings
-        const thinking: ThinkingOption = submitAutoRoute
-          ? `on:${submitAutoRoute.effort}`
-          : toThinkingOption(effectiveThinkingMode, effectiveEffortLevel);
+        const thinking = toThinkingOption(
+          effectiveThinkingMode,
+          effectiveEffortLevel,
+        );
         const effectiveRecapMode = resolveRecapMode(
           selectedProviderInfo,
           selectedRecapMode,
@@ -3114,7 +3159,9 @@ export function NewSessionForm({
             : {}),
 
           mode: sessionMode,
-          model: routerSelection ? routedModel : launchModel || undefined,
+          model:
+            autoRoute?.model ??
+            (routerSelection ? routedModel : selectedModel || undefined),
           ...(routerSelection &&
           serverHasCapability(
             versionInfo,
@@ -3130,12 +3177,16 @@ export function NewSessionForm({
                   : {}),
               }
             : {}),
-          thinking: routerSelection ? routerThinking : thinking,
+          thinking: autoRoute
+            ? ("off" as const)
+            : routerSelection
+              ? routerThinking
+              : thinking,
           showThinking,
-          ...(effectiveServiceTier
+          ...(!autoRoute && effectiveServiceTier
             ? { serviceTier: effectiveServiceTier }
             : {}),
-          provider: launchProvider ?? undefined,
+          provider: autoRoute?.provider ?? selectedProvider ?? undefined,
           executor: effectiveExecutor ?? undefined,
           ...(supportsSessionSandboxing
             ? {
@@ -3147,10 +3198,12 @@ export function NewSessionForm({
                   : {}),
               }
             : {}),
-          recapMode: effectiveRecapMode,
+          recapMode: autoRoute ? undefined : effectiveRecapMode,
           recapAfterSeconds,
-          promptSuggestionMode: effectivePromptSuggestionMode,
-          helperSideModel,
+          promptSuggestionMode: autoRoute
+            ? undefined
+            : effectivePromptSuggestionMode,
+          helperSideModel: autoRoute ? undefined : helperSideModel,
           workstreamId: selectedCheckoutWorkstreamId,
           // Last word, so a submit that raced the acting-principal request
           // still launches inside the lock instead of being refused.
@@ -3160,9 +3213,9 @@ export function NewSessionForm({
           projectId: resolvedProjectId ?? null,
           detached: !resolvedProjectId,
           mode: sessionMode,
-          model: launchModel ?? null,
+          model: sessionOptions.model ?? null,
           thinking,
-          provider: launchProvider ?? null,
+          provider: sessionOptions.provider ?? null,
           executor: effectiveExecutor,
           sandboxLevel: supportsSessionSandboxing
             ? effectiveSandboxLevel
@@ -3307,8 +3360,8 @@ export function NewSessionForm({
             projectId: resolvedProjectId,
             thinking,
             mode: sessionMode,
-            provider: launchProvider ?? null,
-            model: launchModel ?? null,
+            provider: selectedProvider ?? null,
+            model: selectedModel ?? null,
             clientTimestamp,
             serverTimestamp: result.serverTimestamp,
             requestRttMs: startTiming?.roundTripMs ?? null,
@@ -3335,6 +3388,8 @@ export function NewSessionForm({
         // without waiting for getSession to complete
         // Also pass initial message as optimistic title (session name = first message)
         // Pass model/provider so ProviderBadge can render immediately
+        setPolzaAutoModel(sessionId, polzaSimple && autoModel);
+        if (polzaSimple) setPolzaAutoModel("new", true);
         navigate(
           `${basePath}/projects/${resolvedProjectId}/sessions/${sessionId}`,
           {
@@ -3349,10 +3404,8 @@ export function NewSessionForm({
                 recapAfterSeconds,
               },
               initialTitle: trimmedMessage,
-              initialModel: routerSelection
-                ? routedModel
-                : launchModel || undefined,
-              initialProvider: launchProvider ?? undefined,
+              initialModel: sessionOptions.model,
+              initialProvider: sessionOptions.provider,
             }),
           },
         );
@@ -3403,6 +3456,9 @@ export function NewSessionForm({
       }
     },
     [
+      autoModel,
+      polzaSimple,
+      resolveAutoLaunch,
       basePath,
       draftControls,
       routerSelection,
@@ -3435,8 +3491,6 @@ export function NewSessionForm({
       isRecentSpeechAttribution,
       navigate,
       pendingFiles,
-      polzaAutoRouting,
-      providers,
       projectInput,
       projectApp,
       projectPending,
@@ -3550,15 +3604,18 @@ export function NewSessionForm({
       ).find((tier) => tier.id === selectedServiceTier)?.id;
       const showThinking = getShowThinkingSetting();
 
+      const autoRoute = await resolveAutoLaunch(trimmedMessage);
       const response = await api.createProjectQueueItem(resolvedProjectId, {
         target: {
           type: "new-session",
           mode: sessionMode,
-          model: selectedModel ?? undefined,
-          ...(directServiceTier ? { serviceTier: directServiceTier } : {}),
-          thinking,
+          model: autoRoute?.model ?? selectedModel ?? undefined,
+          ...(!autoRoute && directServiceTier
+            ? { serviceTier: directServiceTier }
+            : {}),
+          thinking: autoRoute ? "off" : thinking,
           showThinking,
-          provider: selectedProvider ?? undefined,
+          provider: autoRoute?.provider ?? selectedProvider ?? undefined,
           executor: effectiveExecutor ?? undefined,
           ...(supportsSessionSandboxing
             ? {
@@ -4231,7 +4288,7 @@ export function NewSessionForm({
           onFiles={addPendingFiles}
           uploadsOpen={recentUploadsOpen}
           onUploadsClose={() => setRecentUploadsOpen(false)}
-          onBrowse={() => fileInputRef.current?.click()}
+          onBrowse={() => openFilePicker()}
         />
         <PromptHistoryRail
           scope={historyScope}
@@ -4342,9 +4399,8 @@ export function NewSessionForm({
             )}
           </div>
           <ProjectFileCompletionMenu completion={fileCompletion} />
-          {polzaSimple && polzaWaveformActive && (
-            <div className="new-session-voice-meter" role="status" aria-label="Идёт запись с микрофона">
-              <span>Запись</span>
+          {polzaSimple && speechPending === "listening" && (
+            <div className={polzaStyles.speechLevel}>
               <SpeechWaveform variant="timeline" />
             </div>
           )}
@@ -4359,53 +4415,95 @@ export function NewSessionForm({
                     style={{ display: "none" }}
                     onChange={handleFileSelect}
                   />
-                  <button
-                    type="button"
-                    className="toolbar-button"
-                    onClick={(event) => {
-                      if (attachGesture.current.swiped) {
-                        attachGesture.current.swiped = false;
-                        return;
-                      }
-                      if (event.shiftKey && !composerMuted && !speechPending) {
-                        setAudioMemoOpen(true);
-                        return;
-                      }
-                      fileInputRef.current?.click();
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault();
-                      setRecentUploadsOpen(true);
-                    }}
-                    onTouchStart={(event) => {
-                      attachGesture.current = {
-                        y: event.touches[0]?.clientY ?? 0,
-                        swiped: false,
-                      };
-                    }}
-                    onTouchEnd={(event) => {
-                      if (
-                        (event.changedTouches[0]?.clientY ?? 0) -
-                          attachGesture.current.y >
-                        25
-                      ) {
-                        attachGesture.current.swiped = true;
+                  {polzaSimple ? (
+                    <AttachmentButton
+                      className="attach-button toolbar-button"
+                      disabled={isStarting}
+                      count={pendingFiles.length}
+                      onFiles={openFilePicker}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      className="toolbar-button"
+                      onClick={(event) => {
+                        if (attachGesture.current.swiped) {
+                          attachGesture.current.swiped = false;
+                          return;
+                        }
+                        if (
+                          event.shiftKey &&
+                          !composerMuted &&
+                          !speechPending
+                        ) {
+                          setAudioMemoOpen(true);
+                          return;
+                        }
+                        fileInputRef.current?.click();
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
                         setRecentUploadsOpen(true);
-                      }
-                    }}
-                    title={t("composerAttachTooltip")}
-                    disabled={isStarting}
-                    aria-label={t("newSessionAttachFiles")}
-                  >
-                    {polzaSimple ? (
-                      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 4v16M4 12h16" /></svg>
-                    ) : (
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
-                    )}
-                  </button>
+                      }}
+                      onTouchStart={(event) => {
+                        attachGesture.current = {
+                          y: event.touches[0]?.clientY ?? 0,
+                          swiped: false,
+                        };
+                      }}
+                      onTouchEnd={(event) => {
+                        if (
+                          (event.changedTouches[0]?.clientY ?? 0) -
+                            attachGesture.current.y >
+                          25
+                        ) {
+                          attachGesture.current.swiped = true;
+                          setRecentUploadsOpen(true);
+                        }
+                      }}
+                      title={t("composerAttachTooltip")}
+                      disabled={isStarting}
+                      aria-label={t("newSessionAttachFiles")}
+                    >
+                      {polzaSimple ? (
+                        <svg
+                          width="21"
+                          height="21"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          aria-hidden="true"
+                        >
+                          <path d="M12 4v16M4 12h16" />
+                        </svg>
+                      ) : (
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          aria-hidden="true"
+                        >
+                          <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                        </svg>
+                      )}
+                    </button>
+                  )}
                 </>
               )}
-              {polzaSimple && permissionSection}
+              {polzaSimple && supportsPermissionMode && (
+                <ModeSelector
+                  mode={effectivePermissionMode}
+                  modes={permissionModeOptions}
+                  onModeChange={handleModeSelect}
+                  disabled={isStarting}
+                />
+              )}
+              {polzaSimple && showModelPicker && modelSection}
               <SpeechControlMenu
                 showMethodSelector={showSpeechMethodSelector}
                 methodOptions={speechMethodOptions}
@@ -4443,9 +4541,6 @@ export function NewSessionForm({
                     getTranscriptionContext={getTranscriptionContext}
                     smartTurn={activeSpeechSmartTurnSettings}
                     showWaveform={polzaSimple}
-                    onWaveformActiveChange={
-                      polzaSimple ? setPolzaWaveformActive : undefined
-                    }
                   />
                 }
               />
@@ -4461,8 +4556,6 @@ export function NewSessionForm({
               )}
             </div>
             <div className="new-session-form-toolbar-actions">
-              {polzaSimple && showModelPicker && modelSection}
-              {polzaSimple && effortSlot}
               {!polzaSimple &&
                 toolbarVisibility.projectQueue &&
                 showProjectQueueAction && (
@@ -4576,28 +4669,106 @@ export function NewSessionForm({
           setIsProjectChooserExpanded((open) => !open);
         }}
       >
-        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z" /></svg>
+        <svg
+          width="19"
+          height="19"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z" />
+        </svg>
         <span>{projectSummaryTitle}</span>
       </button>
       {isProjectChooserExpanded && (
         <div id="polza-project-menu" className={polzaStyles.projectMenu}>
           <label className={polzaStyles.projectSearch}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg>
-            <input autoFocus value={polzaProjectSearch} onChange={(event) => setPolzaProjectSearch(event.target.value)} placeholder="Search projects" aria-label="Search projects" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="10.5" cy="10.5" r="6.5" />
+              <path d="m16 16 5 5" />
+            </svg>
+            <input
+              autoFocus
+              value={polzaProjectSearch}
+              onChange={(event) => setPolzaProjectSearch(event.target.value)}
+              placeholder="Search projects"
+              aria-label="Search projects"
+            />
           </label>
           <div className={polzaStyles.projectList}>
-            {projectsLoading ? <div className={polzaStyles.projectEmpty}>{t("newSessionLoading")}</div> :
-              sortedProjects.filter((project) => `${project.name} ${project.path}`.toLowerCase().includes(polzaProjectSearch.trim().toLowerCase())).map((project) => (
-                <button key={project.id} type="button" className={`${polzaStyles.projectRow} ${currentProjectSelection?.id === project.id ? polzaStyles.projectRowSelected : ""}`} onClick={() => handleProjectOptionSelect(project)} title={project.path}>
-                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z" /></svg>
-                  <span>{project.name}</span>
-                  {currentProjectSelection?.id === project.id && <span className={polzaStyles.projectCheck}>✓</span>}
-                </button>
-              ))}
+            {projectsLoading ? (
+              <div className={polzaStyles.projectEmpty}>
+                {t("newSessionLoading")}
+              </div>
+            ) : (
+              sortedProjects
+                .filter((project) =>
+                  `${project.name} ${project.path}`
+                    .toLowerCase()
+                    .includes(polzaProjectSearch.trim().toLowerCase()),
+                )
+                .map((project) => (
+                  <button
+                    key={project.id}
+                    type="button"
+                    className={`${polzaStyles.projectRow} ${currentProjectSelection?.id === project.id ? polzaStyles.projectRowSelected : ""}`}
+                    onClick={() => handleProjectOptionSelect(project)}
+                    title={project.path}
+                  >
+                    <svg
+                      width="19"
+                      height="19"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10H3z" />
+                    </svg>
+                    <span>{project.name}</span>
+                    {currentProjectSelection?.id === project.id && (
+                      <span className={polzaStyles.projectCheck}>✓</span>
+                    )}
+                  </button>
+                ))
+            )}
           </div>
           <div className={polzaStyles.projectMenuActions}>
-            <button type="button" className={polzaStyles.projectRow} disabled={templateProjectBusy || isStarting} onClick={toggleNewProject}><span className={polzaStyles.projectActionIcon}>＋</span>{t("templateNewProject")}</button>
-            {canCreateDetached && <button type="button" className={polzaStyles.projectRow} onClick={handleDetachedProject}><span className={polzaStyles.projectActionIcon}>×</span>Don't work in a project</button>}
+            <button
+              type="button"
+              className={polzaStyles.projectRow}
+              disabled={templateProjectBusy || isStarting}
+              onClick={toggleNewProject}
+            >
+              <span className={polzaStyles.projectActionIcon}>＋</span>
+              {t("templateNewProject")}
+            </button>
+            {canCreateDetached && (
+              <button
+                type="button"
+                className={polzaStyles.projectRow}
+                onClick={handleDetachedProject}
+              >
+                <span className={polzaStyles.projectActionIcon}>×</span>Don't
+                work in a project
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -4971,27 +5142,57 @@ export function NewSessionForm({
         <FilterDropdown
           panelVariant="model"
           label={sessionDefaultCopy.model.title}
-          options={modelOptions}
-          selected={polzaAutoRouting ? ["__polza_auto__"] : selectedModel ? [selectedModel] : []}
+          options={
+            polzaSimple
+              ? [
+                  { value: POLZA_AUTO_MODEL, label: "Авто" },
+                  ...modelOptions.map((option) => ({
+                    ...option,
+                    icon: undefined,
+                    label: polzaModelLabel(option.label),
+                  })),
+                ]
+              : modelOptions
+          }
+          selected={
+            polzaSimple && autoModel
+              ? [POLZA_AUTO_MODEL]
+              : selectedModel
+                ? [selectedModel]
+                : []
+          }
           onChange={handleModelSelect}
           multiSelect={false}
           placeholder={t("newSessionModelPlaceholder")}
           fullWidth
           triggerClassName={styles.leftAlignedTrigger}
           triggerContent={
-            polzaAutoRouting ? (
-              <span className={styles.selectedChoice} title={polzaAutoRoute ? `${polzaAutoRoute.provider} · ${polzaAutoRoute.model} · ${polzaAutoRoute.task}/${polzaAutoRoute.language}` : "Ждём каталог моделей"}>
-                <span className={styles.selectedChoiceText}>Auto{polzaAutoRoute ? ` · ${polzaAutoRoute.provider}` : ""}</span>
-              </span>
-            ) : selectedProvider && selectedModel ? (
-              <span className={styles.selectedChoice}>
-                <ProviderBadge
-                  provider={selectedProvider}
-                  model={selectedModel}
-                />
+            selectedProvider && selectedModel ? (
+              <span
+                className={
+                  polzaSimple ? polzaStyles.modelChoice : styles.selectedChoice
+                }
+              >
+                {polzaSimple ? (
+                  <span aria-hidden="true">ϟ</span>
+                ) : (
+                  <ProviderBadge
+                    provider={selectedProvider}
+                    model={selectedModel}
+                  />
+                )}
                 <span className={styles.selectedChoiceText}>
-                  {modelOptions.find((option) => option.value === selectedModel)
-                    ?.label ?? selectedModel}
+                  {polzaSimple && autoModel
+                    ? "Авто"
+                    : polzaSimple
+                      ? polzaModelLabel(
+                          modelOptions.find(
+                            (option) => option.value === selectedModel,
+                          )?.label ?? selectedModel,
+                        )
+                      : (modelOptions.find(
+                          (option) => option.value === selectedModel,
+                        )?.label ?? selectedModel)}
                 </span>
               </span>
             ) : undefined
@@ -5615,7 +5816,21 @@ export function NewSessionForm({
         onKeyDownCapture={handleComposerKeyDown}
       >
         <div className="new-session-header">
-          <div className={polzaStyles.heroIcon} aria-hidden="true"><svg width="64" height="64" viewBox="0 0 64 64" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M32 5c6 0 10 4 12 8 7-1 13 4 14 11 1 5-1 9-5 12 3 6 0 14-6 17-5 3-11 2-15-2-5 4-12 4-17 0-5-4-6-10-4-15-5-4-7-10-4-16 3-6 8-8 14-8C23 8 27 5 32 5Z"/><path d="m25 24 6 8-6 8M36 40h9"/></svg></div>
+          <div className={polzaStyles.heroIcon} aria-hidden="true">
+            <svg
+              width="64"
+              height="64"
+              viewBox="0 0 64 64"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M32 5c6 0 10 4 12 8 7-1 13 4 14 11 1 5-1 9-5 12 3 6 0 14-6 17-5 3-11 2-15-2-5 4-12 4-17 0-5-4-6-10-4-15-5-4-7-10-4-16 3-6 8-8 14-8C23 8 27 5 32 5Z" />
+              <path d="m25 24 6 8-6 8M36 40h9" />
+            </svg>
+          </div>
           <p className="new-session-subtitle">
             {selectedProject
               ? t("polzaNewChatHeading", { project: selectedProject.name })
@@ -5643,6 +5858,7 @@ export function NewSessionForm({
                   </div>
                   {workstreamChooser}
                   {showProviderPicker && providerSection}
+                  {showThinkingControls && effortSlot}
                 </div>
               </details>
             )}

@@ -25,3 +25,9 @@
 .timeline {
   opacity: 1;
 }
+
+.polza {
+  --speech-waveform-center-color: #8b9792;
+  --speech-waveform-shoulder-color: #65756d;
+  --speech-waveform-peak-color: #35483e;
+}

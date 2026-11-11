@@ -713,36 +713,6 @@ describe("VoiceInputButton", () => {
     expect(onWaveformActiveChange).toHaveBeenCalledWith(true);
   });
 
-  it("reports capture to a separate waveform in the new chat composer", () => {
-    speechState.status = "listening";
-    speechState.isListening = true;
-    const onWaveformActiveChange = vi.fn();
-
-    const view = render(
-      <VoiceInputButton
-        onTranscript={vi.fn()}
-        speechMethod="ya-parakeet"
-        showWaveform
-        onWaveformActiveChange={onWaveformActiveChange}
-      />,
-    );
-
-    expect(onWaveformActiveChange).toHaveBeenCalledWith(true);
-    expect(view.container.querySelector(".composer-speech-waveform")).toBeNull();
-
-    speechState.status = "idle";
-    speechState.isListening = false;
-    view.rerender(
-      <VoiceInputButton
-        onTranscript={vi.fn()}
-        speechMethod="ya-parakeet"
-        showWaveform
-        onWaveformActiveChange={onWaveformActiveChange}
-      />,
-    );
-    expect(onWaveformActiveChange).toHaveBeenLastCalledWith(false);
-  });
-
   it("reserves the full inline microphone touch target before capture", () => {
     render(
       <VoiceInputButton
@@ -775,6 +745,33 @@ describe("VoiceInputButton", () => {
     expect(document.querySelector(".voice-input-status")?.textContent).toBe(
       "Speak now...",
     );
+  });
+
+  it("shows native level only after real samples and clears it on stop", () => {
+    speechState.status = "listening";
+    speechState.isListening = true;
+    const props = {
+      onTranscript: vi.fn(),
+      speechMethod: "browser-native" as const,
+      showWaveform: true,
+      inlineWaveform: true,
+    };
+    const view = render(<VoiceInputButton {...props} />);
+    expect(document.querySelector(".composer-speech-waveform")).toBeNull();
+    act(() =>
+      observedSpeechOptions
+        .at(-1)
+        ?.onAudioSamples?.(new Float32Array([0.2, -0.3])),
+    );
+    expect(document.querySelector(".composer-speech-waveform")).toBeTruthy();
+    speechState.status = "idle";
+    speechState.isListening = false;
+    view.rerender(<VoiceInputButton {...props} />);
+    expect(document.querySelector(".composer-speech-waveform")).toBeNull();
+    speechState.status = "listening";
+    speechState.isListening = true;
+    view.rerender(<VoiceInputButton {...props} />);
+    expect(document.querySelector(".composer-speech-waveform")).toBeNull();
   });
 
   it("shows listening while browser-native speech is active", () => {

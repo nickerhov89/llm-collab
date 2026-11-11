@@ -95,6 +95,8 @@ export interface SpeechMethodCapabilities {
 }
 
 export interface SpeechMethodAvailability {
+  /** A self-hosted UI may keep dictation usable without rewriting a saved backend. */
+  fallbackToBrowserNative?: boolean;
   /** Browser-local xAI key configured, so direct Grok can run without YA key. */
   directXaiAvailable?: boolean;
   /** The current browser context exposes a usable Web Speech recognizer. */
@@ -309,6 +311,28 @@ export function getPreferredSpeechMethod(
 }
 
 export function resolveSpeechMethod(
+  storedMethod: SpeechMethodId,
+  serverBackends: readonly string[] | undefined,
+  hasStoredMethod: boolean,
+  availability: SpeechMethodAvailability = {},
+): SpeechMethodId | null {
+  const resolved = resolveConfiguredSpeechMethod(
+    storedMethod,
+    serverBackends,
+    hasStoredMethod,
+    availability,
+  );
+  if (
+    resolved === null &&
+    serverBackends !== undefined &&
+    availability.fallbackToBrowserNative &&
+    availability.browserNativeAvailable === true
+  )
+    return DEFAULT_SPEECH_METHOD;
+  return resolved;
+}
+
+function resolveConfiguredSpeechMethod(
   storedMethod: SpeechMethodId,
   serverBackends: readonly string[] | undefined,
   hasStoredMethod: boolean,

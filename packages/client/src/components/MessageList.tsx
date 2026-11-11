@@ -1113,6 +1113,7 @@ interface QueuedMessageActionsProps {
   itemCanEdit?: boolean;
   disabled?: boolean;
   onResume?: () => void;
+  resumeLabel?: string;
   onEdit?: () => void;
   onSteer?: () => void;
   steerLabel?: string;
@@ -1167,6 +1168,7 @@ function QueuedMessageActions({
   itemCanEdit = true,
   disabled = false,
   onResume,
+  resumeLabel,
   onEdit,
   onSteer,
   steerLabel,
@@ -1191,9 +1193,21 @@ function QueuedMessageActions({
   if (import.meta.env.VITE_POLZA_ADMIN_UI === "true") {
     return (
       <div
-        className="deferred-message-actions polza-queued-actions"
+        className={`deferred-message-actions polza-queued-actions ${styles.queuedControls}`}
         data-queue-actions={variant}
       >
+        {onResume && !onSteer && (
+          <button
+            type="button"
+            className="polza-queued-action"
+            disabled={disabled}
+            onClick={onResume}
+            aria-label={resumeLabel ?? t("projectQueueResume")}
+          >
+            <PlayIcon />
+            <span>{t("projectQueueResume")}</span>
+          </button>
+        )}
         {onSteer && (
           <button
             type="button"
@@ -1259,7 +1273,7 @@ function QueuedMessageActions({
                 <span>{t("projectQueueEdit")}</span>
               </button>
             )}
-            {onResume && (
+            {onResume && onSteer && (
               <button
                 type="button"
                 className="deferred-message-action deferred-message-action-resume"
@@ -1505,6 +1519,7 @@ const AssistantTimelineEntry = memo(function AssistantTimelineEntry({
     <AssistantTurnImageGallery items={row.group.items}>
       {row.rows.map((assistantRow) => {
         if (assistantRow.kind === "explored") {
+          if (import.meta.env.VITE_POLZA_ADMIN_UI === "true") return null;
           return (
             <ExploredToolGroup
               key={assistantRow.id}
@@ -2315,6 +2330,27 @@ export const MessageList = memo(function MessageList({
     [renderItems],
   );
   const hasThinkingItems = thinkingItemCount > 0;
+  const workProgress = useMemo(() => {
+    let activityCount = 0;
+    let workPhase: "reading" | "editing" | "checking" | "running" = "running";
+    for (let index = renderItems.length - 1; index >= 0; index--) {
+      const item = renderItems[index];
+      if (!item || item.type === "user_prompt") break;
+      if (item.type !== "tool_call") continue;
+      if (activityCount === 0) {
+        const name = item.toolName.toLowerCase();
+        workPhase = /read|search|find|browse/.test(name)
+          ? "reading"
+          : /edit|write|patch/.test(name)
+            ? "editing"
+            : /test|check|verify/.test(name)
+              ? "checking"
+              : "running";
+      }
+      activityCount++;
+    }
+    return { activityCount, workPhase };
+  }, [renderItems]);
   const isThinkingItemAutoExpanded = useCallback(
     (itemId: string) => autoExpandedThinkingItemIds.has(itemId),
     [autoExpandedThinkingItemIds],
@@ -5608,7 +5644,30 @@ export const MessageList = memo(function MessageList({
                         <span>{deferred.attachmentCount}</span>
                       </span>
                     ) : null}
-                    {tailRow.isRecovered ? (
+                    {tailRow.isRecovered &&
+                    import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? (
+                      <QueuedMessageActions
+                        variant="session"
+                        text={deferred.content}
+                        itemCanEdit={false}
+                        onResume={
+                          tailRow.allowsRecoveredResume &&
+                          recoveredQueueId &&
+                          onResumeRecoveredDeferred
+                            ? () => onResumeRecoveredDeferred(recoveredQueueId)
+                            : undefined
+                        }
+                        resumeLabel={t("sessionRecoveredQueuedResume")}
+                        onCancel={
+                          tailRow.allowsRecoveredDelete &&
+                          recoveredQueueId &&
+                          onDeleteRecoveredDeferred
+                            ? () => onDeleteRecoveredDeferred(recoveredQueueId)
+                            : undefined
+                        }
+                        cancelLabel={t("sessionRecoveredQueuedDelete")}
+                      />
+                    ) : tailRow.isRecovered ? (
                       <div className="deferred-message-actions">
                         <CopyTextButton
                           text={deferred.content}
@@ -5742,9 +5801,14 @@ export const MessageList = memo(function MessageList({
           )}
           <ProcessingIndicator
             isProcessing={isProcessing}
+            {...workProgress}
             thinkingItemsVisible={thinkingItemsVisible}
             hasThinkingItems={hasThinkingItems}
-            onToggleThinkingItemsVisible={toggleThinkingItemsVisible}
+            onToggleThinkingItemsVisible={
+              import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                ? undefined
+                : toggleThinkingItemsVisible
+            }
             thinkingLatestOnly={thinkingLatestOnly}
             onToggleThinkingLatestOnly={toggleThinkingLatestOnly}
             lastMessageAtMs={lastMessageAtMs}

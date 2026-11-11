@@ -204,6 +204,7 @@ export function createSessionApi(fetchJSON: typeof FetchJson) {
 
     getProcessInfo: (sessionId: string) =>
       fetchJSON<{
+        restartOnRestore?: boolean;
         process: {
           id: string;
           sessionId: string;

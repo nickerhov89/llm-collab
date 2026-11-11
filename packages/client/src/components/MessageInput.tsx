@@ -55,6 +55,7 @@ import { useSpeechCaptureSettings } from "../hooks/useSpeechCaptureSettings";
 import { useRecentSpeechAttribution } from "../hooks/useRecentSpeechAttribution";
 import { useVersion } from "../hooks/useVersion";
 import { useI18n } from "../i18n";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { ClientSummarySourceKey } from "../lib/clientSummaryStore";
 import type { BtwToolbarMode } from "../lib/btwAsideRouting";
 import { formatFileSize } from "../lib/formatFileSize";
@@ -863,17 +864,23 @@ export function MessageInput({
     setSelectedSlashIndex(0);
   }, [slashSelectionResetKey]);
 
+  const mobileViewport = useMediaQuery("(max-width: 700px)");
+  const polzaMobileQueueOnly =
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true" && mobileViewport;
   const basePrimaryActionKind =
     primaryActionKind ??
     (supportsSteering && onQueue ? "steer" : onQueue ? "queue" : "send");
   const hasActiveDualActions =
-    supportsSteering && !!onQueue && basePrimaryActionKind === "steer";
+    supportsSteering &&
+    !!onQueue &&
+    basePrimaryActionKind === "steer" &&
+    !polzaMobileQueueOnly;
   const { version } = useVersion();
   const busyComposerDefaultAction: BusyComposerDefaultAction =
-    version?.clientDefaults?.busyComposerDefaultAction ?? "steer";
+    version?.clientDefaults?.busyComposerDefaultAction ?? "queue";
   const collapsedComposerButton: CollapsedComposerButtonPreference =
     version?.clientDefaults?.collapsedComposerButton ?? "primary";
-  const enterActionStorageKey = `${draftKey}:enter-action-kind`;
+  const enterActionStorageKey = `${draftKey}:enter-action-kind:v2-queue-default`;
   const [enterActionOverride, setEnterActionOverride] =
     useState<BusyComposerDefaultAction | null>(() => {
       try {
@@ -892,9 +899,7 @@ export function MessageInput({
   // when on, a queued message waits for verified-idle before delivery instead
   // of promoting at the next end of turn.
   const patientQueueEnabled =
-    (import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-      thinkingProvider === "codex") ||
-    (version?.clientDefaults?.patientQueueDefault ?? false);
+    version?.clientDefaults?.patientQueueDefault ?? false;
   // Patient items record their entry point and a compact-first threshold
   // only on servers that honor them; 100% (or unset) is Off.
   const topicShiftSupported = serverHasCapability(
@@ -921,9 +926,12 @@ export function MessageInput({
     null,
   );
   const steerNowEnabled = steerNowOverride ?? steerNowDefault;
-  const effectivePrimaryActionKind = hasActiveDualActions
-    ? (enterActionOverride ?? busyComposerDefaultAction)
-    : basePrimaryActionKind;
+  const effectivePrimaryActionKind =
+    polzaMobileQueueOnly && onQueue
+      ? "queue"
+      : hasActiveDualActions
+        ? (enterActionOverride ?? busyComposerDefaultAction)
+        : basePrimaryActionKind;
   const effectivePatientQueuePatienceSeconds =
     clampPatientPatienceSeconds(patientQueuePatienceSeconds) ??
     DEFAULT_PATIENT_QUEUE_PATIENCE_SECONDS;
@@ -1201,6 +1209,16 @@ export function MessageInput({
       onAttach(Array.from(files));
       e.target.value = ""; // Reset for re-selection
     }
+  };
+
+  const openFilePicker = (kind: "files" | "photos" | "camera" = "files") => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    input.accept = kind === "files" ? "" : "image/*";
+    input.multiple = kind !== "camera";
+    if (kind === "camera") input.setAttribute("capture", "environment");
+    else input.removeAttribute("capture");
+    input.click();
   };
 
   const draftControls = useMemo<DraftControls>(
@@ -3095,6 +3113,37 @@ export function MessageInput({
       // Skip Enter during IME composition (e.g. Chinese/Japanese/Korean input)
       if (e.nativeEvent.isComposing) return;
 
+      // Cmd+Enter sends directly while the busy Enter action queues.
+      if (
+        onQueue &&
+        e.metaKey &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        void handleSubmit(
+          undefined,
+          "steer",
+        );
+        return;
+      }
+
+      // Cmd/Ctrl+Shift+Enter is the explicit direct-send chord. Plain
+      // Shift+Enter remains available for a newline in the composer.
+      if (
+        onQueue &&
+        (e.metaKey || e.ctrlKey) &&
+        e.shiftKey &&
+        !e.altKey
+      ) {
+        e.preventDefault();
+        void handleSubmit(
+          undefined,
+          "steer",
+        );
+        return;
+      }
+
       if (
         forkSummaryMode?.onSubmitWithoutSummary &&
         e.ctrlKey &&
@@ -3147,8 +3196,13 @@ export function MessageInput({
       }
 
       if (isMobile) {
-        // Mobile: Enter always adds newline, send button required
-        // Allow default behavior (newline)
+        // A busy composer with a queue action uses Enter for that action on
+        // touch keyboards too. Otherwise preserve newline entry.
+        if (onQueue && effectivePrimaryActionKind === "queue") {
+          e.preventDefault();
+          submitPrimaryAction();
+          return;
+        }
         return;
       }
 
@@ -3686,7 +3740,7 @@ export function MessageInput({
     supportsThinkingToggle,
     canAttach,
     attachmentCount: attachments.length,
-    onAttachClick: () => fileInputRef.current?.click(),
+    onAttachClick: openFilePicker,
     onFolderClick: () => folderInputRef.current?.click(),
     onGoalClick: () => {
       controls.setDraft(`/goal ${text.replace(/^\/goal\s*/i, "")}`);
@@ -3795,7 +3849,8 @@ export function MessageInput({
     primarySpeechMessagePrefix: primaryDeliverySpeechPrefix,
     disabled,
   };
-  const showMobileKeyboardCompact = mobileKeyboardOpen && canSubmit;
+  const showMobileKeyboardCompact =
+    !polzaMobileQueueOnly && mobileKeyboardOpen && canSubmit;
 
   const composer = (
     <div
@@ -3810,7 +3865,7 @@ export function MessageInput({
           onFiles={onAttach}
           uploadsOpen
           onUploadsClose={() => setAttachmentPanelOpen(false)}
-          onBrowse={() => fileInputRef.current?.click()}
+          onBrowse={() => openFilePicker()}
           onMemo={
             onAttachAudioMemo && !speechPending
               ? () => setAudioMemoOpen(true)

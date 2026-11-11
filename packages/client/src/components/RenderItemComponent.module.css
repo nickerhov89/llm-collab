@@ -6,6 +6,12 @@
  * two stylesheets, 18 coupled rules), so only bounded rules are owned here.
  */
 
+/* Human-facing images and reports remain visible without their shell output. */
+.publicCommentary :global(.tool-row),
+.publicCommentary :global(.tool-inline) {
+  display: none;
+}
+
 /*
  * The label absorbs the header's free space, which parks the age and the
  * controls after it against the trailing edge. Deliberately flex-grow rather

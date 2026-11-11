@@ -164,3 +164,8 @@ button.filename:focus-visible {
     display: none;
   }
 }
+
+:global(.polza-ui) .row :global(.tool-name),
+:global(.polza-ui) .row .suffix {
+  display: none;
+}

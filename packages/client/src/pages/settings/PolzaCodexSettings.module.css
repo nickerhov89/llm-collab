@@ -8,12 +8,13 @@
 }
 .header h2 {
   margin: 0 0 6px;
-  font-size: 25px;
+  font-size: 20px;
   letter-spacing: -0.025em;
 }
 .header p,
 .muted {
   color: var(--text-secondary);
+  font-size: 14px;
   line-height: 1.5;
 }
 .header p {
@@ -36,6 +37,8 @@
   font-size: 17px;
 }
 .card p {
+  font-size: 14px;
+  line-height: 1.5;
   margin: 0;
 }
 .status {
@@ -76,18 +79,18 @@
 .signIn {
   margin-top: 18px;
 }
-.warning,
-.error {
-  margin: 16px 0 !important;
+.page .warning,
+.page .error {
+  margin: 16px 0;
   border-radius: 10px;
   padding: 12px 14px;
   line-height: 1.45;
 }
-.warning {
+.page .warning {
   background: #fff7e8;
   color: #77531b;
 }
-.error {
+.page .error {
   background: #fff1f1;
   color: #a82929;
 }
@@ -100,7 +103,7 @@
 }
 .field select {
   width: 100%;
-  min-height: 43px;
+  min-height: 44px;
   border: 1px solid var(--border-color);
   border-radius: 10px;
   padding: 8px 12px;
@@ -113,8 +116,8 @@
   outline: 2px solid var(--accent-color);
   outline-offset: 2px;
 }
-.success {
-  margin: 14px 0 !important;
+.page .success {
+  margin: 14px 0;
   color: #26724b;
 }
 .card > button {
@@ -130,5 +133,11 @@
   }
   .cardTop {
     flex-direction: column-reverse;
+  }
+}
+
+@media (width <= 700px), (pointer: coarse) {
+  .page :global(.settings-button) {
+    min-height: 44px;
   }
 }

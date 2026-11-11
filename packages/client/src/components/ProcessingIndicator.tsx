@@ -105,6 +105,8 @@ interface Props {
   onToggleThinkingLatestOnly?: () => void;
   /** Timestamp of the newest transcript message, as user-visible output. */
   lastMessageAtMs?: number | null;
+  workPhase?: "reading" | "editing" | "checking" | "running";
+  activityCount?: number;
 }
 
 function ThoughtTranscriptIcon({ muted }: { muted: boolean }) {
@@ -140,6 +142,8 @@ export const ProcessingIndicator = memo(function ProcessingIndicator({
   thinkingLatestOnly = false,
   onToggleThinkingLatestOnly,
   lastMessageAtMs = null,
+  workPhase = "running",
+  activityCount = 0,
 }: Props) {
   const { t } = useI18n();
   const liveness = useSessionLiveness();
@@ -307,6 +311,17 @@ export const ProcessingIndicator = memo(function ProcessingIndicator({
           checked: formatSilence(nowMs - providerActiveCheckedAtMs),
         })
       : t("processingQuietNoOutput", { silence: formatSilence(silenceMs) });
+  const polzaUi = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
+  const workText = t(
+    workPhase === "reading"
+      ? "polzaWorkReading"
+      : workPhase === "editing"
+        ? "polzaWorkEditing"
+        : workPhase === "checking"
+          ? "polzaWorkChecking"
+          : "polzaWorkRunning",
+  );
+  const workElapsed = formatSilence(nowMs - (turnStartedAtMs ?? nowMs));
 
   const shouldAnimateText =
     isProcessing && isInViewport && !isAnimationPaused && !isQuiet;
@@ -434,7 +449,12 @@ export const ProcessingIndicator = memo(function ProcessingIndicator({
           <div className="processing-dot-container">
             <ThinkingIndicator animationVisibilityManaged />
           </div>
-          {quietText !== null ? (
+          {polzaUi ? (
+            <span className="processing-text" role="status" aria-live="polite">
+              {quietText ??
+                `${workText} · ${workElapsed}${activityCount > 0 ? ` · ${t("polzaWorkActions", { count: activityCount })}` : ""}`}
+            </span>
+          ) : quietText !== null ? (
             <span className="processing-text" role="status">
               {quietText}
             </span>

@@ -21,6 +21,24 @@
   }
 }
 
+:global(body):has(.frame),
+.frame:global(.session-page) {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-ui);
+  --app-claude-orange: var(--text-secondary);
+  --thinking-color: var(--text-secondary);
+  --provider-claude: var(--text-secondary);
+  --warning-color: var(--text-secondary);
+  --warning-badge-bg: var(--text-secondary);
+  --timeline-dot-warning: var(--text-secondary);
+}
+
+@media (width <= 700px) {
+  .frame :global(.settings-breadcrumb-root) {
+    min-height: 44px;
+  }
+}
+
 .frame:global(.session-page) {
   flex: 1;
   min-height: 0;

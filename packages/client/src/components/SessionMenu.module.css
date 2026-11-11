@@ -31,6 +31,13 @@
   color: var(--text-primary);
 }
 
+@media (pointer: coarse), (width <= 700px) {
+  .trigger.trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
 .dropdown {
   position: absolute;
   top: 100%;

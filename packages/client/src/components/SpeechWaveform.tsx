@@ -145,6 +145,8 @@ function drawTimeline(
   context.setTransform(scale, 0, 0, scale, 0, 0);
   context.clearRect(0, 0, width, height);
 
+  const spacing = 9;
+  const maxLevels = Math.max(1, Math.floor(width / spacing));
   if (sampleCount > 0) {
     let sumSquares = 0;
     for (let index = 0; index < sampleCount; index += 1) {
@@ -155,7 +157,7 @@ function drawTimeline(
     const decibels = 20 * Math.log10(Math.max(rms, 0.00001));
     const level = Math.max(0, Math.min(1, (decibels + 55) / 47));
     levels.push(level);
-    if (levels.length > 36) levels.shift();
+    while (levels.length > maxLevels) levels.shift();
   } else {
     levels.length = 0;
   }
@@ -166,7 +168,6 @@ function drawTimeline(
     context.fillRect(x, center - 1, 3, 3);
   }
   context.fillStyle = "#898b90";
-  const spacing = 9;
   const visibleBars = Math.min(levels.length, Math.floor(width / spacing));
   for (let index = 0; index < visibleBars; index += 1) {
     const level = levels[levels.length - visibleBars + index] ?? 0;
@@ -251,7 +252,7 @@ export function SpeechWaveform({
 
   return (
     <div
-      className={`${styles.waveform} ${variant === "timeline" ? styles.timeline : ""} composer-speech-waveform`}
+      className={`${styles.waveform} ${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? styles.polza : ""} ${variant === "timeline" ? styles.timeline : ""} composer-speech-waveform`}
       data-composer-elastic="true"
       data-speech-waveform="true"
       aria-hidden="true"

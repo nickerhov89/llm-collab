@@ -56,6 +56,8 @@ import {
   stabilizePublishedPx,
 } from "../lib/sessionDetail/thinkingPreviewBudget";
 import { ThinkingText } from "./ThinkingText";
+import { toolDeclaresCommentary } from "../lib/toolCommentarySource";
+import { toolRegistry } from "./renderers/tools";
 import { MessageAge } from "./MessageAge";
 import {
   BangCommandDisplayObject,
@@ -1085,21 +1087,6 @@ function ConversationActivitySummary({
       : undefined,
   );
   const showThinkingPreviews = autoHidePhase !== "hidden";
-  const polzaUi = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
-  const polzaActivityNames = item.tooltipActivities
-    ?.map((activity) => {
-      const name = activity.label.trim();
-      if (/bash|command|shell|terminal/i.test(name)) return "Ran commands";
-      if (/read|view file/i.test(name)) return "Read files";
-      if (/edit|write|patch/i.test(name)) return "Edited files";
-      return name;
-    })
-    .filter(Boolean);
-  const polzaActivityLabel = polzaActivityNames?.length
-    ? [...new Set(polzaActivityNames)].slice(0, 2).join(", ")
-    : item.active
-      ? "Working…"
-      : "Activity";
   const autoHidingThinking = autoHidePhase === "fading";
   const hasExpandedThinkingPreview =
     showThinkingPreviews &&
@@ -1145,11 +1132,10 @@ function ConversationActivitySummary({
           {item.active ? (
             <span className={styles.activityPulse} aria-hidden="true" />
           ) : null}
-          <span className={styles.activityLabel}>
-            {polzaUi ? polzaActivityLabel : label}
-          </span>
+          <span className={styles.activityLabel}>{label}</span>
         </button>
-        {!polzaUi && hasExpandedThinkingPreview &&
+        {(hasExpandedThinkingPreview ||
+          (import.meta.env.VITE_POLZA_ADMIN_UI === "true" && item.active)) &&
         item.recentActivities ? (
           <ul
             ref={activityListRef}
@@ -1158,7 +1144,12 @@ function ConversationActivitySummary({
             }`}
             aria-label={t("conversationRecentActivities")}
           >
-            {item.recentActivities.map((activity, index) => (
+            {(import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+            item.active &&
+            !item.expanded
+              ? item.recentActivities.slice(0, 1)
+              : item.recentActivities
+            ).map((activity, index) => (
               <ConversationRecentActivityName
                 activity={activity}
                 key={`${activity.label}-${index}`}
@@ -1167,7 +1158,7 @@ function ConversationActivitySummary({
           </ul>
         ) : null}
       </div>
-      {showThinkingPreviews && !(polzaUi && item.active)
+      {showThinkingPreviews
         ? item.thinkingPreviews?.map((preview) => (
             <ConversationThinkingPreview
               autoHiding={autoHidingThinking}
@@ -1473,6 +1464,28 @@ export const RenderItemComponent = memo(function RenderItemComponent({
     [item, isStreaming, thinkingExpanded, sessionProvider],
   );
 
+  const polzaQuietTranscript = import.meta.env.VITE_POLZA_ADMIN_UI === "true";
+  const hasPublicCommentary =
+    polzaQuietTranscript &&
+    item.type === "tool_call" &&
+    toolDeclaresCommentary(item);
+  if (
+    polzaQuietTranscript &&
+    (item.type === "thinking" ||
+      item.type === "conversation_activity" ||
+      (item.type === "system" &&
+        (item.subtype === "tool_output" ||
+          item.subtype === "subagent_activity")) ||
+      (item.type === "tool_call" &&
+        toolRegistry.metadata(item.toolName).tool !== "AskUserQuestion" &&
+        !item.toolResult?.media?.length &&
+        !item.mcpApp &&
+        !hasPublicCommentary &&
+        !item.workflow?.markers.length))
+  ) {
+    return null;
+  }
+
   const renderContent = () => {
     switch (item.type) {
       case "text":
@@ -1711,22 +1724,15 @@ export const RenderItemComponent = memo(function RenderItemComponent({
     }
   };
 
-  // Polza shows the selected model in the chat header. Repeating a config
-  // acknowledgement as a full-width transcript card adds no useful context.
-  if (
-    import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-    item.type === "system" &&
-    item.subtype === "config_ack"
-  ) {
-    return null;
-  }
-
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: debug shift-click uses row-level event metadata
     // biome-ignore lint/a11y/useKeyWithClickEvents: debug feature, shift+click only
     <div
       className={[
         "message-render-row",
+        polzaQuietTranscript && hasPublicCommentary
+          ? styles.publicCommentary
+          : "",
         hasTimestamp ? "has-message-age" : "",
         showAgeByDefault ? "is-message-age-visible" : "",
         item.isSubagent ? "subagent-item" : "",

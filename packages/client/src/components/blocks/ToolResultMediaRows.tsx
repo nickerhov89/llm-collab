@@ -254,7 +254,10 @@ function StoredToolResultMediaRow({
             onClick={openViewer}
             onContextMenu={imageActions.handleContextMenu}
           >
-            {filename}
+            {import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+            /^tool-result-\d+\./.test(filename)
+              ? t(isVideo ? "toolResultMediaVideo" : "toolResultMediaImage")
+              : filename}
           </button>
           <span className={styles.suffix}>
             ({t(isVideo ? "toolResultMediaVideo" : "toolResultMediaImage")})

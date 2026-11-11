@@ -5,10 +5,6 @@
   border-top: 1px solid #e8e9ea;
 }
 
-.row {
-  position: relative;
-}
-
 .trigger {
   display: flex;
   align-items: center;
@@ -47,18 +43,6 @@
   height: 14px;
   border-radius: 50%;
   background: #f7f7f8;
-}
-
-.claudeMeter {
-  border-color: #d4bbb0;
-}
-
-.geminiMeter {
-  border-color: #b6c6d6;
-}
-
-.root > a.trigger {
-  text-decoration: none;
 }
 
 .percent {

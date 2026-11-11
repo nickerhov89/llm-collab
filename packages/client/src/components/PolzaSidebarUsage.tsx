@@ -1,56 +1,58 @@
-import type {
-  ProviderName,
-  ProviderSubscriptionUsage,
-} from "@yep-anywhere/shared";
+import type { ProviderName } from "@yep-anywhere/shared";
+import { useProviders } from "../hooks/useProviders";
 import { useState } from "react";
 import { useProviderSubscriptionUsage } from "../hooks/useProviderSubscriptionUsage";
 import styles from "./PolzaSidebarUsage.module.css";
 
-function highestUsedPercent(usage: ProviderSubscriptionUsage | null): number | null {
-  if (!usage?.windows.length) return null;
-  return Math.round(Math.max(...usage.windows.map((window) => window.usedPercent)));
-}
-
-function UsageRow({
+function ProviderUsage({
   provider,
-  name,
+  label: providerLabel,
 }: {
   provider: ProviderName;
-  name: string;
+  label: string;
 }) {
   const { usage, loading, error, supported, refresh } =
     useProviderSubscriptionUsage(provider);
   const [open, setOpen] = useState(false);
-  const percent = highestUsedPercent(usage);
+  const windows =
+    usage?.windows.filter(
+      (window) =>
+        Number.isFinite(window.usedPercent) &&
+        window.usedPercent >= 0 &&
+        window.usedPercent <= 100,
+    ) ?? [];
+  // Connected models remain selectable; only reported quota data belongs here.
+  if (!supported || error || windows.length === 0) return null;
+  const percent = Math.round(
+    Math.max(...windows.map((window) => window.usedPercent)),
+  );
+  const label = `Использовано до ${percent}%`;
 
   return (
-    <div className={styles.row}>
+    <div className={styles.root}>
       <button
         type="button"
         className={styles.trigger}
         aria-expanded={open}
-        aria-label={`${name}: ${percent === null ? "лимит недоступен" : `использовано до ${percent}%`}`}
+        aria-label={label}
         onClick={() => setOpen((value) => !value)}
       >
         <span
-          className={`${styles.meter} ${provider === "claude" ? styles.claudeMeter : ""}`}
+          className={styles.meter}
           style={{
-            background:
-              percent === null
-                ? undefined
-                : `conic-gradient(${provider === "claude" ? "#b77c5e" : "#7b8581"} ${percent}%, #e3e5e4 0)`,
+            background: `conic-gradient(#7b8581 ${percent}%, #e3e5e4 0)`,
           }}
           aria-hidden="true"
         >
           <span className={styles.meterCenter} />
         </span>
-        <span>Использование {name}</span>
-        <span className={styles.percent}>{percent === null ? "—" : `${percent}%`}</span>
+        <span>{providerLabel}</span>
+        <span className={styles.percent}>{percent}%</span>
       </button>
       {open && (
         <div className={styles.popover}>
           <div className={styles.heading}>
-            <strong>Лимиты {name}</strong>
+            <strong>Лимиты {providerLabel}</strong>
             <button
               type="button"
               onClick={() => void refresh()}
@@ -59,38 +61,25 @@ function UsageRow({
               Обновить
             </button>
           </div>
-          {!supported ? (
-            <p>Сервер не поддерживает показ лимитов.</p>
-          ) : error ? (
-            <p>Не удалось загрузить данные: {error.message}</p>
-          ) : loading && !usage ? (
-            <p>Загружаю…</p>
-          ) : !usage || usage.windows.length === 0 ? (
-            <p>Лимиты подписки для текущего подключения недоступны.</p>
-          ) : (
-            <ul className={styles.windows}>
-              {usage.windows.map((window) => (
-                <li key={window.id}>
-                  <span>
-                    {window.scope.type === "models"
-                      ? (window.scope.label ?? window.scope.modelIds.join(", "))
-                      : window.scope.category === "oauthApps"
-                        ? "Приложения"
-                        : "Все модели"}
-                    {window.windowDurationMinutes
-                      ? window.windowDurationMinutes < 60
-                        ? ` · ${window.windowDurationMinutes} мин`
-                        : ` · ${Math.round(window.windowDurationMinutes / 60)} ч`
-                      : ""}
-                    {window.resetsAt
-                      ? ` · сброс ${new Date(window.resetsAt).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-                      : ""}
-                  </span>
-                  <strong>{Math.round(window.usedPercent)}%</strong>
-                </li>
-              ))}
-            </ul>
-          )}
+          <ul className={styles.windows}>
+            {windows.map((window) => (
+              <li key={window.id}>
+                <span>
+                  {window.scope.type === "models"
+                    ? (window.scope.label ?? window.scope.modelIds.join(", "))
+                    : window.scope.category === "oauthApps"
+                      ? "Приложения"
+                      : "Все модели"}
+                  {window.windowDurationMinutes
+                    ? window.windowDurationMinutes < 60
+                      ? ` · ${window.windowDurationMinutes} мин`
+                      : ` · ${Math.round(window.windowDurationMinutes / 60)} ч`
+                    : ""}
+                </span>
+                <strong>{Math.round(window.usedPercent)}%</strong>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
@@ -98,23 +87,20 @@ function UsageRow({
 }
 
 export function PolzaSidebarUsage() {
+  const { providers } = useProviders();
+  const connected = providers.filter(
+    (provider) =>
+      provider.installed && (provider.authenticated || provider.enabled),
+  );
   return (
-    <div className={styles.root}>
-      <UsageRow provider="codex" name="Codex" />
-      <UsageRow provider="claude" name="Claude" />
-      <a
-        className={styles.trigger}
-        href="https://aistudio.google.com/usage?timeRange=last-28-days&tab=rate-limit"
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Лимиты Gemini в Google AI Studio, откроется новая вкладка"
-      >
-        <span className={`${styles.meter} ${styles.geminiMeter}`} aria-hidden="true">
-          <span className={styles.meterCenter} />
-        </span>
-        <span>Лимиты Gemini</span>
-        <span className={styles.percent}>AI Studio ↗</span>
-      </a>
-    </div>
+    <section aria-label="Использование моделей">
+      {connected.map((provider) => (
+        <ProviderUsage
+          key={provider.name}
+          provider={provider.name}
+          label={provider.displayName}
+        />
+      ))}
+    </section>
   );
 }

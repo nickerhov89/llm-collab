@@ -503,7 +503,7 @@ export function FilterDropdown<T extends string>({
         onClick={handleButtonClick}
         title={triggerTitle ?? t("filterByLabel", { label })}
         aria-label={triggerTitle ?? t("filterByLabel", { label })}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={isOpen}
       >
         <span className={styles.buttonLabel}>
