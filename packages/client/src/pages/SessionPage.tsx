@@ -6794,15 +6794,6 @@ function SessionPageContent({
             currentModel={session?.model}
             sessionProvider={effectiveProvider}
             onModelChanged={handleModelChanged}
-            onStartWithProvider={(provider, model) => {
-              const params = new URLSearchParams({
-                projectId,
-                provider,
-                model,
-              });
-              params.set("separateProjectDraft", "1");
-              navigate(`${basePath}/new-session?${params.toString()}`);
-            }}
             guardEffortChange={guardEffortChange}
             initialTab={modelPanelInitialTab}
             infoPane={

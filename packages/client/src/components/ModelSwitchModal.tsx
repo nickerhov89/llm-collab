@@ -26,7 +26,6 @@ import {
   useModelSettings,
 } from "../hooks/useModelSettings";
 import { useProviderSubscriptionUsage } from "../hooks/useProviderSubscriptionUsage";
-import { useProviders } from "../hooks/useProviders";
 import { useVersion } from "../hooks/useVersion";
 import { useI18n } from "../i18n";
 import {
@@ -92,8 +91,6 @@ interface ModelSwitchModalProps {
    * ownership so `processId` arrives and the full options load.
    */
   onActivate?: () => Promise<void>;
-  /** Start a separate chat in the same project with another CLI/model. */
-  onStartWithProvider?: (provider: ProviderName, model: string) => void;
   onClose: () => void;
 }
 
@@ -136,12 +133,10 @@ export function ModelSwitchModal({
   infoPane,
   initialTab,
   onActivate,
-  onStartWithProvider,
   onClose,
 }: ModelSwitchModalProps) {
   const { t } = useI18n();
   const [autoModel, setAutoModel] = usePolzaAutoModel(sessionId);
-  const { providers: availableProviders } = useProviders();
   const { setThinkingMode, setEffortLevel } = useModelSettings();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [provider, setProvider] = useState<ProviderName | null>(null);
@@ -185,16 +180,6 @@ export function ModelSwitchModal({
   );
   const polzaQuickMenu =
     import.meta.env.VITE_POLZA_ADMIN_UI === "true" && initialTab !== "info";
-  const otherCliGroups = (["codex", "claude", "gemini", "codex-oss"] as const)
-    .filter((name) => name !== sessionProvider)
-    .map((name) => availableProviders.find((item) => item.name === name))
-    .filter(
-      (item) =>
-        item?.enabled &&
-        item.installed &&
-        item.authenticated &&
-        item.models?.length,
-    );
 
   useEffect(() => {
     if (!polzaQuickMenu) return;
@@ -673,41 +658,6 @@ export function ModelSwitchModal({
                 )}
               </button>
             ))}
-          </div>
-        )}
-        {onStartWithProvider && otherCliGroups.length > 0 && (
-          <div className="polza-model-menu-other">
-            <div className="polza-model-menu-heading">
-              Новый чат в этой папке
-            </div>
-            {otherCliGroups.map(
-              (cli) =>
-                cli && (
-                  <div key={cli.name} className="polza-model-menu-group">
-                    <div className="polza-model-menu-group-title">
-                      {cli.name === "codex-oss"
-                        ? "OpenRouter"
-                        : cli.displayName}
-                    </div>
-                    {cli.models?.map((model) => (
-                      <button
-                        key={`${cli.name}:${model.id}`}
-                        type="button"
-                        className="polza-model-menu-item"
-                        onClick={() => onStartWithProvider(cli.name, model.id)}
-                      >
-                        <span>{polzaModelLabel(model.name)}</span>
-                        <span
-                          className="polza-model-menu-new"
-                          aria-hidden="true"
-                        >
-                          ↗
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                ),
-            )}
           </div>
         )}
       </div>,
