@@ -1,3 +1,4 @@
+import { PolzaTaskerPage } from "../pages/PolzaTaskerPage";
 import {
   createContext,
   useCallback,
@@ -210,7 +211,7 @@ function NavigationLayoutFrame({ sessionElement }: NavigationLayoutProps) {
   } = useSidebarPreference(
     forceExpandedSidebar,
     import.meta.env.VITE_POLZA_ADMIN_UI !== "true" &&
-    /^(?:\/-\/relay\/[^/]+)?\/settings(?:\/|$)/.test(location.pathname)
+      /^(?:\/-\/relay\/[^/]+)?\/settings(?:\/|$)/.test(location.pathname)
       ? "collapsed"
       : null,
   );
@@ -374,6 +375,8 @@ function NavigationLayoutFrame({ sessionElement }: NavigationLayoutProps) {
   const sidebarFeedsEnabled = isContentFrameRoute
     ? sidebarOpen
     : (isWideScreen && !isMinimized) || (!isWideScreen && sidebarOpen);
+
+  if (location.pathname.endsWith("/tasker")) return <PolzaTaskerPage />;
 
   return (
     <SessionDomLingerHost sessionElement={sessionElement}>

@@ -375,6 +375,7 @@ if (import.meta.env.DEV && window.location.port === String(__VITE_DEV_PORT__)) {
                       path="/issues"
                       element={routeModule(<IssuesPage />)}
                     />
+                    <Route path="/tasker" element={null} />
                     <Route path="/inbox" element={routeModule(<InboxPage />)} />
                     <Route
                       path="/-/hosts"

@@ -1,3 +1,4 @@
+import { PolzaWorkspaceSwitch } from "./PolzaWorkspaceSwitch";
 import { useIssuesEnabled } from "../hooks/useIssuesEnabled";
 import {
   projectDisplayName,
@@ -1222,15 +1223,7 @@ export function Sidebar({
             /* Desktop expanded mode: brand at the left edge, collapse toggle
                at the right edge so the control stays inside the sidebar. */
             <>
-              <Link
-                to={newSessionHref}
-                className={`sidebar-brand sidebar-brand-link ${sidebarStyles.brandLink}`}
-                title={t("sidebarNewSession")}
-              >
-                <span className="polza-sidebar-brand">
-                  Polza Cowork <span aria-hidden="true">⌄</span>
-                </span>
-              </Link>
+              <div className={sidebarStyles.brandLink}><PolzaWorkspaceSwitch /></div>
               <Link
                 to={`${basePath}/sessions`}
                 className="polza-sidebar-search"
@@ -1260,16 +1253,7 @@ export function Sidebar({
           ) : (
             /* Mobile mode: brand text + close button */
             <>
-              <Link
-                to={newSessionHref}
-                className={`sidebar-brand sidebar-brand-link ${sidebarStyles.brandLink}`}
-                title={t("sidebarNewSession")}
-                onClick={onNavigate}
-              >
-                <span className="polza-sidebar-brand">
-                  Polza Cowork <span aria-hidden="true">⌄</span>
-                </span>
-              </Link>
+              <div className={sidebarStyles.brandLink}><PolzaWorkspaceSwitch /></div>
               <button
                 type="button"
                 className="sidebar-close"

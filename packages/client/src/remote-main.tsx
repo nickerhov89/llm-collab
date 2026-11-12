@@ -418,6 +418,7 @@ const APP_ROUTES = (
       />
       <Route path="sessions" element={routeModule(<GlobalSessionsPage />)} />
       <Route path="agents" element={routeModule(<AgentsPage />)} />
+      <Route path="tasker" element={null} />
       <Route path="inbox" element={routeModule(<InboxPage />)} />
       <Route path="issues" element={routeModule(<IssuesPage />)} />
       <Route path="-/hosts" element={routeModule(<HostsRoute />)} />
