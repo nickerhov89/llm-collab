@@ -98,7 +98,9 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
     }
   });
   const [status, setStatus] = useState("");
-  const [view, setView] = useState("today");
+  const [view, setView] = useState(() =>
+    data.tasks.some((item) => item.today && !item.done) ? "today" : "all",
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const file = useRef<HTMLInputElement>(null);
