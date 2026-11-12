@@ -15,3 +15,8 @@ Two existing integration-boundary test files (prefill and acting principal)
 passed, 10 tests. Production build performs TypeScript and Vite validation.
 
 Found 2026-11-12 while adding the Polza Tasker workspace switch.
+
+The artifact capture command against the authenticated public URL timed out
+waiting for network idle (exit 3). Visual fallback used the authenticated CUA
+browser at 1000x600 and 375x812. The first mobile capture exposed excessive
+navigation and offscreen task details; the follow-up corrects those layouts.

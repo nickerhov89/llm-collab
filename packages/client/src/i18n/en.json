@@ -5026,5 +5026,6 @@
   "taskerStartCowork": "Start in Cowork",
   "taskerPlanToday": "Plan for today",
   "taskerRewardNotice": "Habitica calculates rewards. Completion here does not change Habitica.",
-  "taskerSelectTask": "Select a task to add context or start with Cowork."
+  "taskerSelectTask": "Select a task to add context or start with Cowork.",
+  "taskerBackToTasks": "Back to tasks"
 }

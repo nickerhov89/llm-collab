@@ -245,18 +245,33 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
             </button>
           ))}
           <p className={styles.caption}>{t("taskerAreas")}</p>
-          {groups.map((group) => (
-            <button
-              key={group}
-              type="button"
-              className={styles.nav}
-              aria-current={view === group ? "page" : undefined}
-              onClick={() => setView(group)}
-            >
-              <span aria-hidden="true">◇</span>
-              {group}
-            </button>
-          ))}
+          <div className={styles.areaList}>
+            {groups.map((group) => (
+              <button
+                key={group}
+                type="button"
+                className={styles.nav}
+                aria-current={view === group ? "page" : undefined}
+                onClick={() => setView(group)}
+              >
+                <span aria-hidden="true">◇</span>
+                {group}
+              </button>
+            ))}
+          </div>
+          <select
+            className={styles.mobileArea}
+            aria-label={t("taskerAreas")}
+            value={groups.includes(view) ? view : ""}
+            onChange={(event) => setView(event.target.value || "all")}
+          >
+            <option value="">{t("taskerAreas")}</option>
+            {groups.map((group) => (
+              <option key={group} value={group}>
+                {group}
+              </option>
+            ))}
+          </select>
         </nav>
         <div className={styles.bottom}>
           {profile && (
@@ -400,9 +415,19 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
               {status}
             </p>
           </section>
-          <aside className={styles.detail}>
+          <aside
+            className={styles.detail}
+            data-selected={task ? "true" : "false"}
+          >
             {task ? (
               <>
+                <button
+                  className={styles.back}
+                  type="button"
+                  onClick={() => setSelected(null)}
+                >
+                  ← {t("taskerBackToTasks")}
+                </button>
                 <div className={styles.detailCaption}>{t("taskerTask")}</div>
                 <h2>{task.title}</h2>
                 <p className={styles.group}>{task.group}</p>

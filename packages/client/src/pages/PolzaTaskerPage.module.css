@@ -377,7 +377,7 @@
     margin: 12px;
   }
   .bottom {
-    padding-top: 14px;
+    padding-top: 0;
   }
   .character,
   .bottom progress,
@@ -417,5 +417,60 @@
   }
   .option {
     min-height: 44px;
+  }
+}
+
+.areaList {
+  display: contents;
+}
+.mobileArea,
+.back {
+  display: none;
+}
+@media (width <= 1150px) {
+  .taskButton small {
+    display: none;
+  }
+}
+@media (width <= 700px) {
+  .caption,
+  .areaList {
+    display: none;
+  }
+  .mobileArea {
+    display: block;
+    max-width: 100%;
+    flex-basis: 100%;
+    margin: 6px 12px;
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    font: inherit;
+  }
+  .bottom p {
+    display: none;
+  }
+  .detail[data-selected="false"] {
+    display: none;
+  }
+  .workspace:has(.detail[data-selected="true"]) .list {
+    display: none;
+  }
+  .shell:has(.detail[data-selected="true"]) .sidebar nav,
+  .shell:has(.detail[data-selected="true"]) .bottom {
+    display: none;
+  }
+  .back {
+    display: block;
+    align-self: flex-start;
+    padding: 10px 0;
+    margin-bottom: 16px;
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    cursor: pointer;
   }
 }

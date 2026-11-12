@@ -21,3 +21,8 @@ Start in Cowork prefills the existing new-session composer with the task title
 and note. The user still chooses/reviews the project and submits the message.
 Neither starting a chat nor checking a task awards simulated XP. An optional
 imported Habitica profile is a static snapshot, clearly labeled as such.
+
+At phone widths, the area list becomes a select control. Selecting a task
+opens its detail view in place of the list, with an explicit Back to tasks
+control. This prevents a 40-task list from pushing task actions offscreen.
+Narrow desktop task rows omit repeated area names to preserve title width.
