@@ -131,3 +131,23 @@ it("upgrades a saved policy still equal to the earlier default, and keeps edits"
   await again.initialize();
   expect(again.getSetting("limitedUserInstructions")).toEqual(edited);
 });
+
+it("publishes only the acting user's own instruction blocks as detached grants", async () => {
+  await users.update("alice", {
+    instructionBlocks: ["Alice business profile"],
+  });
+  await users.create({
+    username: "bobby",
+    password: "password123",
+    instructionBlocks: ["Bob business profile"],
+  });
+  const grants = users.getActiveGrants("alice")!;
+  expect(grants.instructionBlocks).toEqual(["Alice business profile"]);
+  grants.instructionBlocks!.push("client edit");
+  expect(users.getActiveGrants("alice")!.instructionBlocks).toEqual([
+    "Alice business profile",
+  ]);
+  expect(users.getActiveGrants("bobby")!.instructionBlocks).toEqual([
+    "Bob business profile",
+  ]);
+});

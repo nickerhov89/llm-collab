@@ -506,3 +506,47 @@
     min-height: 44px;
   }
 }
+
+.priorityIntro {
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.priorityIntro p {
+  margin: 6px 0;
+}
+.taskButton .priorityReason {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: normal;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.workGoals {
+  margin: 14px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.workGoals p {
+  margin: 6px 0;
+}
+.priorityHelp {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  min-height: 44px;
+}
+@media (width <= 700px) {
+  .workGoals {
+    display: none;
+  }
+}

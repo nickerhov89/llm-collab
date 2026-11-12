@@ -35,6 +35,15 @@ import {
 } from "./InstructionBlocks";
 import { PerUserInstructions } from "./LimitedUserInstructions";
 import { POLZA_SPECIALIST_INSTRUCTIONS } from "./polzaSpecialistInstructions";
+import { PolzaOwnWorkProfile } from "../../components/PolzaOwnWorkProfile";
+import { PolzaWorkProfileEditor } from "../../components/PolzaWorkProfileEditor";
+import {
+  PROFILE_MARKER,
+  readWorkProfile,
+  workProfileBlock,
+  defaultWorkProfile,
+  inferWorkRole,
+} from "../../lib/polzaWorkProfile";
 
 /**
  * Settings → Users: the superuser's user-management surface.
@@ -322,7 +331,12 @@ export function UsersSettings() {
   }
 
   if (!canManage) {
-    return <LimitedUserView onLogout={() => void logout()} busy={busy} />;
+    return (
+      <>
+        {POLZA_ADMIN_UI && <PolzaOwnWorkProfile />}
+        <LimitedUserView onLogout={() => void logout()} busy={busy} />
+      </>
+    );
   }
 
   const editing =
@@ -340,6 +354,44 @@ export function UsersSettings() {
       }
       keywords={["limited users", "accounts", "guest", "sandbox", "grants"]}
     >
+      {POLZA_ADMIN_UI && selection === null && (
+        <>
+          <PolzaOwnWorkProfile />
+          <button
+            type="button"
+            className="settings-button"
+            disabled={busy || !support.instructions}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                for (const user of users) {
+                  if (readWorkProfile(user.instructionBlocks ?? [])) continue;
+                  const role = inferWorkRole(user.username);
+                  if (!role) continue;
+                  const blocks = [
+                    ...(user.instructionBlocks ?? []),
+                    workProfileBlock(defaultWorkProfile(role)),
+                  ];
+                  const invalid = instructionBlocksError(blocks);
+                  if (invalid) throw new Error(`${user.username}: ${invalid}`);
+                  await api.updateUser(user.username, {
+                    instructionBlocks: blocks,
+                  });
+                }
+                await loadUsers();
+              } catch (error) {
+                setError((error as Error).message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {t("workApplyRolePresets")}
+          </button>
+          <p>{t("workRolePresetHint")}</p>
+        </>
+      )}
       {/* First, because it is the decision the rest of the pane depends on.
           Turning it off keeps the records and refuses their logins. */}
       {POLZA_ADMIN_UI && (
@@ -1043,6 +1095,9 @@ function UserEditor({
     return provider?.models ?? [];
   }, [providers, draft.provider]);
   const lock = lockSummary(user);
+  const profileBlocks = POLZA_ADMIN_UI ? draft.instructionBlocks.filter(block => block.text.startsWith(PROFILE_MARKER)) : [];
+  const visibleInstructionBlocks = POLZA_ADMIN_UI ? draft.instructionBlocks.filter(block => !block.text.startsWith(PROFILE_MARKER)) : draft.instructionBlocks;
+
 
   return (
     <div
@@ -1100,6 +1155,27 @@ function UserEditor({
         <p role="alert" className="form-error">
           {saveError}
         </p>
+      )}
+
+      {POLZA_ADMIN_UI && supportsInstructions && (
+        <PolzaWorkProfileEditor
+          value={readWorkProfile(
+            draft.instructionBlocks.map((block) => block.text),
+          )}
+          disabled={busy}
+          onChange={(profile, commit) => {
+            const existing = draft.instructionBlocks.find((block) =>
+              block.text.startsWith(PROFILE_MARKER),
+            );
+            const others = draft.instructionBlocks.filter(
+              (block) => !block.text.startsWith(PROFILE_MARKER),
+            );
+            const next = existing
+              ? { ...existing, text: workProfileBlock(profile) }
+              : instructionBlockDrafts([workProfileBlock(profile)])[0]!;
+            change({ ...draft, instructionBlocks: [...others, next] }, commit);
+          }}
+        />
       )}
 
       {POLZA_ADMIN_UI && (
@@ -1356,15 +1432,21 @@ function UserEditor({
           )}
           <PerUserInstructions
             shared={sharedInstructions}
-            blocks={draft.instructionBlocks}
+            blocks={visibleInstructionBlocks}
             disabled={busy}
             onChange={(instructionBlocks) =>
               // Adding, removing or reordering a block is a choice; typing
               // inside one saves when the field loses focus.
               change(
-                { ...draft, instructionBlocks },
+                {
+                  ...draft,
+                  instructionBlocks: [
+                    ...instructionBlocks,
+                    ...profileBlocks,
+                  ],
+                },
                 instructionBlocks.map((block) => block.id).join() !==
-                  draft.instructionBlocks.map((block) => block.id).join(),
+                  visibleInstructionBlocks.map((block) => block.id).join(),
               )
             }
           />

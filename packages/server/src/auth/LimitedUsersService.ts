@@ -312,6 +312,7 @@ export class LimitedUsersService {
       templateCreation: structuredClone(templateGrantFor(record)),
       ...(record.projectRoot ? { projectRoot: record.projectRoot } : {}),
       pathGrants: structuredClone(record.pathGrants ?? []),
+      instructionBlocks: [...(record.instructionBlocks ?? [])],
       allowNoProjectSessions: record.allowNoProjectSessions === true,
       allowPublicApps: record.allowPublicApps === true,
       allowPrivateAppLinks: record.allowPrivateAppLinks !== false,

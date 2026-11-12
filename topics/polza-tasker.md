@@ -35,3 +35,6 @@ Narrow desktop task rows omit repeated area names to preserve title width.
 
 Tasker shares the Polza Cowork palette, system typography, muted sidebar,
 rounded selection surfaces and primary action styling.
+
+Business KPI assessments and the Prioritize view are described in
+[Polza work profiles](polza-work-profiles.md).

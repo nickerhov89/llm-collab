@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { PolzaTaskPriority } from "../components/PolzaTaskPriority";
+import { usePolzaWorkProfile } from "../hooks/usePolzaWorkProfile";
+import {
+  parseTaskPriority,
+  taskPriorityScore,
+  type TaskPriority,
+} from "../lib/polzaWorkProfile";
 import { PolzaWorkspaceSwitch } from "../components/PolzaWorkspaceSwitch";
 import { useComposerHistoryScope } from "../hooks/useComposerHistoryScope";
 import { useRemoteBasePath } from "../hooks/useRemoteBasePath";
@@ -10,6 +17,7 @@ import styles from "./PolzaTaskerPage.module.css";
 
 interface Task {
   deleted?: boolean;
+  priority?: TaskPriority;
   id: string;
   title: string;
   note: string;
@@ -59,6 +67,7 @@ function parseData(raw: string): TaskerData {
       note: typeof task.note === "string" ? task.note.slice(0, 50000) : "",
       group: typeof task.group === "string" ? task.group.slice(0, 100) : "",
       deleted: task.deleted === true,
+      priority: parseTaskPriority(task.priority),
       done: task.done === true,
       today: task.today === true,
     };
@@ -90,6 +99,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
   const navigate = useNavigate();
   const base = useRemoteBasePath();
   const source = useClientSummarySourceKey();
+  const { profile: workProfile } = usePolzaWorkProfile();
   const [loadError, setLoadError] = useState(false);
   const [data, setData] = useState<TaskerData>(() => {
     try {
@@ -203,6 +213,10 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
         .filter(Boolean),
     ),
   ];
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const score = (item: Task) =>
+    taskPriorityScore(item.priority, workProfile, today);
   const visible = data.tasks.filter((item) =>
     view === "trash"
       ? item.deleted
@@ -211,8 +225,11 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
           ? item.done
           : !item.done &&
             (view === "all" ||
+              view === "priority" ||
               (view === "today" ? item.today : item.group === view))),
   );
+  if (view === "priority")
+    visible.sort((a, b) => (score(b) ?? -1) - (score(a) ?? -1));
   const profile = data.profile;
   async function importData(importFile: File) {
     try {
@@ -251,44 +268,64 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
           <PolzaWorkspaceSwitch tasker />
         </div>
         <nav aria-label={t("taskerNavigation")}>
-          {(["all", "today", "done", "trash"] as const).map((name) => (
-            <button
-              key={name}
-              type="button"
-              aria-current={view === name ? "page" : undefined}
-              className={styles.nav}
-              onClick={() => setView(name)}
-            >
-              <span aria-hidden="true">
-                {name === "all"
-                  ? "☷"
-                  : name === "today"
-                    ? "▢"
-                    : name === "trash"
-                      ? "×"
-                      : "✓"}
-              </span>
-              {t(
-                name === "all"
-                  ? "taskerInbox"
-                  : name === "today"
-                    ? "taskerToday"
-                    : name === "trash"
-                      ? "taskerTrash"
-                      : "taskerCompleted",
-              )}
-              <small>
-                {name === "all"
-                  ? active.length
-                  : name === "today"
-                    ? active.filter((item) => item.today).length
-                    : name === "trash"
-                      ? data.tasks.filter((item) => item.deleted).length
-                      : data.tasks.filter((item) => item.done && !item.deleted)
-                          .length}
-              </small>
-            </button>
-          ))}
+          {(["all", "today", "priority", "done", "trash"] as const).map(
+            (name) => (
+              <button
+                key={name}
+                type="button"
+                aria-current={view === name ? "page" : undefined}
+                className={styles.nav}
+                onClick={() => setView(name)}
+              >
+                <span aria-hidden="true">
+                  {name === "all"
+                    ? "☷"
+                    : name === "today"
+                      ? "▢"
+                      : name === "priority"
+                        ? "↑"
+                        : name === "trash"
+                          ? "×"
+                          : "✓"}
+                </span>
+                {t(
+                  name === "all"
+                    ? "taskerInbox"
+                    : name === "today"
+                      ? "taskerToday"
+                      : name === "priority"
+                        ? "taskerPriorityTitle"
+                        : name === "trash"
+                          ? "taskerTrash"
+                          : "taskerCompleted",
+                )}
+                <small>
+                  {name === "all"
+                    ? active.length
+                    : name === "today"
+                      ? active.filter((item) => item.today).length
+                      : name === "priority"
+                        ? active.length
+                        : name === "trash"
+                          ? data.tasks.filter((item) => item.deleted).length
+                          : data.tasks.filter(
+                              (item) => item.done && !item.deleted,
+                            ).length}
+                </small>
+              </button>
+            ),
+          )}
+          {workProfile && (
+            <div className={styles.workGoals}>
+              <strong>{t(`workRole_${workProfile.role}`)}</strong>
+              {workProfile.kpis.map((k) => (
+                <p key={k.id}>
+                  {t(`workKpi_${k.id}`)}
+                  {k.target ? `: ${k.target} · ${workProfile.period}` : ""}
+                </p>
+              ))}
+            </div>
+          )}
           <p className={styles.caption}>{t("taskerAreas")}</p>
           <div className={styles.areaList}>
             {groups.map((group) => (
@@ -386,11 +423,55 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   ? t("taskerToday")
                   : view === "done"
                     ? t("taskerCompleted")
-                    : view === "trash"
-                      ? t("taskerTrash")
-                      : view}
+                    : view === "priority"
+                      ? t("taskerPriorityTitle")
+                      : view === "trash"
+                        ? t("taskerTrash")
+                        : view}
               <span>{visible.length}</span>
             </h1>
+            {view === "priority" && (
+              <div className={styles.priorityIntro}>
+                {workProfile ? (
+                  <>
+                    <strong>{t(`workRole_${workProfile.role}`)}</strong>
+                    <p>{workProfile.priorities}</p>
+                    <details>
+                      <summary>{t("taskerWhyOrder")}</summary>
+                      <p>{t("taskerPriorityFormula")}</p>
+                    </details>
+                  </>
+                ) : (
+                  <p>{t("taskerMissingWorkProfile")}</p>
+                )}
+                <p>{t("taskerPriorityAssessmentHint")}</p>
+                <button
+                  type="button"
+                  className={styles.priorityHelp}
+                  disabled={!workProfile || !active.length}
+                  onClick={() => {
+                    if (!workProfile) return;
+                    const context = {
+                      profile: workProfile,
+                      tasks: active.slice(0, 50).map((item) => ({
+                        id: item.id,
+                        title: item.title,
+                        note: item.note.slice(0, 1000),
+                        assessment: item.priority,
+                      })),
+                      totalActiveTasks: active.length,
+                    };
+                    setNewSessionPrefill(
+                      source,
+                      `Review my task priorities using this work profile. Respond in my language. Recommend three next actions and explain their KPI impact. Suggest a KPI, impact, effort and rationale for each task. Distinguish evidence from assumptions; do not invent deadlines, revenue or actual results. Suggest a way to unblock blocked tasks. A specialist's renewal KPI covers only their assigned projects. Targets are plans, not actuals. This is a review: do not modify tasks or execute external actions. Data includes the first 50 active tasks; notes are capped at 1000 characters.\n\n${JSON.stringify(context, null, 2)}`,
+                    );
+                    navigate(`${base}/new-session`);
+                  }}
+                >
+                  {t("taskerPriorityHelp")}
+                </button>
+              </div>
+            )}
             <form
               className={styles.add}
               onSubmit={(event) => {
@@ -438,7 +519,18 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   type="button"
                   onClick={() => setSelected(item.id)}
                 >
-                  <span>{item.title}</span>
+                  <span>
+                    {item.title}
+                    {view === "priority" && (
+                      <small className={styles.priorityReason}>
+                        {item.priority?.blocked
+                          ? t("taskerBlocked")
+                          : score(item) !== null
+                            ? `${t(`workKpi_${item.priority!.kpi!}`)} · ${score(item)} — ${item.priority!.reason}`
+                            : t("taskerNotAssessed")}
+                      </small>
+                    )}
+                  </span>
                   <small>{item.group}</small>
                 </button>
               </div>
@@ -488,6 +580,16 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 <div className={styles.detailCaption}>{t("taskerTask")}</div>
                 <h2>{task.title}</h2>
                 <p className={styles.group}>{task.group}</p>
+                {view === "priority" && (
+                  <PolzaTaskPriority
+                    value={task.priority}
+                    profile={workProfile}
+                    disabled={loadError || task.deleted === true}
+                    onChange={(priority, delayed) =>
+                      patch(task.id, { priority }, delayed)
+                    }
+                  />
+                )}
                 <label className={styles.noteLabel} htmlFor="tasker-note">
                   {t("taskerContext")}
                 </label>
@@ -545,6 +647,16 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 >
                   {t(task.deleted ? "taskerRestoreTask" : "taskerDeleteTask")}
                 </button>
+                {view !== "priority" && (
+                  <PolzaTaskPriority
+                    value={task.priority}
+                    profile={workProfile}
+                    disabled={loadError || task.deleted === true}
+                    onChange={(priority, delayed) =>
+                      patch(task.id, { priority }, delayed)
+                    }
+                  />
+                )}
                 <p className={styles.reward}>{t("taskerRewardNotice")}</p>
               </>
             ) : (

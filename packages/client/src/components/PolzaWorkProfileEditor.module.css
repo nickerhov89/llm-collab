@@ -1,0 +1,59 @@
+.profile {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.profile h4 {
+  margin: 0;
+}
+.profile label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.profile input,
+.profile select,
+.profile textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+.profile fieldset {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 100px;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.profile p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (width <= 700px) {
+  .profile fieldset {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .profile input,
+  .profile select,
+  .profile textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+}
+
+.profile input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+}
