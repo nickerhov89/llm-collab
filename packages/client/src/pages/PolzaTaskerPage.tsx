@@ -9,6 +9,7 @@ import { useI18n } from "../i18n";
 import styles from "./PolzaTaskerPage.module.css";
 
 interface Task {
+  deleted?: boolean;
   id: string;
   title: string;
   note: string;
@@ -57,6 +58,7 @@ function parseData(raw: string): TaskerData {
       title: task.title,
       note: typeof task.note === "string" ? task.note.slice(0, 50000) : "",
       group: typeof task.group === "string" ? task.group.slice(0, 100) : "",
+      deleted: task.deleted === true,
       done: task.done === true,
       today: task.today === true,
     };
@@ -98,8 +100,11 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
     }
   });
   const [status, setStatus] = useState("");
+  const [lastDeletedId, setLastDeletedId] = useState<string | null>(null);
   const [view, setView] = useState(() =>
-    data.tasks.some((item) => item.today && !item.done) ? "today" : "all",
+    data.tasks.some((item) => item.today && !item.done && !item.deleted)
+      ? "today"
+      : "all",
   );
   const [selected, setSelected] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
@@ -169,17 +174,44 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
       delayed,
     );
   }
+  function setDeleted(id: string, deleted: boolean) {
+    if (loadError) return;
+    const next = {
+      ...dataRef.current,
+      tasks: dataRef.current.tasks.map((item) =>
+        item.id === id ? { ...item, deleted } : item,
+      ),
+    };
+    if (!persist(next)) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    dataRef.current = next;
+    setData(next);
+    setLastDeletedId(deleted ? id : null);
+    setStatus(t(deleted ? "taskerDeleted" : "taskerRestored"));
+    if (deleted) setSelected(null);
+    else
+      setView(next.tasks.find((item) => item.id === id)?.done ? "done" : "all");
+  }
   const task = data.tasks.find((item) => item.id === selected) ?? null;
-  const active = data.tasks.filter((item) => !item.done);
+  const active = data.tasks.filter((item) => !item.done && !item.deleted);
   const groups = [
-    ...new Set(data.tasks.map((item) => item.group).filter(Boolean)),
+    ...new Set(
+      data.tasks
+        .filter((item) => !item.deleted)
+        .map((item) => item.group)
+        .filter(Boolean),
+    ),
   ];
   const visible = data.tasks.filter((item) =>
-    view === "done"
-      ? item.done
-      : !item.done &&
-        (view === "all" ||
-          (view === "today" ? item.today : item.group === view)),
+    view === "trash"
+      ? item.deleted
+      : !item.deleted &&
+        (view === "done"
+          ? item.done
+          : !item.done &&
+            (view === "all" ||
+              (view === "today" ? item.today : item.group === view))),
   );
   const profile = data.profile;
   async function importData(importFile: File) {
@@ -219,7 +251,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
           <PolzaWorkspaceSwitch tasker />
         </div>
         <nav aria-label={t("taskerNavigation")}>
-          {(["all", "today", "done"] as const).map((name) => (
+          {(["all", "today", "done", "trash"] as const).map((name) => (
             <button
               key={name}
               type="button"
@@ -228,21 +260,32 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
               onClick={() => setView(name)}
             >
               <span aria-hidden="true">
-                {name === "all" ? "☷" : name === "today" ? "▢" : "✓"}
+                {name === "all"
+                  ? "☷"
+                  : name === "today"
+                    ? "▢"
+                    : name === "trash"
+                      ? "×"
+                      : "✓"}
               </span>
               {t(
                 name === "all"
                   ? "taskerInbox"
                   : name === "today"
                     ? "taskerToday"
-                    : "taskerCompleted",
+                    : name === "trash"
+                      ? "taskerTrash"
+                      : "taskerCompleted",
               )}
               <small>
                 {name === "all"
                   ? active.length
                   : name === "today"
                     ? active.filter((item) => item.today).length
-                    : data.tasks.length - active.length}
+                    : name === "trash"
+                      ? data.tasks.filter((item) => item.deleted).length
+                      : data.tasks.filter((item) => item.done && !item.deleted)
+                          .length}
               </small>
             </button>
           ))}
@@ -343,7 +386,9 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   ? t("taskerToday")
                   : view === "done"
                     ? t("taskerCompleted")
-                    : view}
+                    : view === "trash"
+                      ? t("taskerTrash")
+                      : view}
               <span>{visible.length}</span>
             </h1>
             <form
@@ -382,7 +427,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 <input
                   type="checkbox"
                   checked={item.done}
-                  disabled={loadError}
+                  disabled={loadError || item.deleted}
                   aria-label={t("taskerMarkDone", { title: item.title })}
                   onChange={(event) =>
                     patch(item.id, { done: event.target.checked })
@@ -415,6 +460,16 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
             )}
             <p className={styles.status} role="status">
               {status}
+              {lastDeletedId && (
+                <button
+                  className={styles.undo}
+                  type="button"
+                  disabled={loadError}
+                  onClick={() => setDeleted(lastDeletedId, false)}
+                >
+                  {t("taskerUndo")}
+                </button>
+              )}
             </p>
           </section>
           <aside
@@ -440,7 +495,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   id="tasker-note"
                   maxLength={50000}
                   value={task.note}
-                  disabled={loadError}
+                  disabled={loadError || task.deleted}
                   placeholder={t("taskerContextPlaceholder")}
                   onChange={(event) =>
                     patch(task.id, { note: event.target.value }, true)
@@ -448,6 +503,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 />
                 <button
                   className={styles.start}
+                  disabled={task.deleted}
                   type="button"
                   onClick={() => {
                     setNewSessionPrefill(
@@ -463,7 +519,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   <input
                     type="checkbox"
                     checked={task.today}
-                    disabled={loadError}
+                    disabled={loadError || task.deleted}
                     onChange={(event) =>
                       patch(task.id, { today: event.target.checked })
                     }
@@ -474,13 +530,21 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   <input
                     type="checkbox"
                     checked={task.done}
-                    disabled={loadError}
+                    disabled={loadError || task.deleted}
                     onChange={(event) =>
                       patch(task.id, { done: event.target.checked })
                     }
                   />
                   {t("taskerCompleted")}
                 </label>
+                <button
+                  className={styles.deleteTask}
+                  type="button"
+                  disabled={loadError}
+                  onClick={() => setDeleted(task.id, !task.deleted)}
+                >
+                  {t(task.deleted ? "taskerRestoreTask" : "taskerDeleteTask")}
+                </button>
                 <p className={styles.reward}>{t("taskerRewardNotice")}</p>
               </>
             ) : (

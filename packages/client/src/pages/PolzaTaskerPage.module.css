@@ -474,3 +474,35 @@
     cursor: pointer;
   }
 }
+
+.deleteTask {
+  align-self: flex-start;
+  margin-top: 20px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.deleteTask:hover {
+  color: #b44242;
+}
+.undo {
+  margin-left: 12px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .deleteTask,
+  .undo {
+    min-height: 44px;
+  }
+}
