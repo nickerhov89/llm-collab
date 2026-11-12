@@ -213,7 +213,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
-    <div className={styles.shell}>
+    <div className={`${styles.shell} polza-ui`}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
           <PolzaWorkspaceSwitch tasker />

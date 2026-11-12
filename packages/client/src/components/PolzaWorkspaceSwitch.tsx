@@ -23,45 +23,31 @@ export function PolzaWorkspaceSwitch({ tasker = false }: { tasker?: boolean }) {
     /* Browser storage may be unavailable. */
   }
   return (
-    <details
-      className={styles.root}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-          event.currentTarget.open = false;
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "Escape") event.currentTarget.open = false;
-      }}
-    >
-      <summary
-        className={styles.trigger}
-        aria-label={t("taskerSwitchWorkspace")}
+    <nav className={styles.root} aria-label={t("taskerSwitchWorkspace")}>
+      <span className={styles.active} aria-current="page">
+        {tasker ? "Tasker" : "Cowork"}
+      </span>
+      <span className={styles.separator} aria-hidden="true">
+        /
+      </span>
+      <Link
+        className={styles.destination}
+        to={tasker ? back : `${base}/tasker`}
+        onClick={() => {
+          if (!tasker && scope) {
+            try {
+              sessionStorage.setItem(
+                key,
+                location.pathname + location.search + location.hash,
+              );
+            } catch {
+              /* Navigation still works when storage is unavailable. */
+            }
+          }
+        }}
       >
-        Polza {tasker ? "Tasker" : "Cowork"}
-        <span aria-hidden="true">⌄</span>
-      </summary>
-      <nav className={styles.menu} aria-label={t("taskerSwitchWorkspace")}>
-        <Link to={back} aria-current={!tasker ? "page" : undefined}>
-          Cowork <span>{!tasker ? "✓" : ""}</span>
-        </Link>
-        <Link
-          to={`${base}/tasker`}
-          aria-current={tasker ? "page" : undefined}
-          onClick={() => {
-            if (!tasker && scope)
-              try {
-                sessionStorage.setItem(
-                  key,
-                  location.pathname + location.search + location.hash,
-                );
-              } catch {
-                /* Navigation still works. */
-              }
-          }}
-        >
-          Tasker <span>{tasker ? "✓" : ""}</span>
-        </Link>
-      </nav>
-    </details>
+        {tasker ? "Cowork" : "Tasker"}
+      </Link>
+    </nav>
   );
 }
