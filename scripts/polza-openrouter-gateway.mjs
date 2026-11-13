@@ -45,6 +45,8 @@ const server = http.createServer(async (req, res) => {
       ...(req.method === 'GET' || req.method === 'HEAD' ? {} : { body: req, duplex: 'half' }),
       signal: AbortSignal.timeout(300_000),
     });
+    // Transport metadata only: never log prompts, request headers or tokens.
+    console.info('OpenRouter response', req.method, req.url.split('?')[0], upstream.status);
     const responseHeaders = {};
     for (const name of ['content-type', 'cache-control', 'x-request-id']) {
       const value = upstream.headers.get(name);
