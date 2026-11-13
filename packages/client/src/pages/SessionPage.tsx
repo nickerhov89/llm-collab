@@ -1,4 +1,8 @@
-import { isPolzaAutoModel, autoModelForProvider } from "../lib/polzaAutoModel";
+import {
+  isPolzaAutoModel,
+  autoModelForProvider,
+  polzaRoutingContext,
+} from "../lib/polzaAutoModel";
 import { RoutedSessionContext } from "../contexts/RoutedSessionContext";
 import { DRAFT_STORAGE_EVENT } from "../lib/draftSyncStorage";
 import { SessionIssuesLink } from "../components/SessionIssuesLink";
@@ -2905,6 +2909,7 @@ function SessionPageContent({
           effectiveProvider,
           info.models ?? [],
           outgoingText,
+          polzaRoutingContext(messages),
         );
         if (
           status.owner === "self" &&
@@ -6794,6 +6799,33 @@ function SessionPageContent({
             currentModel={session?.model}
             sessionProvider={effectiveProvider}
             onModelChanged={handleModelChanged}
+            onSwitchProvider={
+              serverHasCapability(
+                versionInfo,
+                SERVER_CAPABILITIES.sidebarSessionResume,
+              )
+                ? async (provider, model) => {
+                    const result = await api.reactivateSession(
+                      projectId,
+                      actualSessionId,
+                      { provider, model },
+                    );
+                    updateSession((prev) =>
+                      prev ? { ...prev, provider, model } : prev,
+                    );
+                    setSessionModel(model);
+                    setStatus({
+                      owner: "self",
+                      processId: result.processId,
+                      permissionMode: result.permissionMode,
+                      appliedPermissionMode: result.appliedPermissionMode,
+                      modeVersion: result.modeVersion,
+                      recapAfterSeconds: result.recapAfterSeconds,
+                    });
+                    reconnectStream();
+                  }
+                : undefined
+            }
             guardEffortChange={guardEffortChange}
             initialTab={modelPanelInitialTab}
             infoPane={

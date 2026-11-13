@@ -14,12 +14,14 @@ const {
   mockGetProcessInfo,
   mockGetProcessModels,
   mockSetProcessConfig,
+  mockGetProvider,
   mockTranslate,
   mockVersion,
 } = vi.hoisted(() => ({
   mockGetProcessInfo: vi.fn(),
   mockGetProcessModels: vi.fn(),
   mockSetProcessConfig: vi.fn(),
+  mockGetProvider: vi.fn(),
   mockTranslate: vi.fn((key: string) => key),
   mockVersion: { current: { capabilities: [] as string[] } },
 }));
@@ -29,6 +31,7 @@ vi.mock("../../api/client", () => ({
     getProcessInfo: mockGetProcessInfo,
     getProcessModels: mockGetProcessModels,
     setProcessConfig: mockSetProcessConfig,
+    getProvider: mockGetProvider,
   },
 }));
 
@@ -80,7 +83,44 @@ describe("ModelSwitchModal", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
+    localStorage.clear();
     mockVersion.current = { capabilities: [] };
+  });
+
+  it("keeps the picker open and the prior routing choice when an in-place switch is rejected", async () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    localStorage.setItem("polza-model-routing:session-1", "manual");
+    mockGetProvider.mockResolvedValue({
+      provider: {
+        installed: true,
+        enabled: true,
+        authenticated: true,
+        models: [{ id: "openrouter/auto", name: "Auto" }],
+      },
+    });
+    const onSwitch = vi.fn().mockRejectedValue(new Error("Session is busy"));
+    const onClose = vi.fn();
+    render(
+      <ModelSwitchModal
+        sessionId="session-1"
+        processId="process-1"
+        sessionProvider="claude"
+        onModelChanged={vi.fn()}
+        onClose={onClose}
+        onSwitchProvider={onSwitch}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "OpenRouter" }));
+    await waitFor(() =>
+      expect(screen.getByRole("alert").textContent).toBe("Session is busy"),
+    );
+    expect(onSwitch).toHaveBeenCalledWith("claude-gateway", "openrouter/auto");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(localStorage.getItem("polza-model-routing:session-1")).toBe(
+      "manual",
+    );
+    expect(mockSetProcessConfig).not.toHaveBeenCalled();
   });
 
   it("resets the shared modal scroller when switching tabs", () => {

@@ -3,9 +3,37 @@ import type {
   ProviderInfo,
   ProviderName,
 } from "@yep-anywhere/shared";
+import type { Message } from "../types";
 import { useCallback, useSyncExternalStore } from "react";
 
 export const POLZA_AUTO_MODEL = "polza:auto";
+
+/** The gateway must resume the same native transcript format. */
+export function polzaGatewayProvider(
+  provider?: ProviderName,
+): ProviderName | undefined {
+  if (provider === "claude" || provider === "claude-gateway")
+    return "claude-gateway";
+  if (provider === "codex" || provider === "codex-oss") return "codex-oss";
+  return undefined;
+}
+
+export function polzaRoutingContext(messages: Message[]): string {
+  return messages
+    .filter((m) => !m.isSubagent && (m.type === "user" || m.role === "user"))
+    .slice(-6)
+    .map((m) => {
+      const content = m.message?.content ?? m.content;
+      return typeof content === "string"
+        ? content
+        : (content ?? [])
+            .filter((block) => block.type === "text")
+            .map((block) => ("text" in block ? block.text : ""))
+            .join("\n");
+    })
+    .join("\n")
+    .slice(-12000);
+}
 const listeners = new Set<() => void>();
 const key = (scope: string) => `polza-model-routing:${scope}`;
 export function isPolzaAutoModel(scope: string): boolean {
@@ -40,15 +68,19 @@ export function isCodeTask(text: string): boolean {
   );
 }
 
-/** Only an explicit failed attempt warrants the stronger route. */
+/** Re-evaluated per turn: task context carries complexity, failures do not. */
 export function autoModelForProvider(
   provider: ProviderName,
   models: ModelInfo[],
   text: string,
+  context = "",
 ): string | undefined {
   const escalate =
-    /(?:предыдущ\S*\s+попытк\S*|первая\s+попытка|previous attempt).{0,80}(?:не\s+(?:прош|работ|помог)|fail)|(?:tests?\s+failed|тесты\s+не\s+прошли)/i.test(
+    /(?:предыдущ\S*\s+попытк\S*|первая\s+попытка|previous attempt).{0,80}(?:не\s+(?:прош|работ|помог)|fail)|(?:tests?\s+failed|тесты\s+не\s+прошли)|всё?\s+ещ[её].{0,30}не\s+работ|та\s+же\s+(?:ошибка|проблема|хуйня)/i.test(
       text,
+    ) ||
+    /архитектур|миграци|architecture|security audit|аудит\s+безопасност/i.test(
+      `${context}\n${text}`,
     );
   const order =
     provider === "codex"
@@ -61,9 +93,14 @@ export function autoModelForProvider(
           : ["haiku", "sonnet"]
         : provider === "gemini"
           ? ["auto", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-          : provider === "codex-oss"
+          : provider === "codex-oss" || provider === "claude-gateway"
             ? ["openrouter/auto"]
             : [];
+  if (provider === "codex-oss" || provider === "claude-gateway") {
+    return models.find(
+      (m) => m.id === "openrouter/auto" || m.id.endsWith("::openrouter/auto"),
+    )?.id;
+  }
   return order.find((id) => models.some((model) => model.id === id));
 }
 

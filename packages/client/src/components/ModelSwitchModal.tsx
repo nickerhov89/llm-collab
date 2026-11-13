@@ -45,7 +45,7 @@ import {
   startsAdditionalModelGroup,
   withVisibleModelSelection,
 } from "../lib/modelCatalog";
-import { usePolzaAutoModel } from "../lib/polzaAutoModel";
+import { polzaGatewayProvider, usePolzaAutoModel } from "../lib/polzaAutoModel";
 import { polzaModelLabel } from "../lib/polzaModelLabel";
 import {
   isStandardServiceTier,
@@ -91,6 +91,7 @@ interface ModelSwitchModalProps {
    * ownership so `processId` arrives and the full options load.
    */
   onActivate?: () => Promise<void>;
+  onSwitchProvider?: (provider: ProviderName, model: string) => Promise<void>;
   onClose: () => void;
 }
 
@@ -133,6 +134,7 @@ export function ModelSwitchModal({
   infoPane,
   initialTab,
   onActivate,
+  onSwitchProvider,
   onClose,
 }: ModelSwitchModalProps) {
   const { t } = useI18n();
@@ -144,6 +146,7 @@ export function ModelSwitchModal({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [switchError, setSwitchError] = useState<string | null>(null);
   const [currentThinkingMode, setCurrentThinkingMode] =
     useState<ThinkingMode>("off");
   const [currentEffortLevel, setCurrentEffortLevel] =
@@ -602,6 +605,7 @@ export function ModelSwitchModal({
           type="button"
           className="polza-model-menu-item"
           aria-current={autoModel ? "true" : undefined}
+          disabled={switching}
           onClick={() => {
             setAutoModel(true);
             onClose();
@@ -610,6 +614,59 @@ export function ModelSwitchModal({
           <span>Авто</span>
           <span aria-hidden="true">{autoModel ? "✓" : ""}</span>
         </button>
+        {onSwitchProvider && polzaGatewayProvider(sessionProvider) && (
+          <button
+            type="button"
+            className="polza-model-menu-item"
+            disabled={switching}
+            onClick={async () => {
+              const target = polzaGatewayProvider(sessionProvider);
+              if (!target) return;
+              setSwitching(true);
+              setSwitchError(null);
+              try {
+                const { provider: info } = await api.getProvider(target);
+                const model = info.models?.find(
+                  (m) =>
+                    m.id === "openrouter/auto" ||
+                    m.id.endsWith("::openrouter/auto"),
+                );
+                if (
+                  !info.enabled ||
+                  !info.installed ||
+                  !info.authenticated ||
+                  !model
+                ) {
+                  throw new Error(t("polzaRouterUnavailable"));
+                }
+                await onSwitchProvider(target, model.id);
+                setAutoModel(true);
+                onClose();
+              } catch (err) {
+                setSwitchError(
+                  err instanceof Error
+                    ? err.message
+                    : t("modelSwitchChangeFailed"),
+                );
+              } finally {
+                setSwitching(false);
+              }
+            }}
+          >
+            <span>{switching ? t("polzaRouterSwitching") : "OpenRouter"}</span>
+            <span aria-hidden="true">
+              {sessionProvider === "claude-gateway" ||
+              sessionProvider === "codex-oss"
+                ? "✓"
+                : ""}
+            </span>
+          </button>
+        )}
+        {switchError && (
+          <div className="polza-model-menu-message" role="alert">
+            {switchError}
+          </div>
+        )}
         {loading ? (
           <div className="polza-model-menu-message">
             {t("modelSwitchLoading")}

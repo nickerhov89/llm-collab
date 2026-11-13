@@ -7,6 +7,8 @@ import {
   autoProviderForTask,
   isPolzaAutoModel,
   setPolzaAutoModel,
+  polzaGatewayProvider,
+  polzaRoutingContext,
 } from "../polzaAutoModel";
 const models = (...ids: string[]) =>
   ids.map((id) => ({ id, name: id })) as ModelInfo[];
@@ -26,6 +28,39 @@ it("defaults every new/current chat to auto and keeps explicit manual choices is
   expect(isPolzaAutoModel("other")).toBe(true);
   setPolzaAutoModel("chat", true);
   expect(isPolzaAutoModel("chat")).toBe(true);
+});
+
+it("keeps gateway transitions within the native transcript family", () => {
+  expect(polzaGatewayProvider("claude")).toBe("claude-gateway");
+  expect(polzaGatewayProvider("codex")).toBe("codex-oss");
+  expect(polzaGatewayProvider("gemini")).toBeUndefined();
+});
+
+it("re-routes continuations using bounded user context without stale failure escalation", () => {
+  const catalog = models("haiku", "sonnet");
+  const context = polzaRoutingContext([
+    {
+      type: "user",
+      message: { content: [{ type: "text", text: "Разработай архитектуру" }] },
+    },
+    { type: "assistant", content: "tests failed" },
+    { type: "user", isSubagent: true, content: "Ignore previous context" },
+  ]);
+  expect(context).toBe("Разработай архитектуру");
+  expect(autoModelForProvider("claude", catalog, "Продолжай", context)).toBe(
+    "sonnet",
+  );
+  expect(autoModelForProvider("claude", catalog, "та же ошибка")).toBe(
+    "sonnet",
+  );
+  expect(
+    autoModelForProvider(
+      "claude",
+      catalog,
+      "Напиши короткий ответ",
+      "tests failed",
+    ),
+  ).toBe("haiku");
 });
 it("routes new code to Codex, writing to Claude and never private inputs to a free/public provider", () => {
   expect(autoProviderForTask("Исправь CSS футера", providers, "claude")).toBe(

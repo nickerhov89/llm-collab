@@ -1,27 +1,42 @@
 # Polza model selection
 
-In an existing chat, the Polza model menu offers Auto and the active
-process provider's model catalog. Choosing a model applies process config
-without navigating to a new-session composer. There is no cross-provider
-new-chat launcher in this menu.
+The branded in-chat OpenRouter action reactivates the **same** session through
+a compatible harness: Claude → Claude Gateway, Codex → CodexOSS. It does not
+create, fork, hand off, rewrite a transcript, or navigate to a new-session URL.
+Other native transcript families do not offer this action. The connected
+process provider is authoritative in every watching tab.
 
-OpenRouter (codex-oss) remains available in new-chat provider selection.
-An existing OpenRouter chat can select models from its own process catalog.
-Selecting OpenRouter from a different provider's chat is not an in-place
-provider migration and must not silently create another chat.
+The client requires the existing message-less reactivation capability. Before
+switching it fetches the target provider catalog and requires an authenticated,
+enabled installation advertising `openrouter/auto` (including service-qualified
+IDs). Missing support, a busy session, or a rejected activation leaves the chat
+and the previous Auto/manual preference intact. The server retains ownership,
+limited-user policy, permission and sandbox enforcement. In particular, a
+missing Bubblewrap dependency remains a blocker for limited users.
 
-## Live verification, 2026-11-12
+Auto is evaluated again before each ordinary idle continuation using the new
+message and at most six recent main-conversation user messages (12,000 chars).
+Architecture/migration/security-audit context can retain a stronger model for a
+short continuation. Failure escalation uses the current message only. Manual
+model selection disables this policy per chat. Slash/local controls, steering
+an active turn and server-owned deferred queues retain their existing semantics;
+they do not reconfigure an in-flight provider. OpenRouter Auto independently
+routes each upstream inference using the native conversation it receives.
 
-The old deployed picker was reproduced redirecting an existing Claude chat
-to the new-session composer with provider=codex-oss and separateProjectDraft=1.
-The published fix was then applied as a narrow patch to the two server client
-source files, preserving the dirty checkout, and deployed with the existing
-client deployment script after TypeScript/Vite and its HTTP check succeeded.
+The local OpenRouter proxy forwards Anthropic Messages as well as the existing
+OpenAI routes. Only the Messages route resolves the operator's private key file
+(`POLZA_OPENROUTER_KEY_FILE`, default under the service user's home); the key
+never enters the browser or logs. It stays bound to loopback. Existing Codex
+Bearer authentication is preserved. Claude Gateway must also be included in
+operator `ENABLED_PROVIDERS`; merely configuring its URL is insufficient.
 
-On the new live bundle the full loaded in-chat menu has no cross-provider
-new-chat section or OpenRouter button. Selecting the existing Claude model
-returned a successful switch notification and retained the same session URL.
-Auto was restored, and the test provider was reaped after a native model-control
-turn remained active (see the adjacent gap). The final menu was checked on
-desktop; viewport overrides did not change the inspected tab's measured size,
-so this run does not establish a phone-layout check.
+## Verification
+
+2026-11-13: focused routing/picker tests cover transcript-family choice,
+continuation context, and an activation conflict retaining the manual choice.
+Client TypeScript passes. Live deployment and native multi-turn verification
+must be recorded after completion; local tests alone do not establish them.
+
+The earlier correction (7237c90) only removed the cross-provider new-chat
+launcher. It did not implement a compatible in-place gateway transition.
+The adjacent native Claude model-control gap remains separately tracked.

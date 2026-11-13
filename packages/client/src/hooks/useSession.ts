@@ -2452,11 +2452,11 @@ export function useSession(
         if (sseProvider) {
           updateSession((prev) => {
             if (!prev) return prev;
-            // Always update model if the connected event has a resolved model
-            // (provider won't change, but model resolves from undefined/"Default" to actual name)
+            // Reactivation may replace a harness with a compatible gateway.
+            // The connected process is authoritative, including in other tabs.
             return {
               ...prev,
-              provider: prev.provider || sseProvider,
+              provider: sseProvider,
               ...(sseModel && { model: sseModel }),
             };
           });
