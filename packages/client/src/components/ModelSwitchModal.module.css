@@ -1,4 +1,6 @@
 .quickMenu {
+  /* Keep the pointer targets still while the asynchronous catalog arrives. */
+  height: 520px;
   box-sizing: border-box;
   max-width: calc(100dvw - 24px);
   overscroll-behavior: contain;

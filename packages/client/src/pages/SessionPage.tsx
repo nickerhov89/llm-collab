@@ -6805,6 +6805,13 @@ function SessionPageContent({
                 SERVER_CAPABILITIES.sidebarSessionResume,
               )
                 ? async (provider, model) => {
+                    if (
+                      processState === "in-turn" ||
+                      processState === "waiting-input" ||
+                      deferredMessages.length > 0
+                    ) {
+                      throw new Error(t("polzaRouterWaitForTurn"));
+                    }
                     const result = await api.reactivateSession(
                       projectId,
                       actualSessionId,
