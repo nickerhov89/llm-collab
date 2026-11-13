@@ -16,8 +16,9 @@ missing Bubblewrap dependency remains a blocker for limited users.
 
 Auto is evaluated again before each ordinary idle continuation using the new
 message and at most six recent main-conversation user messages (12,000 chars).
-Architecture/migration/security-audit context can retain a stronger model for a
-short continuation. Failure escalation uses the current message only. Manual
+A short continuation can retain a stronger route after a reported failed
+attempt. A new task starts cheap; complexity wording alone does not override
+the operator's cheap-first policy. Manual
 model selection disables this policy per chat. Slash/local controls, steering
 an active turn and server-owned deferred queues retain their existing semantics;
 they do not reconfigure an in-flight provider. OpenRouter Auto independently
@@ -38,15 +39,39 @@ the original custom key. It never rewrites session metadata or messages.
 `POLZA_OPENROUTER_GATEWAY_TOKEN=dummy` is the local proxy credential; the documented per-invocation `CODEX_API_KEY`
 selects it instead of saved OAuth, so the original OpenAI credential is not
 forwarded to the new endpoint. Modern Codex JSONL resume is enabled only for this
-opt-in, preserving legacy endpoint behavior. Nonzero CLI exits become visible
-errors instead of a successful empty turn.
+opt-in, preserving legacy endpoint behavior. Nonzero CLI exits emit error events rather than only an empty success result.
+The CLI close listener is registered before yielding stream messages, so an
+early exit during consumer backpressure cannot strand the following turn.
+For opted-in Codex resumes, an already granted `bypassPermissions` mode is
+passed through to the native CLI. Default and restricted sessions do not receive
+that flag; this does not repair missing Bubblewrap for restricted users.
 
 ## Verification
 
 2026-11-13: focused routing/picker tests cover transcript-family choice,
 continuation context, and an activation conflict retaining the manual choice.
-Client TypeScript passes. Live deployment and native multi-turn verification
-must be recorded after completion; local tests alone do not establish them.
+Client and server TypeScript pass; 18 focused client tests and 23 server
+provider/lifecycle tests pass. The close-event regression deterministically
+covers a child exiting while a stream consumer is paused.
+
+Published and verified through the live browser on 2026-11-13:
+- Claude → OpenRouter retained the same session URL and recalled the synthetic
+  initial control string on two continuations.
+- Codex → OpenRouter retained the same URL and recalled its initial control
+  string over successive turns, including a continuation after a real `pwd`
+  tool call. The tool returned the expected project directory.
+- Fresh deployed picker selected OpenRouter without navigation; activation now
+  checks the resulting process ID and provider before reporting success.
+- Final client asset: `SessionPage-87tVIzO0.js`. Backend health is port 3401;
+  port 3400 is a separate public proxy. Both returned HTTP 200 after publishing.
+  The final build passed TypeScript/Vite; a transient proxy failure triggered
+  rollback before its validated immutable build was promoted using backend health.
+
+Desktop UI was inspected at 1440×589. Browser viewport overrides did not take
+effect, so phone layout was not verified. Codex still emits a native model
+metadata warning for `openrouter/auto`, although the tested responses and tool
+call succeed. Native/optimistic transcript reconciliation can duplicate displayed
+text on a resumed Codex turn; this adjacent rendering issue is not resolved here.
 
 The earlier correction (7237c90) only removed the cross-provider new-chat
 launcher. It did not implement a compatible in-place gateway transition.
