@@ -48,8 +48,16 @@ it("re-routes continuations using bounded user context without stale failure esc
   ]);
   expect(context).toBe("Разработай архитектуру");
   expect(autoModelForProvider("claude", catalog, "Продолжай", context)).toBe(
-    "sonnet",
+    "haiku",
   );
+  expect(
+    autoModelForProvider(
+      "claude",
+      catalog,
+      "Продолжай",
+      "Предыдущая попытка не помогла",
+    ),
+  ).toBe("sonnet");
   expect(autoModelForProvider("claude", catalog, "та же ошибка")).toBe(
     "sonnet",
   );

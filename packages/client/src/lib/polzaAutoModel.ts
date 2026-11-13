@@ -68,20 +68,25 @@ export function isCodeTask(text: string): boolean {
   );
 }
 
-/** Re-evaluated per turn: task context carries complexity, failures do not. */
+/** Re-evaluate each continuation while retaining the configured cheap-first policy. */
 export function autoModelForProvider(
   provider: ProviderName,
   models: ModelInfo[],
   text: string,
   context = "",
 ): string | undefined {
-  const escalate =
+  const failedAttempt =
     /(?:предыдущ\S*\s+попытк\S*|первая\s+попытка|previous attempt).{0,80}(?:не\s+(?:прош|работ|помог)|fail)|(?:tests?\s+failed|тесты\s+не\s+прошли)|всё?\s+ещ[её].{0,30}не\s+работ|та\s+же\s+(?:ошибка|проблема|хуйня)/i.test(
       text,
-    ) ||
-    /архитектур|миграци|architecture|security audit|аудит\s+безопасност/i.test(
-      `${context}\n${text}`,
     );
+  const continuation =
+    /^\s*(?:продолж|дальше|давай\s+дальше|continue|go\s+on)/i.test(text);
+  const escalate =
+    failedAttempt ||
+    (continuation &&
+      /предыдущ\S*\s+попытк\S*.{0,80}не\s+(?:прош|работ|помог)|tests?\s+failed|та\s+же\s+(?:ошибка|проблема|хуйня)/i.test(
+        context.slice(-1200),
+      ));
   const order =
     provider === "codex"
       ? escalate
