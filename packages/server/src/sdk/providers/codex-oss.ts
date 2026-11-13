@@ -937,6 +937,13 @@ export class CodexOSSProvider implements AgentProvider {
         return;
       }
 
+      // Register before consuming stdout: the process may close while the
+      // async generator is paused yielding its final message to the consumer.
+      const exitCodePromise = new Promise<number | null>((resolve) => {
+        codexProcess.once("close", resolve);
+        codexProcess.once("error", () => resolve(null));
+      });
+
       // Handle abort
       const abortHandler = () => codexProcess.kill("SIGTERM");
       signal.addEventListener("abort", abortHandler);
@@ -1100,10 +1107,7 @@ export class CodexOSSProvider implements AgentProvider {
         }
 
         // Wait for exit
-        const exitCode = await new Promise<number | null>((resolve) => {
-          codexProcess.on("close", resolve);
-          codexProcess.on("error", () => resolve(null));
-        });
+        const exitCode = await exitCodePromise;
 
         if (exitCode !== 0 && stderr) {
           log.warn(

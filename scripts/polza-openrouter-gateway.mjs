@@ -61,4 +61,9 @@ const server = http.createServer(async (req, res) => {
     console.error('upstream request failed:', error instanceof Error ? error.message : String(error));
   }
 });
+// The local bridge serves SSE. Signal unsupported WebSocket transport locally
+// instead of forwarding upgrade probes as authenticated upstream GET requests.
+server.on('upgrade', (_req, socket) => {
+  socket.end('HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n');
+});
 server.listen(port, host, () => console.log(`OpenRouter gateway listening on ${host}:${port}`));
