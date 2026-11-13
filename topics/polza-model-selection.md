@@ -24,11 +24,21 @@ they do not reconfigure an in-flight provider. OpenRouter Auto independently
 routes each upstream inference using the native conversation it receives.
 
 The local OpenRouter proxy forwards Anthropic Messages as well as the existing
-OpenAI routes. Only the Messages route resolves the operator's private key file
+OpenAI routes. Requests bearing the local dummy credential resolve the operator's private key file
 (`POLZA_OPENROUTER_KEY_FILE`, default under the service user's home); the key
 never enters the browser or logs. It stays bound to loopback. Existing Codex
 Bearer authentication is preserved. Claude Gateway must also be included in
 operator `ENABLED_PROVIDERS`; merely configuring its URL is insufficient.
+
+Codex now enforces the rollout's native `model_provider` on resume. For the
+explicit deployment opt-in `POLZA_OPENROUTER_GATEWAY_SERVICE_ID`, the OSS harness
+reads that key from the original transcript and uses per-launch endpoint
+overrides under the same key. It never rewrites session metadata or messages.
+`POLZA_OPENROUTER_GATEWAY_TOKEN=dummy` is the local proxy credential; OAuth is
+explicitly disabled for that launch, so the original OpenAI credential cannot
+be sent to the new endpoint. Modern Codex JSONL resume is enabled only for this
+opt-in, preserving legacy endpoint behavior. Nonzero CLI exits become visible
+errors instead of a successful empty turn.
 
 ## Verification
 

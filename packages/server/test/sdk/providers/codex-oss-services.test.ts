@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { GatewayService, ModelCatalogRoute } from "@yep-anywhere/shared";
 import { CodexOSSProvider } from "../../../src/sdk/providers/codex-oss.js";
 import type { ProviderInstallationCoordinator } from "../../../src/services/ProviderInstallationCoordinator.js";
@@ -14,7 +17,9 @@ interface CodexOSSInternals {
     route: TurnRoute,
     sessionId: string,
     prompt: string,
+    nativeProvider?: string,
   ): string[];
+  nativeResumeProvider(sessionId: string): Promise<string>;
   resolveModelRoute(model: string | undefined): TurnRoute;
   launchGatewayRoute(
     options: StartSessionOptions,
@@ -22,6 +27,18 @@ interface CodexOSSInternals {
 }
 
 class ExposedCodexOSSProvider extends CodexOSSProvider {
+  nativeKey(sessionId: string) {
+    return this.internals.nativeResumeProvider(sessionId);
+  }
+  nativeResumeArgs(model: string, sessionId: string, nativeProvider: string) {
+    return this.internals.buildResumeTurnArgs(
+      { model } as StartSessionOptions,
+      this.internals.resolveModelRoute(model),
+      sessionId,
+      "go",
+      nativeProvider,
+    );
+  }
   private get internals(): CodexOSSInternals {
     return this as unknown as CodexOSSInternals;
   }
@@ -108,10 +125,55 @@ function vllmCatalog(ids: string[], maxModelLen = 252_000) {
 
 describe("CodexOSS gateway services", () => {
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.unstubAllGlobals();
     // The probe cache is process-wide and keyed by endpoint, so one test's
     // answer about 127.0.0.1:8001 would otherwise stand in for the next's.
     gatewayEffortProbeCache.forget();
+  });
+
+  it("resumes an opted-in gateway with the original native provider key without rewriting history or leaking OAuth", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "codex-native-gateway-"));
+    const sessionId = "11111111-1111-4111-8111-111111111111";
+    const file = join(dir, `rollout-2026-11-13T00-00-00-${sessionId}.jsonl`);
+    const original =
+      JSON.stringify({
+        type: "session_meta",
+        timestamp: "2026-11-13T00:00:00Z",
+        payload: {
+          id: sessionId,
+          cwd: dir,
+          timestamp: "2026-11-13T00:00:00Z",
+          model_provider: "openai",
+          source: "cli",
+        },
+      }) + "\n";
+    await writeFile(file, original);
+    vi.stubEnv("CODEX_SESSIONS_DIR", dir);
+    vi.stubEnv("POLZA_OPENROUTER_GATEWAY_SERVICE_ID", "vllm");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => vllmCatalog(["gateway-model"])),
+    );
+    try {
+      const provider = new ExposedCodexOSSProvider();
+      provider.setGatewayServices([service()]);
+      await provider.getAvailableModels();
+      const key = await provider.nativeKey(sessionId);
+      expect(key).toBe("openai");
+      const args = provider.nativeResumeArgs("gateway-model", sessionId, key);
+      expect(args).toContain('model_provider="openai"');
+      expect(args).toContain(
+        "model_providers.openai.requires_openai_auth=false",
+      );
+      expect(args).toContain(
+        'model_providers.openai.env_key="POLZA_OPENROUTER_GATEWAY_TOKEN"',
+      );
+      expect(args).toContain("--json");
+      expect(await readFile(file, "utf8")).toBe(original);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("lists models from a configured endpoint instead of ollama", async () => {

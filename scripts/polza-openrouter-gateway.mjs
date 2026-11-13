@@ -29,7 +29,7 @@ const server = http.createServer(async (req, res) => {
   try {
     // Claude Gateway deliberately sends a dummy local credential. Resolve the
     // operator's existing OpenRouter credential here, never in browser state.
-    const token = req.url.split('?')[0] === '/v1/messages'
+    const token = req.headers.authorization === 'Bearer dummy'
       ? (await readFile(process.env.POLZA_OPENROUTER_KEY_FILE ?? join(homedir(), '.config/polza/openrouter-cowork.key'), 'utf8')).trim()
       : req.headers.authorization.slice(7);
     if (!token || token === 'dummy') throw new Error('Missing gateway credential');

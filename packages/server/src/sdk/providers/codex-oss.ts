@@ -38,6 +38,9 @@ import {
   normalizeCodexToolInvocation,
 } from "../../codex/normalization.js";
 import { getLogger } from "../../logging/logger.js";
+import { getDefaultCodexSessionsDir } from "../../projects/codex-scanner.js";
+import { CodexSessionReader } from "../../sessions/codex-reader.js";
+import { readCodexSessionMeta } from "../../sessions/codex-rollout-lineage.js";
 import {
   CODEX_INSTALLATION_FAMILY,
   type ProviderInstallationCoordinator,
@@ -606,8 +609,36 @@ export class CodexOSSProvider implements AgentProvider {
    * backslash reaches Codex as the name the user typed instead of breaking
    * the override.
    */
-  private serviceLaunchArgs(service: GatewayService): string[] {
-    const key = codexProviderKey(service);
+  private isPolzaRouter(service?: GatewayService): boolean {
+    return (
+      !!service &&
+      process.env.POLZA_OPENROUTER_GATEWAY_SERVICE_ID === service.id
+    );
+  }
+
+  private async nativeResumeProvider(sessionId: string): Promise<string> {
+    const reader = new CodexSessionReader({
+      sessionsDir:
+        process.env.CODEX_SESSIONS_DIR ?? getDefaultCodexSessionsDir(),
+    });
+    const filePath = await reader.getSessionFilePath(sessionId);
+    if (!filePath)
+      throw new Error(
+        "Cannot locate the native Codex transcript for gateway resume",
+      );
+    const meta = await readCodexSessionMeta(filePath);
+    const key = meta.payload.model_provider ?? "openai";
+    if (meta.payload.id !== sessionId || !/^[a-zA-Z0-9_-]+$/.test(key)) {
+      throw new Error("Invalid native Codex provider identity");
+    }
+    return key;
+  }
+
+  private serviceLaunchArgs(
+    service: GatewayService,
+    nativeProvider?: string,
+  ): string[] {
+    const key = nativeProvider ?? codexProviderKey(service);
     return [
       "-c",
       `model_providers.${key}.name=${tomlString(gatewayServiceDisplayName(service))}`,
@@ -617,6 +648,14 @@ export class CodexOSSProvider implements AgentProvider {
       `model_providers.${key}.wire_api=${tomlString(service.codexWireApi)}`,
       "-c",
       `model_provider=${tomlString(key)}`,
+      ...(this.isPolzaRouter(service)
+        ? [
+            "-c",
+            `model_providers.${key}.requires_openai_auth=false`,
+            "-c",
+            `model_providers.${key}.env_key="POLZA_OPENROUTER_GATEWAY_TOKEN"`,
+          ]
+        : []),
     ];
   }
 
@@ -762,6 +801,11 @@ export class CodexOSSProvider implements AgentProvider {
       serviceId: undefined,
       modelId: options.model ?? "",
     };
+    const polzaRouter = this.isPolzaRouter(this.serviceById(route.serviceId));
+    const nativeProvider =
+      polzaRouter && options.resumeSessionId
+        ? await this.nativeResumeProvider(options.resumeSessionId)
+        : undefined;
 
     let currentSessionId = options.resumeSessionId ?? "";
     let initEmitted = !!options.resumeSessionId;
@@ -832,6 +876,7 @@ export class CodexOSSProvider implements AgentProvider {
             route,
             currentSessionId,
             userPrompt,
+            nativeProvider,
           );
 
       // Spawn codex process
@@ -1047,6 +1092,11 @@ export class CodexOSSProvider implements AgentProvider {
             { exitCode, stderr: stderr.slice(0, 500) },
             "Codex exited with error",
           );
+          yield {
+            type: "error",
+            session_id: currentSessionId,
+            error: `Codex gateway failed (exit ${exitCode ?? "unknown"}); see server logs`,
+          } as SDKMessage;
         }
 
         // Emit result
@@ -1104,6 +1154,7 @@ export class CodexOSSProvider implements AgentProvider {
     route: CodexModelRoute,
     sessionId: string,
     prompt: string,
+    nativeProvider?: string,
   ): string[] {
     const service = this.serviceById(route.serviceId);
     const args: string[] = [
@@ -1111,8 +1162,9 @@ export class CodexOSSProvider implements AgentProvider {
       "resume",
       sessionId,
       prompt,
+      ...(this.isPolzaRouter(service) ? ["--json"] : []),
       ...(service
-        ? this.serviceLaunchArgs(service)
+        ? this.serviceLaunchArgs(service, nativeProvider)
         : ["-c", `model_provider=${tomlString(this.localProvider)}`]),
     ];
 
