@@ -639,6 +639,16 @@ export class CodexOSSProvider implements AgentProvider {
     nativeProvider?: string,
   ): string[] {
     const key = nativeProvider ?? codexProviderKey(service);
+    if (this.isPolzaRouter(service) && key === "openai") {
+      // A built-in ID cannot be redefined. Keep its identity and use the
+      // documented per-invocation URL override and API-key authentication.
+      return [
+        "-c",
+        'model_provider="openai"',
+        "-c",
+        `openai_base_url=${tomlString(`${service.url}/v1`)}`,
+      ];
+    }
     return [
       "-c",
       `model_providers.${key}.name=${tomlString(gatewayServiceDisplayName(service))}`,
@@ -802,6 +812,11 @@ export class CodexOSSProvider implements AgentProvider {
       modelId: options.model ?? "",
     };
     const polzaRouter = this.isPolzaRouter(this.serviceById(route.serviceId));
+    const gatewayToken = polzaRouter
+      ? process.env.POLZA_OPENROUTER_GATEWAY_TOKEN
+      : undefined;
+    if (polzaRouter && !gatewayToken)
+      throw new Error("OpenRouter local gateway credential is not configured");
     const nativeProvider =
       polzaRouter && options.resumeSessionId
         ? await this.nativeResumeProvider(options.resumeSessionId)
@@ -897,7 +912,10 @@ export class CodexOSSProvider implements AgentProvider {
         codexProcess = spawn(codexPath, args, {
           cwd: options.cwd,
           stdio: ["pipe", "pipe", "pipe"],
-          env: stripYaControlPlaneCredentials(process.env),
+          env: {
+            ...stripYaControlPlaneCredentials(process.env),
+            ...(polzaRouter ? { CODEX_API_KEY: gatewayToken } : {}),
+          },
           shell: process.platform === "win32",
         });
         pidRef.value = codexProcess.pid;

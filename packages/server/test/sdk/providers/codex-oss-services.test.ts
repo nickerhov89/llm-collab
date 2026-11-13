@@ -163,12 +163,10 @@ describe("CodexOSS gateway services", () => {
       expect(key).toBe("openai");
       const args = provider.nativeResumeArgs("gateway-model", sessionId, key);
       expect(args).toContain('model_provider="openai"');
-      expect(args).toContain(
-        "model_providers.openai.requires_openai_auth=false",
-      );
-      expect(args).toContain(
-        'model_providers.openai.env_key="POLZA_OPENROUTER_GATEWAY_TOKEN"',
-      );
+      expect(args).toContain('openai_base_url="http://127.0.0.1:8001/v1"');
+      expect(
+        args.some((arg) => arg.startsWith("model_providers.openai.")),
+      ).toBe(false);
       expect(args).toContain("--json");
       expect(await readFile(file, "utf8")).toBe(original);
     } finally {

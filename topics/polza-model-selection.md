@@ -32,11 +32,12 @@ operator `ENABLED_PROVIDERS`; merely configuring its URL is insufficient.
 
 Codex now enforces the rollout's native `model_provider` on resume. For the
 explicit deployment opt-in `POLZA_OPENROUTER_GATEWAY_SERVICE_ID`, the OSS harness
-reads that key from the original transcript and uses per-launch endpoint
-overrides under the same key. It never rewrites session metadata or messages.
-`POLZA_OPENROUTER_GATEWAY_TOKEN=dummy` is the local proxy credential; OAuth is
-explicitly disabled for that launch, so the original OpenAI credential cannot
-be sent to the new endpoint. Modern Codex JSONL resume is enabled only for this
+reads that key from the original transcript and uses the documented per-launch `openai_base_url` for the built-in
+`openai` key (reserved IDs cannot be redefined), or endpoint overrides under
+the original custom key. It never rewrites session metadata or messages.
+`POLZA_OPENROUTER_GATEWAY_TOKEN=dummy` is the local proxy credential; the documented per-invocation `CODEX_API_KEY`
+selects it instead of saved OAuth, so the original OpenAI credential is not
+forwarded to the new endpoint. Modern Codex JSONL resume is enabled only for this
 opt-in, preserving legacy endpoint behavior. Nonzero CLI exits become visible
 errors instead of a successful empty turn.
 
@@ -50,3 +51,5 @@ must be recorded after completion; local tests alone do not establish them.
 The earlier correction (7237c90) only removed the cross-provider new-chat
 launcher. It did not implement a compatible in-place gateway transition.
 The adjacent native Claude model-control gap remains separately tracked.
+
+Official configuration references: [built-in proxy URL](https://learn.chatgpt.com/docs/config-file/config-advanced), [per-run API-key authentication and resume](https://learn.chatgpt.com/docs/non-interactive-mode).
