@@ -2914,7 +2914,9 @@ function SessionPageContent({
         if (
           status.owner === "self" &&
           autoModel &&
-          autoModel !== effectiveModelConfig?.model
+          autoModel !==
+            (effectiveModelConfig?.requestedModel ??
+              effectiveModelConfig?.model)
         ) {
           const result = await api.setProcessModel(status.processId, autoModel);
           handleModelChanged(result);
