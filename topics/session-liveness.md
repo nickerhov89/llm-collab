@@ -316,3 +316,10 @@ existing ownership fence remains until provider shutdown is positively verified.
 If teardown fails, the error remains visible and replacement ownership remains
 blocked, preventing a second tool invocation alongside an unknown old one.
 The deadline requires no new client API or client build.
+
+Verification on 2026-11-13: 60 focused Process lifecycle/liveness tests and
+server TypeScript passed. The installed Linux package smoke verified the
+terminal error notice and positive teardown with a synthetic silent iterator.
+The running Cowork process reports `POLZA_PROVIDER_SILENCE_TIMEOUT_MS=600000`;
+backend 3401 and public proxy 3400 both returned HTTP 200 after deployment.
+This bounds future silent turns; it does not repair their underlying tools.
