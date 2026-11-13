@@ -293,3 +293,26 @@ methods; no caller directly arms or clears the timer.
 - Pending or failed idle teardown keeps the same registered process, rejects
   direct/deferred input and replacement, and emits no ownership release. A
   later verified abort retry emits exactly one completion and `owner: "none"`.
+
+## Opted-in foreground silence deadline
+
+`POLZA_PROVIDER_SILENCE_TIMEOUT_MS` enables a server-owned silence deadline
+(default disabled; nonfinite/nonpositive values disable it). Polza enables
+600000 ms. The existing global 30-second liveness sweep checks only owned
+`in-turn` processes, independently of provider probe support and client presence.
+The anchor is the later of the last state transition and the last normalized
+provider message. Provider output resets it; process-alive checks, raw transport
+heartbeats, browser connections, and active-status probes do not.
+
+Expiry publishes a durable local error notice and terminates the foreground
+run. It does not mean a command rolled back or never executed: users must review
+completed actions before retrying. There is no automatic retry or queue replay.
+Idle sessions, retained background work and waiting-input/approval states are
+exempt. A silent but legitimate long-running operation may also reach this
+operator-selected deadline; this is a bound on waiting, not proof of deadlock.
+
+The process becomes terminal before asynchronous teardown starts, and the
+existing ownership fence remains until provider shutdown is positively verified.
+If teardown fails, the error remains visible and replacement ownership remains
+blocked, preventing a second tool invocation alongside an unknown old one.
+The deadline requires no new client API or client build.

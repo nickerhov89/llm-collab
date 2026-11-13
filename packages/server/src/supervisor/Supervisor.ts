@@ -5321,6 +5321,11 @@ export class Supervisor {
     return null;
   }
 
+  // Operator opt-in; shared liveness sweep owns the deadline (no per-session timer).
+  private readonly providerSilenceTimeoutMs = Number(
+    process.env.POLZA_PROVIDER_SILENCE_TIMEOUT_MS ?? 0,
+  );
+
   private probeLongSilentProcesses(): void {
     const now = new Date();
     const log = getLogger();
@@ -5329,6 +5334,19 @@ export class Supervisor {
       if (process.state.type !== "in-turn") {
         continue;
       }
+      void process
+        .expireSilentTurn(this.providerSilenceTimeoutMs, now)
+        .catch((error) => {
+          log.error(
+            {
+              event: "silent_turn_teardown_failed",
+              sessionId: process.sessionId,
+              processId: process.id,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            "Silent turn stopped, but provider teardown could not be verified",
+          );
+        });
       if (process.isTerminated || !process.canProbeLiveness) {
         continue;
       }

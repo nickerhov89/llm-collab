@@ -5031,6 +5031,60 @@ export class Process {
     this.markTerminated(reason);
   }
 
+  /** Fail an opted-in silent foreground turn without treating probes as progress. */
+  async expireSilentTurn(
+    timeoutMs: number,
+    now = new Date(),
+  ): Promise<boolean> {
+    if (
+      !Number.isFinite(timeoutMs) ||
+      timeoutMs <= 0 ||
+      this._state.type !== "in-turn" ||
+      this.viewerLifecycle.hasUnverifiedProviderOwnership
+    )
+      return false;
+
+    const progressAt = Math.max(
+      this._lastStateChangeTime.getTime(),
+      this._lastProviderMessageTime?.getTime() ?? 0,
+    );
+    if (now.getTime() - progressAt < timeoutMs) return false;
+
+    const reason = `No provider output for ${Math.round(timeoutMs / 60_000)} minutes. The run was stopped; review completed actions before retrying.`;
+    const error = new Error(reason);
+    const id = randomUUID();
+    const notice: DurableLocalCommandMessage = {
+      type: "system",
+      subtype: "local_command",
+      session_id: this._sessionId,
+      uuid: id,
+      id,
+      timestamp: now.toISOString(),
+      isMeta: false,
+      isSynthetic: true,
+      content: "Run timed out: no new provider or tool output",
+      details: [
+        reason,
+        "A live process or an active status probe is not progress. Queued messages were not replayed automatically.",
+      ],
+      detailsOpen: true,
+    };
+    // Fence ownership before any asynchronous shutdown. A second sweep cannot
+    // repeat the failure, and a replacement cannot race a still-running tool.
+    this.viewerLifecycle.beginTeardownVerification();
+    this.bufferForReplay(notice as SDKMessage);
+    this.emit({ type: "message", message: notice as SDKMessage });
+    this.markTerminated(reason, error, { failureNotice: notice });
+    this.emit({ type: "error", error });
+    try {
+      await this.abort();
+    } catch (failure) {
+      this.retainLifecycleTeardownFailure(reason, failure);
+      throw failure;
+    }
+    return true;
+  }
+
   /**
    * Mark this process terminated, then wait until its provider runtime is
    * verified gone. Replacement ownership must not begin before this resolves.
