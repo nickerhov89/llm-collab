@@ -6819,6 +6819,14 @@ function SessionPageContent({
                       actualSessionId,
                       { provider, model },
                     );
+                    const { process: active } =
+                      await api.getProcessInfo(actualSessionId);
+                    if (
+                      active?.id !== result.processId ||
+                      active?.provider !== provider
+                    ) {
+                      throw new Error(t("polzaRouterUnavailable"));
+                    }
                     updateSession((prev) =>
                       prev ? { ...prev, provider, model } : prev,
                     );

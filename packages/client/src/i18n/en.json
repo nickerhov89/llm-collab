@@ -1,6 +1,6 @@
 {
   "polzaRouterWaitForTurn": "Wait for the current reply and queued messages before switching services.",
-  "polzaRouterUnavailable": "OpenRouter is not configured for this chat's engine. The current chat has been kept.",
+  "polzaRouterUnavailable": "OpenRouter could not be applied to this chat. The current chat has been kept.",
   "polzaRouterSwitching": "Switching to OpenRouter…",
   "projectFileLinkCopy": "Copy public app link",
   "projectFileLinkAccess": "This existing project app link grants access to the app, not just this file.",
