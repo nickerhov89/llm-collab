@@ -5077,5 +5077,11 @@
   "taskerPriorityAssessmentHint": "Assess tasks below, or ask Cowork to review up to 50 active tasks with their context. The chat opens as a draft for you to review and send.",
   "taskerNotAssessed": "Needs KPI and impact rationale",
   "taskerWhyOrder": "Why this order?",
-  "taskerPriorityHelp": "Review priorities in Cowork"
+  "taskerPriorityHelp": "Review priorities in Cowork",
+  "taskerServerStorage": "Tasks are stored on the server for your account.",
+  "taskerServerSaved": "Saved on server",
+  "taskerServerSaving": "Saving to server...",
+  "taskerServerError": "Tasker could not sync. Your edits are kept here. Export a backup before loading the server copy if another tab changed the tasks.",
+  "taskerServerRetry": "Retry sync",
+  "taskerServerReload": "Load server copy"
 }

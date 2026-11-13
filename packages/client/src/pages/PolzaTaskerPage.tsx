@@ -1,3 +1,4 @@
+import { usePolzaTaskerStorage } from "../hooks/usePolzaTaskerStorage";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PolzaTaskPriority } from "../components/PolzaTaskPriority";
@@ -100,15 +101,8 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
   const base = useRemoteBasePath();
   const source = useClientSummarySourceKey();
   const { profile: workProfile } = usePolzaWorkProfile();
-  const [loadError, setLoadError] = useState(false);
-  const [data, setData] = useState<TaskerData>(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      return saved ? parseData(saved) : empty;
-    } catch {
-      return empty;
-    }
-  });
+  const { data, setData, persist, loadError, phase, problem, retry, reload } =
+    usePolzaTaskerStorage(storageKey, parseData, empty);
   const [status, setStatus] = useState("");
   const [lastDeletedId, setLastDeletedId] = useState<string | null>(null);
   const [view, setView] = useState(() =>
@@ -122,36 +116,14 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
   const dataRef = useRef(data);
   dataRef.current = data;
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) parseData(raw);
-    } catch {
-      setLoadError(true);
-      setStatus(t("taskerStorageError"));
-    }
-  }, [storageKey, t]);
-  function persist(next: TaskerData) {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      setLoadError(false);
-      return true;
-    } catch {
-      setLoadError(true);
-      setStatus(t("taskerStorageError"));
-      return false;
-    }
-  }
+  // persist captures only the keyed workspace scope and mutable refs.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: flush only at workspace teardown
   useEffect(() => {
     const flush = () => {
       if (saveTimer.current) {
         clearTimeout(saveTimer.current);
         saveTimer.current = null;
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(dataRef.current));
-        } catch {
-          /* Visible save errors are reported during edits. */
-        }
+        persist(dataRef.current);
       }
     };
     window.addEventListener("pagehide", flush);
@@ -378,7 +350,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
               </p>
             </>
           )}
-          <p>{t("taskerLocalStorage")}</p>
+          <p>{t("taskerServerStorage")}</p>
           <div className={styles.fileActions}>
             <button type="button" onClick={() => file.current?.click()}>
               {t("taskerImport")}
@@ -551,7 +523,24 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
               </div>
             )}
             <p className={styles.status} role="status">
+              {problem
+                ? t("taskerServerError")
+                : phase === "saving"
+                  ? t("taskerServerSaving")
+                  : phase === "loading"
+                    ? t("taskerLoading")
+                    : t("taskerServerSaved")}{" "}
               {status}
+              {problem && (
+                <>
+                  <button type="button" onClick={retry}>
+                    {t("taskerServerRetry")}
+                  </button>
+                  <button type="button" onClick={reload}>
+                    {t("taskerServerReload")}
+                  </button>
+                </>
+              )}
               {lastDeletedId && (
                 <button
                   className={styles.undo}

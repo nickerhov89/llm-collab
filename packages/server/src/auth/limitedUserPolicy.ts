@@ -364,6 +364,11 @@ export function decideLimitedRoute(
       /^\/api\/attachments\/staging\/drafts\/[^/]+\/[^/]+$/.test(path))
   )
     return { kind: "allow" };
+  if (path === "/api/tasker" || path === "/api/tasker/") {
+    return method === "GET" || method === "PUT"
+      ? { kind: "allow" }
+      : { kind: "deny" };
+  }
   if (path.startsWith("/api/users")) {
     // Everything else under user administration is the superuser's.
     return path === "/api/users/me" && isRead

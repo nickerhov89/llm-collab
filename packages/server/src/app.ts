@@ -1,3 +1,4 @@
+import { createPolzaTaskerRoutes } from "./routes/polza-tasker.js";
 import { AgentAuthRouter } from "./services/AgentAuthRouter.js";
 import { createAgentAuthRouterRoutes } from "./routes/agent-auth-router.js";
 import { DraftStore } from "./drafts/DraftStore.js";
@@ -3827,6 +3828,8 @@ export function createApp(options: AppOptions): AppResult {
       createPublicSharePublicRoutes(publicShareDeps),
     );
   }
+
+  app.route("/api/tasker", createPolzaTaskerRoutes(effectiveDataDir));
 
   // Connections routes (list connected browser profiles)
   if (options.connectedBrowsers) {
