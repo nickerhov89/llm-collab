@@ -1185,6 +1185,10 @@ export class CodexOSSProvider implements AgentProvider {
       sessionId,
       prompt,
       ...(this.isPolzaRouter(service) ? ["--json"] : []),
+      ...(this.isPolzaRouter(service) &&
+      options.permissionMode === "bypassPermissions"
+        ? ["--dangerously-bypass-approvals-and-sandbox"]
+        : []),
       ...(service
         ? this.serviceLaunchArgs(service, nativeProvider)
         : ["-c", `model_provider=${tomlString(this.localProvider)}`]),

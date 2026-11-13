@@ -30,9 +30,14 @@ class ExposedCodexOSSProvider extends CodexOSSProvider {
   nativeKey(sessionId: string) {
     return this.internals.nativeResumeProvider(sessionId);
   }
-  nativeResumeArgs(model: string, sessionId: string, nativeProvider: string) {
+  nativeResumeArgs(
+    model: string,
+    sessionId: string,
+    nativeProvider: string,
+    turn: Partial<StartSessionOptions> = {},
+  ) {
     return this.internals.buildResumeTurnArgs(
-      { model } as StartSessionOptions,
+      { model, ...turn } as StartSessionOptions,
       this.internals.resolveModelRoute(model),
       sessionId,
       "go",
@@ -168,6 +173,12 @@ describe("CodexOSS gateway services", () => {
         args.some((arg) => arg.startsWith("model_providers.openai.")),
       ).toBe(false);
       expect(args).toContain("--json");
+      expect(args).not.toContain("--dangerously-bypass-approvals-and-sandbox");
+      expect(
+        provider.nativeResumeArgs("gateway-model", sessionId, key, {
+          permissionMode: "bypassPermissions",
+        }),
+      ).toContain("--dangerously-bypass-approvals-and-sandbox");
       expect(await readFile(file, "utf8")).toBe(original);
     } finally {
       await rm(dir, { recursive: true, force: true });
