@@ -593,3 +593,9 @@ contract.
 - [`SECURITY.md`](../SECURITY.md) is the public security-policy entry point for
   reporting vulnerabilities and should stay operator-facing rather than carrying
   implementation-specific design contracts.
+
+## Dedicated Polza employee deployment
+
+For the opt-in root-provisioned separate-UID boundary and its limitations, see
+[Polza employee isolation](polza-employee-isolation.md). Shared-UID session
+sandboxing alone does not provide confidentiality from other host files.

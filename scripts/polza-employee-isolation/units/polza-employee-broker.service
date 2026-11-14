@@ -1,0 +1,29 @@
+[Unit]
+Description=Scoped employee model broker
+After=network-online.target
+[Service]
+User=pcw-broker
+Group=pcw-broker
+Environment=BROKER_CONFIG=/etc/polza-employees/broker.json
+Environment=BROKER_LEDGER=/var/lib/polza-broker/ledger.json
+ExecStart=/usr/local/bin/node /usr/local/lib/polza-employee-isolation/broker.mjs
+ExecStartPost=/usr/bin/python3 /usr/local/lib/polza-employee-isolation/ready.py
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/polza-broker
+UMask=0077
+MemoryMax=256M
+TasksMax=32
+Restart=on-failure
+[Install]
+WantedBy=multi-user.target

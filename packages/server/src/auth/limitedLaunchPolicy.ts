@@ -1,3 +1,4 @@
+import { DEDICATED_EMPLOYEE_RUNTIME } from "./dedicatedEmployeeRuntime.js";
 /**
  * Launch policy every process a limited user starts must obey.
  *
@@ -8,7 +9,8 @@
  * Project Queue dispatch. Routes that would launch without it are refused by
  * the route policy (auth/limitedUserPolicy.ts) rather than left open.
  *
- * - The session runs sandboxed, network firewall included. A new session is
+ * - A root-provisioned dedicated employee runtime uses its OS boundary.
+ *   Otherwise the session runs sandboxed, network firewall included. A new session is
  *   forced to `project-write` with the firewall on, and a request that
  *   explicitly turns the firewall off is refused; an existing session must
  *   already run that way, since its boundary was settled when it was created
@@ -157,13 +159,13 @@ export function limitNewSessionLaunch(
   if (hostEscape) return { error: hostEscape };
   const conflict = lockConflictError(grants.lock, body);
   if (conflict) return { error: conflict };
-  if (body.sandboxNetworkFirewall === false) {
+  if (!DEDICATED_EMPLOYEE_RUNTIME && body.sandboxNetworkFirewall === false) {
     return { error: FIREWALL_OPT_OUT_ERROR };
   }
 
-  // Sandbox is not the user's to clear.
-  body.sandboxLevel = "project-write";
-  body.sandboxNetworkFirewall = true;
+  // Only a verified root-provisioned OS boundary replaces the session sandbox.
+  body.sandboxLevel = DEDICATED_EMPLOYEE_RUNTIME ? "none" : "project-write";
+  body.sandboxNetworkFirewall = !DEDICATED_EMPLOYEE_RUNTIME;
   const { lock } = grants;
   if (lock.provider) body.provider = lock.provider;
   if (lock.model) body.model = lock.model;
@@ -182,14 +184,20 @@ export function limitExistingSessionLaunch(
   settings: ModelSettings,
   requested: LimitedLaunchRequest,
 ): { error: string } | null {
-  if (settings.sandboxLevel !== "project-write") {
+  if (
+    !DEDICATED_EMPLOYEE_RUNTIME &&
+    settings.sandboxLevel !== "project-write"
+  ) {
     return {
       error:
         "This session runs outside the sandbox, so this user cannot start it; start a new session instead",
     };
   }
   // Absent means on, as at every other launch (Supervisor, the resume route).
-  if (settings.sandboxNetworkFirewall === false) {
+  if (
+    !DEDICATED_EMPLOYEE_RUNTIME &&
+    settings.sandboxNetworkFirewall === false
+  ) {
     return {
       error:
         "This session runs without the sandbox network firewall, so this user cannot start it; start a new session instead",

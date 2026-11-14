@@ -1,0 +1,54 @@
+[Unit]
+Description=Isolated Cowork employee cto
+Requires=polza-employee-firewall.service polza-employee-broker.service
+After=network-online.target polza-employee-firewall.service polza-employee-broker.service
+BindsTo=polza-employee-firewall.service polza-employee-broker.service
+RequiresMountsFor=/var/lib/polza-employees/cto
+[Service]
+User=pcw-cto
+Group=pcw-cto
+WorkingDirectory=/var/lib/polza-employees/cto
+Environment=HOME=/var/lib/polza-employees/cto
+Environment=POLZA_EMPLOYEE_NAME=cto
+Environment=CODEX_HOME=/var/lib/polza-employees/cto/.codex
+Environment=YEP_DATA_DIR=/var/lib/polza-employees/cto/.yep-anywhere
+Environment=POLZA_EMPLOYEE_POLICY=/etc/polza-employees/cto.json
+Environment=HOST=127.0.0.1
+Environment=PORT=3412
+Environment=ALLOWED_HOSTS=cowork-cto.66.248.207.236.sslip.io
+Environment=PATH=/opt/polza-employee-runtime/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/polza-employees/cto.env
+ExecStart=/usr/local/bin/node /opt/polza-employee-runtime/yepanywhere/dist/index.js
+ExecStartPost=/usr/bin/python3 /usr/local/lib/polza-employee-isolation/probe.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+LogRateLimitIntervalSec=30s
+LogRateLimitBurst=200
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/polza-employees/cto
+BindReadOnlyPaths=/etc/polza-employees/resolv.conf:/etc/resolv.conf
+PrivateTmp=yes
+TemporaryFileSystem=/tmp:size=128M,mode=1777 /var/tmp:size=64M,mode=1777
+PrivateDevices=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SocketBindDeny=any
+SocketBindAllow=ipv4:tcp:3412
+TasksMax=160
+LimitNPROC=160
+MemoryMax=1200M
+CPUQuota=125%
+KillMode=control-group
+[Install]
+WantedBy=multi-user.target

@@ -1,3 +1,4 @@
+import { DEDICATED_EMPLOYEE_RUNTIME } from "./dedicatedEmployeeRuntime.js";
 /**
  * Resolve which project a session belongs to, who started it, whether it runs
  * sandboxed, and whether it is still fresh enough for a limited user's turn.
@@ -19,7 +20,8 @@ export interface SessionAccessFacts {
   lastActivityMs: number | null;
   createdByUser: string | undefined;
   /**
-   * Whether the session runs in the project-write sandbox with its network
+   * Whether the session has a verified dedicated OS boundary or runs in the
+   * project-write sandbox with its network
    * firewall on: what the live process enforces, else what its last launch
    * recorded. A firewall-off session is as far outside a limited user's
    * boundary as an unsandboxed one.
@@ -208,13 +210,14 @@ export class SessionAccessResolver {
         lastActivityMs: live.lastActivityMs ?? row?.updatedAtMs ?? null,
         createdByUser: metadata?.createdByUser,
         // What the running process enforces, whatever its metadata says.
-        sandboxed: live.sandboxed === true,
+        sandboxed: DEDICATED_EMPLOYEE_RUNTIME || live.sandboxed === true,
       };
     }
 
     const sandboxed =
-      metadata?.sandboxLevel === "project-write" &&
-      metadata.sandboxNetworkFirewall !== false;
+      DEDICATED_EMPLOYEE_RUNTIME ||
+      (metadata?.sandboxLevel === "project-write" &&
+        metadata.sandboxNetworkFirewall !== false);
     if (!row) {
       // A pinned project still identifies an otherwise unknown session.
       if (metadata?.workingProjectId) {

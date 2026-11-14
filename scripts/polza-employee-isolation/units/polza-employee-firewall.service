@@ -1,0 +1,9 @@
+[Unit]
+Description=Employee private-network egress boundary
+Before=polza-employee-broker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /usr/local/lib/polza-employee-isolation/firewall.py
+[Install]
+WantedBy=multi-user.target

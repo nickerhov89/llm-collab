@@ -1,3 +1,4 @@
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../auth/dedicatedEmployeeRuntime.js";
 import {
   type AgentAuthRouter,
   RouterUnavailable,
@@ -6405,13 +6406,13 @@ export class Supervisor {
 
   /**
    * An operator API token for a launch that may hold one: local and outside
-   * any YA session sandbox. A limited user's launch is always sandboxed.
+   * any YA session sandbox. Dedicated employee runtimes never receive one.
    */
   private agentServerAccessForLaunch(
     sandboxed: boolean,
     executor: string | undefined,
   ): AgentServerAccess | undefined {
-    if (sandboxed || executor) return undefined;
+    if (sandboxed || executor || DEDICATED_EMPLOYEE_RUNTIME) return undefined;
     return this.mintAgentServerAccess?.();
   }
 
