@@ -13,6 +13,7 @@ import {
   codexRouterEnvironment,
 } from "./router-transport.js";
 import { startAgentSelfSession } from "./agent-self.js";
+import { employeeCodexRouteArguments } from "./employee-codex-route.js";
 /**
  * Codex Provider implementation using codex app-server JSON-RPC.
  *
@@ -2893,6 +2894,7 @@ export class CodexProvider implements AgentProvider {
       this.getCodexEnv(),
       undefined,
       options.sessionSandbox,
+      await employeeCodexRouteArguments(options.sessionId),
     );
     appServer.setServerRequestHandler((request) =>
       this.handleForkServerRequest(request),
@@ -3082,6 +3084,9 @@ export class CodexProvider implements AgentProvider {
     skillInventory: CodexSessionSkillInventory,
   ): AsyncIterableIterator<SDKMessage> {
     const codexCommand = await this.resolveCodexCommand();
+    const employeeRouteArguments = await employeeCodexRouteArguments(
+      options.resumeSessionId,
+    );
     const {
       bridge: agentctlSessionEnvBridge,
       // Spawns must use this runtime: it also mounts the bridge directory.
@@ -3124,6 +3129,7 @@ export class CodexProvider implements AgentProvider {
           ? codexRouterArguments(options.routerLaunch)
           : []),
         ...(await codexSteerLaneArguments(codexEnv)),
+        ...employeeRouteArguments,
       ],
     );
     setActiveClient(appServer);
@@ -4758,7 +4764,10 @@ export class CodexProvider implements AgentProvider {
     // A resumed thread can carry a null effort override from an older model.
     // GPT-6 requires an explicit, supported effort on every turn.
     const effort =
-      (modelOverride ?? resolvedModel).trim().toLowerCase().startsWith("gpt-6") &&
+      (modelOverride ?? resolvedModel)
+        .trim()
+        .toLowerCase()
+        .startsWith("gpt-6") &&
       (requestedEffort == null || requestedEffort === "none")
         ? options.thinking?.type === "disabled"
           ? "low"
@@ -5051,6 +5060,7 @@ export class CodexProvider implements AgentProvider {
       this.getCodexEnv(),
       undefined,
       request.sessionSandbox,
+      await employeeCodexRouteArguments(request.generatorSessionId),
     );
     const abortController = new AbortController();
     let timedOut = false;

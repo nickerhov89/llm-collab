@@ -16,6 +16,9 @@ try {
   ledger = {};
 }
 const active = new Set();
+// Bound wire memory separately from model context. Native Codex histories and
+// tool schemas exceed 100 KB even when they fit the model's token window.
+const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
 let flush = Promise.resolve();
 const hash = (x) => createHash("sha256").update(x).digest("hex");
 const accounts = new Map(
@@ -69,8 +72,8 @@ const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > 100000) {
-        fail(res, 413, "Request exceeds employee context limit");
+      if (size > MAX_REQUEST_BYTES) {
+        fail(res, 413, "Request exceeds employee payload limit (2 MiB)");
         return;
       }
       chunks.push(chunk);

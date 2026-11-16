@@ -167,3 +167,30 @@ copying owner provider credentials. The effective scope remains the employee
 OS account; no additional isolation among projects of that same account is
 claimed. Regression cases exercise both dedicated resume/reactivate and the
 unchanged shared-server refusal paths.
+
+## Native provider identity on imported Codex chats
+
+Employee Codex processes retain the saved thread's native provider ID as a
+process-level alias. Every alias is explicitly routed to the same scoped
+employee broker at `127.0.0.1:3456`; endpoint, wire protocol and authentication
+are never inherited from imported history. New threads use `polza_employee`.
+This applies to resume, fork and fork-backed summary helpers. No transcript
+rewrite, account key transfer, model unlock or new user-facing chat is needed.
+Missing or invalid native identity fails before launching the provider.
+Owner/shared runtime routing is unchanged.
+
+This addresses the installed Codex 0.167.0 provider-selection check, which
+compares saved identity with current process config on resume and on input.
+The pinned 0.164.0 reference lacks that exact input check; both tagged source
+versions were inspected for this targeted deployment fix. This is not a full
+provider refresh or a new audited-through version declaration.
+
+The broker wire-size ceiling is 2 MiB, separately from the model's token
+window. The previous 100 KB ceiling rejected ordinary native history plus
+tool schemas. Daily dollar/call caps, reservation accounting, one active
+request per employee, model allowlist and output limits remain enforced.
+Oversized requests still receive 413; malformed or unauthorized routing is
+not retried through a different provider.
+Employee aliases also disable WebSocket transport (the broker implements
+HTTP/SSE only) and set native request/stream retries to zero. Broker deadlines
+and visible terminal errors govern failures instead of native retry cycles.
