@@ -976,6 +976,7 @@ export function createApp(options: AppOptions): AppResult {
         getHiddenProjectIds: (username) =>
           projectAppStore.hiddenProjectIds(username),
         sessionAccess: sessionAccessResolver,
+        getProcessSessionId: (id) => supervisor.getProcess(id)?.sessionId,
         getSuperuserIdentity: () =>
           options.remoteAccessService?.getUsername() ?? null,
         getCookieSessionUsername: async (c) =>

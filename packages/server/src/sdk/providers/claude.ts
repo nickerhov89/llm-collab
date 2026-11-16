@@ -2,10 +2,8 @@ import { routerModelSupportsThinking } from "@yep-anywhere/shared";
 import { claudeRouterEnvironment } from "./router-transport.js";
 import { startAgentSelfSession } from "./agent-self.js";
 import { DEDICATED_EMPLOYEE_RUNTIME } from "../../auth/dedicatedEmployeeRuntime.js";
-import {
-  EMPLOYEE_CLAUDE_MODEL,
-  employeeClaudeEnvironment,
-} from "./employee-claude-route.js";
+import { employeeModelId, employeeModels } from "./employee-models.js";
+import { employeeClaudeEnvironment } from "./employee-claude-route.js";
 import {
   type ChildProcess,
   type ChildProcessWithoutNullStreams,
@@ -1161,7 +1159,7 @@ export class ClaudeProvider implements AgentProvider {
 
   resolveLaunchModel(model: string | undefined): string | undefined {
     if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude")
-      return EMPLOYEE_CLAUDE_MODEL;
+      return employeeModelId(model);
     const resolved = this.cachedModels?.find(
       (entry) => entry.id === model,
     )?.resolvedModel;
@@ -1392,15 +1390,7 @@ export class ClaudeProvider implements AgentProvider {
     forceRefresh?: boolean;
   }): Promise<ModelInfo[]> {
     if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude")
-      return [
-        {
-          id: EMPLOYEE_CLAUDE_MODEL,
-          name: "Qwen3 Coder · OpenRouter",
-          description: "Scoped employee model for imported Claude histories",
-          contextWindow: 262144,
-          supportsEffort: false,
-        },
-      ];
+      return employeeModels();
     const forceRefresh = options?.forceRefresh === true;
     if (
       !forceRefresh &&
@@ -1499,7 +1489,7 @@ export class ClaudeProvider implements AgentProvider {
     return {
       ...filterEnvForChildProcess(),
       ...this.getSubagentDepthEnvironment(),
-      ...(this.name === "claude" ? employeeClaudeEnvironment() : {}),
+      ...(this.name === "claude" ? employeeClaudeEnvironment(_model) : {}),
     };
   }
 
@@ -2121,8 +2111,7 @@ export class ClaudeProvider implements AgentProvider {
         throw new Error("Employee Claude history uses the scoped model broker");
       options = {
         ...options,
-        model: EMPLOYEE_CLAUDE_MODEL,
-        thinking: { type: "disabled" },
+        model: employeeModelId(options.model),
       };
     }
     const log = getLogger();
@@ -2160,7 +2149,7 @@ export class ClaudeProvider implements AgentProvider {
         claudeRouterEnvironment(options.routerLaunch),
       );
     if (this.name === "claude")
-      Object.assign(baseClaudeEnv, employeeClaudeEnvironment());
+      Object.assign(baseClaudeEnv, employeeClaudeEnvironment(options.model));
     const claudeEnv = agentctlSessionEnvBridge
       ? agentctlSessionEnvBridge.extendEnv(baseClaudeEnv)
       : baseClaudeEnv;

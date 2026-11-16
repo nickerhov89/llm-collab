@@ -17,6 +17,44 @@ try {
   ledger = {};
 }
 const active = new Set();
+let models = [],
+  modelsAt = 0,
+  modelRefresh;
+async function catalog() {
+  if (models.length && Date.now() - modelsAt < 300000) return models;
+  if (!modelRefresh)
+    modelRefresh = (async () => {
+      const r = await fetch("https://openrouter.ai/api/v1/models", {
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!r.ok) throw new Error("Model catalog unavailable");
+      const d = await r.json();
+      const next = d.data.filter(
+        (m) =>
+          typeof m.id === "string" &&
+          !m.id.endsWith(":batch") &&
+          m.architecture?.output_modalities?.includes("text"),
+      );
+      if (!next.length) throw new Error("Empty model catalog");
+      if (!next.some((m) => m.id === "openrouter/auto"))
+        next.unshift({
+          id: "openrouter/auto",
+          name: "OpenRouter Auto",
+          context_length: 262144,
+        });
+      models = next;
+      modelsAt = Date.now();
+      return models;
+    })().finally(() => {
+      modelRefresh = undefined;
+    });
+  try {
+    return await modelRefresh;
+  } catch (e) {
+    if (models.length) return models;
+    throw e;
+  }
+}
 // Bound wire memory separately from model context. Native Codex histories and
 // tool schemas exceed 100 KB even when they fit the model's token window.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
@@ -48,11 +86,24 @@ const server = http.createServer(async (req, res) => {
   const account = accounts.get(hash(token));
   if (!account) return fail(res, 401, "Employee capability required");
   if (req.method === "GET" && req.url === "/v1/models") {
+    let rows;
+    try {
+      rows = await catalog();
+    } catch {
+      return fail(res, 503, "Model catalog unavailable");
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
         object: "list",
-        data: [{ id: cfg.model, object: "model", owned_by: "polza" }],
+        data: rows.map((m) => ({
+          id: m.id,
+          name: m.name,
+          object: "model",
+          owned_by: m.id.split("/")[0],
+          context_length: m.context_length,
+          supported_parameters: m.supported_parameters,
+        })),
       }),
     );
     return;
@@ -74,7 +125,7 @@ const server = http.createServer(async (req, res) => {
   const controller = new AbortController();
   res.on("close", () => controller.abort());
   const key = new Date().toISOString().slice(0, 10) + ":" + account.name;
-  const reserve = 0.1;
+  let reserve = 0;
   let admitted = false;
   let spent = reserve;
   try {
@@ -90,13 +141,15 @@ const server = http.createServer(async (req, res) => {
     }
     const input = JSON.parse(Buffer.concat(chunks).toString());
     if (
-      input.model !== cfg.model ||
       input.previous_response_id ||
       input.background ||
       input.store ||
       input.service_tier === "priority"
     )
       return fail(res, 403, "Model or state option unavailable");
+    const selected = (await catalog()).find((m) => m.id === input.model);
+    if (!selected)
+      return fail(res, 403, "Model is not available in the OpenRouter catalog");
     const allowed = anthropic
       ? [
           "model",
@@ -157,7 +210,55 @@ const server = http.createServer(async (req, res) => {
       body.store = false;
     }
     const entry = ledger[key] ?? { spent: 0, requests: 0 };
-    if (entry.spent + reserve > account.dailyLimit || entry.requests >= 300)
+    const remaining = account.dailyLimit - entry.spent;
+    const maxOutput = 2048;
+    const inputBound = Math.min(
+      selected.context_length ?? 2097152,
+      size +
+        (JSON.stringify(input).match(/"type":"(?:image|input_image)"/g) || [])
+          .length *
+          (selected.context_length ?? 2097152),
+    );
+    const promptPrice = Number(selected.pricing?.prompt);
+    const completionPrice = Number(selected.pricing?.completion);
+    const requestPrice = Number(selected.pricing?.request ?? 0);
+    const auto = input.model === "openrouter/auto";
+    if (
+      !Number.isFinite(requestPrice) ||
+      requestPrice < 0 ||
+      (!auto &&
+        (!Number.isFinite(promptPrice) ||
+          !Number.isFinite(completionPrice) ||
+          promptPrice < 0 ||
+          completionPrice < 0))
+    )
+      return reject(502, "Model pricing is unavailable");
+    const autoRate = Math.max(0, remaining) / (inputBound * 2 + maxOutput + 1);
+    body.provider = {
+      max_price: {
+        prompt: (auto ? autoRate : promptPrice) * 1e6,
+        completion: (auto ? autoRate : completionPrice) * 1e6,
+        request: auto ? 0 : requestPrice,
+      },
+    };
+    reserve = auto
+      ? remaining
+      : Math.max(
+          0.000001,
+          inputBound *
+            Math.max(
+              promptPrice * 2,
+              Number(selected.pricing?.input_cache_write ?? 0),
+            ) +
+            maxOutput * completionPrice +
+            requestPrice,
+        );
+    spent = reserve;
+    if (
+      remaining <= 0 ||
+      entry.spent + reserve > account.dailyLimit ||
+      entry.requests >= 300
+    )
       return reject(429, "Employee daily model limit reached");
     entry.spent += reserve;
     entry.requests++;

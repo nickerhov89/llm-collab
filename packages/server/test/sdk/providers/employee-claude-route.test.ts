@@ -21,7 +21,10 @@ beforeEach(() => {
   boundary.dedicated = true;
   vi.stubEnv("OPENAI_API_KEY", "scoped-synthetic-capability");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+});
 
 it("continues native Claude history under the same Qwen lock and broker capability", () => {
   const settings: ModelSettings = { providerName: "claude", model: "haiku" };
@@ -56,7 +59,7 @@ it("does not allow changing the model, choosing another provider or starting new
   );
 });
 
-it("does not turn an arbitrary provider lock into a Claude exception", () => {
+it("keeps configured model locks on the scoped native transport", () => {
   expect(
     limitExistingSessionLaunch(
       {
@@ -65,7 +68,7 @@ it("does not turn an arbitrary provider lock into a Claude exception", () => {
       { providerName: "claude" },
       {},
     ),
-  ).toHaveProperty("error");
+  ).toBeNull();
   expect(
     limitExistingSessionLaunch(
       grants,
@@ -115,10 +118,22 @@ it("normalizes a stale Ollama hint without relaxing the model lock", () => {
   ).toHaveProperty("error");
 });
 
-it("advertises only the scoped model and never offers an employee Claude OAuth login", async () => {
+it("advertises the broker catalog without an employee Claude OAuth login", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "qwen/qwen3-coder" }, { id: "x-ai/grok-4.7" }],
+          }),
+        ),
+    ),
+  );
   const provider = new ClaudeProvider();
   expect((await provider.getAvailableModels()).map((m) => m.id)).toEqual([
     "qwen/qwen3-coder",
+    "x-ai/grok-4.7",
   ]);
   expect(await provider.getLoginLaunch()).toBeNull();
 });

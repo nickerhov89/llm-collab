@@ -11,6 +11,8 @@ import {
   thinkingOptionToConfig,
 } from "@yep-anywhere/shared";
 import { Hono } from "hono";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../auth/dedicatedEmployeeRuntime.js";
+import { applyLimitedResumePolicy } from "../auth/limitedLaunchPolicy.js";
 import type { SessionIndexService } from "../indexes/index.js";
 import type { SessionMetadataService } from "../metadata/SessionMetadataService.js";
 import type { ProjectScanner } from "../projects/scanner.js";
@@ -480,6 +482,11 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
       return c.json({ error: "Process not found" }, 404);
     }
 
+    if (DEDICATED_EMPLOYEE_RUNTIME)
+      return c.json({
+        models:
+          (await getProvider(process.provider)?.getAvailableModels()) ?? [],
+      });
     const models = await process.supportedModels();
     if (models !== null) {
       return c.json({ models });
@@ -579,12 +586,22 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
       }
     }
 
+    const checked = {
+      ...updates,
+      providerName: process.provider,
+    };
+    const policy = applyLimitedResumePolicy(c, checked, {
+      model: body.model,
+      thinking: body.thinking,
+    });
+    if (policy.kind === "error") return c.json({ error: policy.error }, 403);
     let updatedProcess: Awaited<ReturnType<Supervisor["reconfigureProcess"]>>;
     try {
-      updatedProcess = await deps.supervisor.reconfigureProcess(
-        processId,
-        updates,
-      );
+      updatedProcess = await deps.supervisor.reconfigureProcess(processId, {
+        ...updates,
+        model: checked.model,
+        requestedModel: checked.requestedModel,
+      });
     } catch (error) {
       if (error instanceof SessionConfigurationConflictError) {
         return c.json({ error: error.message }, 409);
@@ -614,11 +631,18 @@ export function createProcessesRoutes(deps: ProcessesDeps): Hono {
     if (!process) {
       return c.json({ error: "Process not found" }, 404);
     }
+    const checked = {
+      providerName: process.provider,
+      model: body.model && body.model !== "default" ? body.model : undefined,
+      requestedModel: body.model,
+    };
+    const policy = applyLimitedResumePolicy(c, checked, { model: body.model });
+    if (policy.kind === "error") return c.json({ error: policy.error }, 403);
     let updatedProcess: Awaited<ReturnType<Supervisor["reconfigureProcess"]>>;
     try {
       updatedProcess = await deps.supervisor.reconfigureProcess(processId, {
-        model: body.model && body.model !== "default" ? body.model : undefined,
-        requestedModel: body.model,
+        model: checked.model,
+        requestedModel: checked.requestedModel,
       });
     } catch (error) {
       if (error instanceof SessionConfigurationConflictError) {

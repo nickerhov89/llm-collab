@@ -14,6 +14,8 @@ import {
 } from "./router-transport.js";
 import { startAgentSelfSession } from "./agent-self.js";
 import { employeeCodexRouteArguments } from "./employee-codex-route.js";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../../auth/dedicatedEmployeeRuntime.js";
+import { employeeModelId, employeeModels } from "./employee-models.js";
 /**
  * Codex Provider implementation using codex app-server JSON-RPC.
  *
@@ -1596,9 +1598,14 @@ export class CodexProvider implements AgentProvider {
    * Get available models for Codex cloud.
    * Queries Codex app-server's model/list endpoint with a static fallback.
    */
+  resolveLaunchModel(model: string | undefined): string | undefined {
+    return DEDICATED_EMPLOYEE_RUNTIME ? employeeModelId(model) : model;
+  }
+
   async getAvailableModels(options?: {
     forceRefresh?: boolean;
   }): Promise<ModelInfo[]> {
+    if (DEDICATED_EMPLOYEE_RUNTIME) return employeeModels();
     return this.installationCoordinator.withReadLease(
       CODEX_INSTALLATION_FAMILY,
       () => this.getAvailableModelsWithLease(options?.forceRefresh === true),
@@ -3083,6 +3090,8 @@ export class CodexProvider implements AgentProvider {
     ) => void,
     skillInventory: CodexSessionSkillInventory,
   ): AsyncIterableIterator<SDKMessage> {
+    if (DEDICATED_EMPLOYEE_RUNTIME)
+      options = { ...options, model: employeeModelId(options.model) };
     const codexCommand = await this.resolveCodexCommand();
     const employeeRouteArguments = await employeeCodexRouteArguments(
       options.resumeSessionId,

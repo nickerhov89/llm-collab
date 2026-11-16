@@ -23,3 +23,11 @@ Polza VPS layout; they are not generic or safe-to-rerun bootstrap commands.
 Retain `/etc/polza-employees`, nft policy, loop mounts, SSH DenyUsers and complete
 systemd hardening together. Copying only the TypeScript opt-in is insufficient.
 Never commit capability tokens, broker.json, password cards or real transcripts.
+
+Employee model policy (2026-11-16): the native provider lock preserves the Codex
+transport for new sessions, while employees may choose any OpenRouter text model
+listed by the scoped broker, including on compatible imported Claude histories.
+Qwen remains the initial default, not a model lock. The server retains each
+account's $2/day budget, call/output/payload caps and isolated runtime. Model
+changes require join access to the process's project; no operator-wide grant is
+given. Never copy owner OAuth credentials into employee homes.

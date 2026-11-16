@@ -241,3 +241,27 @@ the original business draft was not edited. Diagnostics used a temporary clone
 which was archived afterward. Scoped cache repair and shared-runtime behavior
 are covered by an integration fixture with unchanged transcript bytes and no
 repeated parsing after the repair.
+
+### All employee models — authorized policy update, 2026-11-16
+
+The owner's explicit instruction supersedes the earlier Qwen-only policy for
+ceo/cfo/cto/marker. Their model locks are removed; the provider transport lock
+remains. The scoped broker exposes the OpenRouter text-model catalog (383 models
+observed), validates selected IDs, and routes both native wire formats to the
+chosen model. Qwen remains the default for old aliases and new sessions.
+
+Dedicated employee model/config process APIs now resolve their process to its
+session and require join access to that session's project. Unknown processes,
+other projects, view-only grants and other operator APIs remain denied. Shared
+runtimes retain their existing operator policy. This fixes Auto's pre-send model
+change being rejected as an operator action.
+
+The existing $2/day per-account budget remains. Reservations and server-owned
+OpenRouter price ceilings depend on the selected model's pricing; caller price
+overrides are ignored. Unknown completion costs retain the reservation. No owner
+OAuth, upstream key, host administration or cross-user access is granted.
+
+Deployment backup: /root/polza-all-employee-models-20261116/ (private; includes
+authentication state). All four realms passed 116 isolation checks in total.
+Server validation: 286 tests passed, 5 existing skips; broker HTTP fixture also
+passed, including alternate-model forwarding and price override rejection.

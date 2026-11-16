@@ -23,6 +23,7 @@ import {
   verifyActingUser,
 } from "../auth/principal.js";
 import type { SessionAccessResolver } from "../auth/sessionAccess.js";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../auth/dedicatedEmployeeRuntime.js";
 import {
   type FilteredListKind,
   decideLimitedRoute,
@@ -36,6 +37,7 @@ import {
 import { WS_INTERNAL_AUTHENTICATED } from "./internal-auth.js";
 
 export interface LimitedUsersMiddlewareOptions {
+  getProcessSessionId?: (processId: string) => string | undefined;
   /**
    * Grants for a limited user who may act now: null when the feature is off
    * or the user is unknown or disabled. With the feature off no login other
@@ -349,10 +351,29 @@ export function createLimitedUsersMiddleware(
 
     // The routed path, not `new URL(c.req.url).pathname`: Hono matches
     // handlers against the percent-decoded path.
-    const decision = decideLimitedRoute({
+    let decision = decideLimitedRoute({
       method: c.req.method,
       path: c.req.path,
     });
+    const modelProcess =
+      DEDICATED_EMPLOYEE_RUNTIME &&
+      c.req.path.match(/^\/api\/processes\/([^/]+)\/(model|config|models)$/);
+    if (
+      modelProcess &&
+      ((c.req.method === "POST" && modelProcess[2] !== "models") ||
+        (c.req.method === "GET" && modelProcess[2] === "models"))
+    ) {
+      const sessionId = options.getProcessSessionId?.(
+        modelProcess[1] as string,
+      );
+      if (!sessionId) return c.json({ error: "Process not found" }, 404);
+      decision = {
+        kind: "session",
+        sessionId,
+        required: "join",
+        startsTurn: false,
+      };
+    }
 
     const isAccessible = (projectId: string) =>
       levelFor(principal.grants, projectId) !== "none";

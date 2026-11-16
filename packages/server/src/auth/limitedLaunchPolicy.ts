@@ -211,7 +211,6 @@ export function limitExistingSessionLaunch(
   const scopedLegacyClaude =
     DEDICATED_EMPLOYEE_RUNTIME &&
     grants.lock.provider === "codex" &&
-    grants.lock.model === "qwen/qwen3-coder" &&
     (settings.providerName === "claude" ||
       settings.providerName === "claude-ollama");
   if (scopedLegacyClaude) settings.providerName = "claude";

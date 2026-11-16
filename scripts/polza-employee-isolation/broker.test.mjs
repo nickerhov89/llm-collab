@@ -19,6 +19,7 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
       accounts: {
         marker: { token: "synthetic-capability", dailyLimit: 0 },
         bridge: { token: "bridge-capability", dailyLimit: 1 },
+        second: { token: "second-capability", dailyLimit: 1 },
       },
     }),
   );
@@ -37,6 +38,20 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
   );
   const upstreamBodies = [];
   const upstream = http.createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/models") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          data: ["allowed-model", "second-model"].map((id) => ({
+            id,
+            architecture: { output_modalities: ["text"] },
+            context_length: 262144,
+            pricing: { prompt: "0.000001", completion: "0.000001" },
+          })),
+        }),
+      );
+      return;
+    }
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
     upstreamBodies.push({
@@ -59,7 +74,7 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
   await writeFile(
     fixture,
     source
-      .replace(
+      .replaceAll(
         "https://openrouter.ai/api/v1/",
         `http://127.0.0.1:${upstream.address().port}/`,
       )
@@ -189,6 +204,17 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
     assert.deepEqual(upstreamBodies[0].body.messages[0].content, [
       { type: "text", text: "Preserve this system update" },
     ]);
+    const alternate = await call(
+      {
+        model: "second-model",
+        input: "OK",
+        provider: { max_price: { prompt: 999 } },
+      },
+      "second-capability",
+    );
+    assert.equal(alternate.status, 200);
+    assert.equal(upstreamBodies[1].body.model, "second-model");
+    assert.equal(upstreamBodies[1].body.provider.max_price.prompt, 1);
   } finally {
     const exited = once(child, "exit");
     child.kill();
