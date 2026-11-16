@@ -1029,6 +1029,20 @@ export class Supervisor {
     projectPath: string,
     modelSettings: ModelSettings | undefined,
   ): { projectPath: string; modelSettings: ModelSettings | undefined } {
+    // Dedicated employee services already enforce a root-provisioned OS
+    // boundary. Imported session metadata may still name a nested sandbox;
+    // it cannot launch inside that service's namespace restrictions.
+    if (DEDICATED_EMPLOYEE_RUNTIME) {
+      return {
+        projectPath,
+        modelSettings: {
+          ...modelSettings,
+          sandboxLevel: "none",
+          sandboxNetworkFirewall: false,
+          sandboxStateKey: undefined,
+        },
+      };
+    }
     const settled = this.sessionMetadataService?.getMetadata(sessionId);
     if (settled?.sandboxLevel !== "project-write") {
       return { projectPath, modelSettings };

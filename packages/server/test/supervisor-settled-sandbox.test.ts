@@ -8,6 +8,12 @@ import { Supervisor } from "../src/supervisor/Supervisor.js";
 // under. A sandboxed request stops there, so no real Bubblewrap is needed;
 // an unsandboxed one proceeds to the provider, which refuses it.
 const sandboxRequests = vi.hoisted(() => [] as PrepareSessionSandboxOptions[]);
+const employeeRuntime = vi.hoisted(() => ({ dedicated: false }));
+vi.mock("../src/auth/dedicatedEmployeeRuntime.js", () => ({
+  get DEDICATED_EMPLOYEE_RUNTIME() {
+    return employeeRuntime.dedicated;
+  },
+}));
 vi.mock("../src/session-sandbox.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../src/session-sandbox.js")>();
@@ -72,6 +78,7 @@ describe("Supervisor settled session sandbox", () => {
 
   beforeEach(() => {
     sandboxRequests.length = 0;
+    employeeRuntime.dedicated = false;
     supervisor = new Supervisor({
       provider: refusingProvider(),
       sessionMetadataService: metadataService(),
@@ -164,6 +171,43 @@ describe("Supervisor settled session sandbox", () => {
       }),
     ]);
   });
+
+  it.each(["resume", "reactivate"] as const)(
+    "uses the verified employee OS boundary for an imported sandbox on %s",
+    async (action) => {
+      employeeRuntime.dedicated = true;
+      const settings = {
+        providerName: "claude" as const,
+        sandboxLevel: "project-write" as const,
+        sandboxNetworkFirewall: true,
+        sandboxStateKey: "imported-old-key",
+      };
+      const launch =
+        action === "resume"
+          ? supervisor.resumeSession(
+              SANDBOXED,
+              "/srv/private-project",
+              { text: "test" },
+              undefined,
+              settings,
+            )
+          : supervisor.reactivateSession(
+              "/srv/private-project",
+              SANDBOXED,
+              undefined,
+              settings,
+            );
+      await expect(launch).rejects.toThrow("unsandboxed-launch");
+      expect(sandboxRequests).toEqual([
+        expect.objectContaining({
+          level: "none",
+          networkFirewall: false,
+          stateKey: undefined,
+          projectPath: "/srv/private-project",
+        }),
+      ]);
+    },
+  );
 
   it("leaves an unsandboxed session's launch unchanged", async () => {
     await expect(

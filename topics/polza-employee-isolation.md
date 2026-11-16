@@ -149,3 +149,21 @@ at their existing sslip hosts because only the common hostname has DNS for
 this VPS. No wildcard or employee DNS records were assumed or modified.
 Live HTTPS owner login, four-realm administration, media status, secure
 cookies and authenticated WebSocket frames were verified on the new domain.
+
+## Imported-session resume inside the dedicated boundary
+
+Existing sessions resumed or reactivated in a verified dedicated employee
+service use that service's OS boundary. Legacy imported `project-write`,
+network-firewall and sandbox-state settings are normalized at the Supervisor
+resume boundary instead of attempting a nested Bubblewrap/slirp namespace.
+The caller's current private project path is preserved, not an imported
+sandbox path. The opt-in still requires the root-owned policy and matching
+UID/HOME/systemd cgroup. No HTTP option enables it.
+
+Ordinary shared-server sessions retain their frozen sandbox rules and continue
+to reject attempts to weaken them. This does not authorize dropping sandbox
+requirements on the owner/shared instance, changing employee model locks or
+copying owner provider credentials. The effective scope remains the employee
+OS account; no additional isolation among projects of that same account is
+claimed. Regression cases exercise both dedicated resume/reactivate and the
+unchanged shared-server refusal paths.
