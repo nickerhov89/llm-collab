@@ -14,3 +14,16 @@
     min-height: 48px;
   }
 }
+
+.modelSearch {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 8px;
+  padding: 10px 12px;
+  min-height: 44px;
+  border: 1px solid #dedfe2;
+  border-radius: 8px;
+  background: #fff;
+  color: #26282c;
+  font: inherit;
+}

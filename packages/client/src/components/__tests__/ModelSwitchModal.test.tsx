@@ -123,6 +123,50 @@ describe("ModelSwitchModal", () => {
     expect(mockSetProcessConfig).not.toHaveBeenCalled();
   });
 
+  it("searches a large gateway catalog and applies the selected ID to the same process", async () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    mockGetProcessModels.mockResolvedValue({
+      models: [
+        ...Array.from({ length: 320 }, (_, i) => ({
+          id: `vendor/model-${i}`,
+          name: `Catalog model ${i}`,
+        })),
+        { id: "qwen/coder", name: "Qwen Coder" },
+      ],
+    });
+    mockGetProcessInfo.mockResolvedValue({
+      process: {
+        model: "qwen/coder",
+        provider: "claude-gateway",
+        effort: "high",
+      },
+    });
+    const onClose = vi.fn();
+    render(
+      <ModelSwitchModal
+        sessionId="session-1"
+        processId="process-1"
+        sessionProvider="claude-gateway"
+        onModelChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByRole("button", { name: "Catalog model 319" });
+    const search = screen.getByRole("searchbox", { name: "modelSwitchSearch" });
+    fireEvent.change(search, { target: { value: "QWEN/CO" } });
+    expect(
+      screen.queryByRole("button", { name: "Catalog model 319" }),
+    ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Qwen Coder/ }));
+    await waitFor(() =>
+      expect(mockSetProcessConfig).toHaveBeenCalledWith(
+        "process-1",
+        expect.objectContaining({ model: "qwen/coder" }),
+      ),
+    );
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("resets the shared modal scroller when switching tabs", () => {
     render(
       <ModelSwitchModal

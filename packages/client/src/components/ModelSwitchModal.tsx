@@ -141,6 +141,15 @@ export function ModelSwitchModal({
   const [autoModel, setAutoModel] = usePolzaAutoModel(sessionId);
   const { setThinkingMode, setEffortLevel } = useModelSettings();
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [modelQuery, setModelQuery] = useState("");
+  const filteredModels = useMemo(() => {
+    const query = modelQuery.trim().toLowerCase();
+    return query
+      ? models.filter((model) =>
+          `${model.id} ${model.name}`.toLowerCase().includes(query),
+        )
+      : models;
+  }, [models, modelQuery]);
   const [provider, setProvider] = useState<ProviderName | null>(null);
   const { usage: subscriptionUsage } = useProviderSubscriptionUsage(provider);
   const [loading, setLoading] = useState(true);
@@ -667,6 +676,14 @@ export function ModelSwitchModal({
             {switchError}
           </div>
         )}
+        <input
+          className={styles.modelSearch}
+          type="search"
+          aria-label={t("modelSwitchSearch")}
+          placeholder={t("modelSwitchSearch")}
+          value={modelQuery}
+          onChange={(event) => setModelQuery(event.target.value)}
+        />
         {loading ? (
           <div className="polza-model-menu-message">
             {t("modelSwitchLoading")}
@@ -698,7 +715,12 @@ export function ModelSwitchModal({
           </div>
         ) : (
           <div className="polza-model-menu-list">
-            {models.map((model) => (
+            {filteredModels.length === 0 && (
+              <div className="polza-model-menu-message">
+                {t("modelSwitchNoMatches")}
+              </div>
+            )}
+            {filteredModels.map((model) => (
               <button
                 key={model.id}
                 type="button"

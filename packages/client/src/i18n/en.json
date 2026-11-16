@@ -2742,6 +2742,8 @@
   "longContextEffortWarningApply": "Change anyway",
   "longContextEffortWarningNoEffort": "provider default",
   "longContextEffortWarningForkFailed": "Failed to fork at the new effort: {message}",
+  "modelSwitchSearch": "Search models",
+  "modelSwitchNoMatches": "No matching models",
   "modelSwitchLoading": "Loading models...",
   "modelSwitchEmpty": "No models available",
   "modelSwitchActivate": "Activate",
