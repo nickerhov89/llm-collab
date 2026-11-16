@@ -98,3 +98,14 @@ restart the affected services to roll back, reconciling newer edits first.
 Caddy's admin API is disabled here: validated restart is used, not reload.
 Employee Linux services and origins are unaffected; personal realm cookies
 remain host-only. Changing the owner browser origin requires signing in again.
+
+## Personal landing page
+
+A successful handoff to an employee realm now opens `/projects`, including
+when the owner administratively opens that realm. It does not visit `/` and
+therefore does not trigger the app's automatic new-session/project selection.
+Owner-origin sign-in still opens `/`. The destination is a server-selected
+relative path stored in the one-use ticket, never a client-supplied redirect.
+Personal branded domains (`<role>.cowork.polza-portal.ru`) were discussed but
+deferred by the user; keep current employee sslip origins until explicitly
+resumed with published DNS. Do not assume those personal DNS records exist.

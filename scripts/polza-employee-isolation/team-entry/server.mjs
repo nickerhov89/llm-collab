@@ -113,7 +113,12 @@ function handoff(r, session) {
   for (const [id, t] of tickets) if (t.expires < Date.now()) tickets.delete(id);
   if (tickets.size >= 200) throw Error("Too many pending logins");
   const id = token();
-  tickets.set(id, { host: r.host, session, expires: Date.now() + 45000 });
+  tickets.set(id, {
+    host: r.host,
+    session,
+    next: r.host === owner.host ? "/" : "/projects",
+    expires: Date.now() + 45000,
+  });
   return `https://${r.host}/team-entry#${id}`;
 }
 async function requireOwner(req) {
@@ -197,7 +202,7 @@ const server = http.createServer(async (req, res) => {
           "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
       });
       return res.end(
-        `<!doctype html><meta charset="utf-8"><title>Cowork — вход</title><p id="s">Открываем кабинет…</p><script>const ticket=location.hash.slice(1);history.replaceState(null,'','/team-entry');fetch('/team-entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})}).then(async r=>{if(!r.ok)throw Error();location.replace('/')}).catch(()=>{document.getElementById('s').textContent='Ссылка входа истекла. Вернитесь на общую страницу Cowork и войдите заново.'})</script>`,
+        `<!doctype html><meta charset="utf-8"><title>Cowork — вход</title><p id="s">Открываем кабинет…</p><script>const ticket=location.hash.slice(1);history.replaceState(null,'','/team-entry');fetch('/team-entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket})}).then(async r=>{if(!r.ok)throw Error();const result=await r.json();location.replace(result.next)}).catch(()=>{document.getElementById('s').textContent='Ссылка входа истекла. Вернитесь на общую страницу Cowork и войдите заново.'})</script>`,
       );
     }
     if (req.method === "POST" && path === "/team-entry") {
@@ -214,7 +219,7 @@ const server = http.createServer(async (req, res) => {
         "yep-anywhere-desktop-session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
         "yep-anywhere-acting-user=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax",
       ]);
-      return reply(res, 200, { success: true });
+      return reply(res, 200, { success: true, next: stored.next });
     }
     if (host !== owner.host) return reply(res, 404, { error: "Not found" });
     if (req.method === "GET" && (path === "/team" || path === "/team/")) {

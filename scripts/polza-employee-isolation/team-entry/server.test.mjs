@@ -204,6 +204,11 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
   );
   r = await call("/team-entry", { host: "marker.test", body: { ticket } });
   assert.equal(r.status, 200);
+  assert.equal(
+    (await r.json()).next,
+    "/projects",
+    "Staff lands on project overview rather than an arbitrary new session",
+  );
   const cookies = r.headers.getSetCookie();
   const staff = cookies[0].split(";")[0];
   assert.match(cookies[0], /Secure/);
