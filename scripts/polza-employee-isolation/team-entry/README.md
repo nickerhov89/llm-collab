@@ -1,6 +1,9 @@
 # Unified Polza team entry (deployment opt-in)
 
-Public entry: `https://cowork.66.248.207.236.sslip.io/team`.
+Public entry: `https://cowork.polza-portal.ru/team`.
+The previous owner sslip origin redirects here; private employee origins are
+unchanged. The new owner domain is an explicit deployment migration, not an
+upstream endpoint default.
 This is an optional front door for the existing separate Linux realms. It does
 not combine their processes, data, app cookies, browser storage or permissions.
 After login it redirects to the correct private origin. Existing direct URLs
@@ -81,3 +84,17 @@ work while its root/Tasker HTML proxies to a nonexistent Vite port and returns
 verify actual SPA rendering, not just API auth or a URL transition. Final live
 verification repeated all 116 OS checks after this fix and rendered marker
 Tasker/Cowork under the limited acting principal with accountKey user:marker.
+
+
+## Owner domain migration — 2026-11-16
+
+`migrate-domain-20261116.py` is a dated, FIRST-RUN root migration for this VPS.
+It verifies DNS, snapshots config/ownership into /root/polza-domain-20261116,
+validates staged Caddy config, updates owner Host/Origin and agent origins,
+restarts owner/media/team services and publishes the canonical domain with an
+old-origin 308 redirect. It refuses an existing backup directory; do not rerun
+it over later changes. Restore the private manifest's files/permissions and
+restart the affected services to roll back, reconciling newer edits first.
+Caddy's admin API is disabled here: validated restart is used, not reload.
+Employee Linux services and origins are unaffected; personal realm cookies
+remain host-only. Changing the owner browser origin requires signing in again.

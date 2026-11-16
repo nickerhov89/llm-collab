@@ -136,3 +136,16 @@ observable auth/handoff contract, trust boundaries, tests and rollback.
 This opt-in front door does not close the generic desktop-session fallback gap
 in all shared installations; it prevents that inheritance in its own sign-in
 flow while preserving the separate OS boundaries.
+
+
+## Canonical owner domain — 2026-11-16
+
+The common entry is now https://cowork.polza-portal.ru/team; the previous
+cowork.66.248.207.236.sslip.io origin redirects with HTTP 308. Owner Host/Origin
+allowlists, media origin, active media agent configs and team owner mapping
+were migrated together. Existing passwords and server Tasker/chat data stay
+unchanged; browsers need a new-domain login. Employee origins stay separate
+at their existing sslip hosts because only the common hostname has DNS for
+this VPS. No wildcard or employee DNS records were assumed or modified.
+Live HTTPS owner login, four-realm administration, media status, secure
+cookies and authenticated WebSocket frames were verified on the new domain.

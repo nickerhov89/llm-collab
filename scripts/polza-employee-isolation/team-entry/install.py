@@ -6,7 +6,7 @@ except KeyError:subprocess.run(['useradd','--system','--uid','2011','--home-dir'
 assert account.pw_uid==2011
 folder=Path('/etc/polza-team');folder.mkdir(mode=0o750,exist_ok=True);os.chown(folder,0,account.pw_gid)
 items=json.loads(Path('/root/polza-isolation-20261114/inventory.json').read_text());cards=json.loads(Path('/root/polza-isolation-20261114/admin-access.json').read_text())
-realms={'owner':{'host':'cowork.66.248.207.236.sslip.io','port':3401,'frontPort':3400,'label':'Владелец'}}
+realms={'owner':{'host':'cowork.polza-portal.ru','port':3401,'frontPort':3400,'label':'Владелец'}}
 labels={'ceo':'Директор','cfo':'Финансы','cto':'Технический отдел','marker':'Маркетолог'}
 for i in items:
  card=next(c for c in cards if c['employee']==i['username']);realms[i['username']]={'host':i['host'],'port':i['port'],'label':labels[i['username']],'adminPassword':card['adminPassword']}
