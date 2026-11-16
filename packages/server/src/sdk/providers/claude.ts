@@ -1,6 +1,11 @@
 import { routerModelSupportsThinking } from "@yep-anywhere/shared";
 import { claudeRouterEnvironment } from "./router-transport.js";
 import { startAgentSelfSession } from "./agent-self.js";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../../auth/dedicatedEmployeeRuntime.js";
+import {
+  EMPLOYEE_CLAUDE_MODEL,
+  employeeClaudeEnvironment,
+} from "./employee-claude-route.js";
 import {
   type ChildProcess,
   type ChildProcessWithoutNullStreams,
@@ -1155,6 +1160,8 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   resolveLaunchModel(model: string | undefined): string | undefined {
+    if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude")
+      return EMPLOYEE_CLAUDE_MODEL;
     const resolved = this.cachedModels?.find(
       (entry) => entry.id === model,
     )?.resolvedModel;
@@ -1212,6 +1219,10 @@ export class ClaudeProvider implements AgentProvider {
    */
   async getAuthStatus(): Promise<AuthStatus> {
     const installed = await this.isClaudeCliInstalled();
+    if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude") {
+      const authenticated = installed && Boolean(process.env.OPENAI_API_KEY);
+      return { installed, authenticated, enabled: authenticated };
+    }
     if (!installed) {
       return this.withLoginCommand({
         installed: false,
@@ -1285,6 +1296,7 @@ export class ClaudeProvider implements AgentProvider {
   }
 
   async getLoginLaunch(): Promise<ProviderLoginLaunch | null> {
+    if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude") return null;
     // Gateway and Ollama variants authenticate through their own services.
     if (this.name !== "claude") return null;
     const executable = await resolveClaudeLoginExecutable();
@@ -1379,6 +1391,16 @@ export class ClaudeProvider implements AgentProvider {
   async getAvailableModels(options?: {
     forceRefresh?: boolean;
   }): Promise<ModelInfo[]> {
+    if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude")
+      return [
+        {
+          id: EMPLOYEE_CLAUDE_MODEL,
+          name: "Qwen3 Coder · OpenRouter",
+          description: "Scoped employee model for imported Claude histories",
+          contextWindow: 262144,
+          supportsEffort: false,
+        },
+      ];
     const forceRefresh = options?.forceRefresh === true;
     if (
       !forceRefresh &&
@@ -1477,6 +1499,7 @@ export class ClaudeProvider implements AgentProvider {
     return {
       ...filterEnvForChildProcess(),
       ...this.getSubagentDepthEnvironment(),
+      ...(this.name === "claude" ? employeeClaudeEnvironment() : {}),
     };
   }
 
@@ -2093,6 +2116,15 @@ export class ClaudeProvider implements AgentProvider {
   private async startSessionInternal(
     options: StartSessionOptions,
   ): Promise<AgentSession> {
+    if (DEDICATED_EMPLOYEE_RUNTIME && this.name === "claude") {
+      if (options.routerLaunch)
+        throw new Error("Employee Claude history uses the scoped model broker");
+      options = {
+        ...options,
+        model: EMPLOYEE_CLAUDE_MODEL,
+        thinking: { type: "disabled" },
+      };
+    }
     const log = getLogger();
     const queue = new MessageQueue();
     const abortController = new AbortController();
@@ -2127,6 +2159,8 @@ export class ClaudeProvider implements AgentProvider {
         baseClaudeEnv,
         claudeRouterEnvironment(options.routerLaunch),
       );
+    if (this.name === "claude")
+      Object.assign(baseClaudeEnv, employeeClaudeEnvironment());
     const claudeEnv = agentctlSessionEnvBridge
       ? agentctlSessionEnvBridge.extendEnv(baseClaudeEnv)
       : baseClaudeEnv;

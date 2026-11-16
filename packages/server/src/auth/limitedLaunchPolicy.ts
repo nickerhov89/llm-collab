@@ -205,11 +205,28 @@ export function limitExistingSessionLaunch(
   }
   const hostEscape = hostEscapeError(settings);
   if (hostEscape) return { error: hostEscape };
-  const conflict = lockConflictError(grants.lock, requested);
+  // Existing Claude transcripts keep their native transport, whose dedicated
+  // runtime pins every launch to the same scoped Qwen broker. This grants no
+  // Anthropic account and does not permit new Claude sessions or other models.
+  const scopedLegacyClaude =
+    DEDICATED_EMPLOYEE_RUNTIME &&
+    grants.lock.provider === "codex" &&
+    grants.lock.model === "qwen/qwen3-coder" &&
+    settings.providerName === "claude";
+  const conflict = lockConflictError(
+    grants.lock,
+    scopedLegacyClaude && requested.provider === "claude"
+      ? { ...requested, provider: "codex" }
+      : requested,
+  );
   if (conflict) return { error: conflict };
 
   const { lock } = grants;
-  if (lock.provider && settings.providerName !== lock.provider) {
+  if (
+    lock.provider &&
+    settings.providerName !== lock.provider &&
+    !scopedLegacyClaude
+  ) {
     return {
       error: `This session uses a provider other than "${lock.provider}", which this user is limited to`,
     };

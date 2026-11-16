@@ -194,3 +194,30 @@ not retried through a different provider.
 Employee aliases also disable WebSocket transport (the broker implements
 HTTP/SSE only) and set native request/stream retries to zero. Broker deadlines
 and visible terminal errors govern failures instead of native retry cycles.
+
+## Legacy Claude histories — 16 November 2026
+
+Imported native Claude transcripts can now continue in their original session
+through the scoped Qwen/OpenRouter broker's Anthropic Messages transport.
+This does not authorize an Anthropic subscription or copy an owner credential.
+The limited-user compatibility exception applies only to existing `claude`
+histories inside a verified dedicated runtime whose lock is Codex plus
+`qwen/qwen3-coder`. Explicit other models, remote executors, gateway variants
+and new Claude sessions remain refused. The native Claude runtime pins model
+and environment even for the private realm's admin; owner/shared auth and
+routing are unchanged. Its catalog advertises Qwen, and it offers no Claude
+OAuth login in this mode.
+
+The broker shares the same actor budget, active-request slot, call/output and
+payload caps between both wire formats. Messages accepts local function tools,
+not hosted tools or arbitrary state/fallback options. Claude Code's inline and
+by-reference tool additions/removals are materialized into the final active
+function-tool inventory for Qwen. Other history text and tool-use/result rows
+are preserved; the native transcript is not rewritten. Unknown references fail
+closed. Anthropic-transport quota/upstream failures use 424 so the native CLI
+cannot turn them into hidden 429/5xx retry cycles.
+
+Two consecutive real replies were verified on a temporary clone of the exact
+failing Telegram chat under limited `marker`. The clone was archived and the
+original session reactivated without a diagnostic prompt. The shared Telegram
+profile itself also passed a read-only check under the real marker UID.

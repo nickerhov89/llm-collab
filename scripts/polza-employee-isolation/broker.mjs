@@ -2,6 +2,7 @@ import http from "node:http";
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { materializeEmployeeTools } from "./anthropic-employee-payload.mjs";
 const cfg = JSON.parse(await readFile(process.env.BROKER_CONFIG, "utf8"));
 const ledgerFile = process.env.BROKER_LEDGER;
 await mkdir(new URL(".", `file://${ledgerFile}`).pathname, {
@@ -56,10 +57,19 @@ const server = http.createServer(async (req, res) => {
     );
     return;
   }
-  if (req.method !== "POST" || req.url !== "/v1/responses")
+  const anthropic = req.url?.split("?")[0] === "/v1/messages";
+  // Claude Code retries 429/5xx internally. Scoped denials/timeouts require
+  // an explicit human retry, as in the employee Codex transport policy.
+  const reject = (status, error) =>
+    fail(
+      res,
+      anthropic && (status === 429 || status === 502) ? 424 : status,
+      error,
+    );
+  if (req.method !== "POST" || (!anthropic && req.url !== "/v1/responses"))
     return fail(res, 403, "Endpoint unavailable");
   if (active.has(account.name))
-    return fail(res, 429, "One model request at a time");
+    return reject(429, "One model request at a time");
   active.add(account.name);
   const controller = new AbortController();
   res.on("close", () => controller.abort());
@@ -87,58 +97,95 @@ const server = http.createServer(async (req, res) => {
       input.service_tier === "priority"
     )
       return fail(res, 403, "Model or state option unavailable");
-    const allowed = [
-      "model",
-      "input",
-      "instructions",
-      "tools",
-      "tool_choice",
-      "parallel_tool_calls",
-      "stream",
-      "temperature",
-      "top_p",
-      "text",
-      "reasoning",
-      "include",
-      "truncation",
-      "prompt_cache_key",
-    ];
-    const body = Object.fromEntries(
+    const allowed = anthropic
+      ? [
+          "model",
+          "messages",
+          "system",
+          "tools",
+          "tool_choice",
+          "stream",
+          "temperature",
+          "top_p",
+          "top_k",
+          "stop_sequences",
+        ]
+      : [
+          "model",
+          "input",
+          "instructions",
+          "tools",
+          "tool_choice",
+          "parallel_tool_calls",
+          "stream",
+          "temperature",
+          "top_p",
+          "text",
+          "reasoning",
+          "include",
+          "truncation",
+          "prompt_cache_key",
+        ];
+    let body = Object.fromEntries(
       allowed.filter((k) => k in input).map((k) => [k, input[k]]),
     );
+    if (anthropic) {
+      try {
+        body = materializeEmployeeTools(body);
+      } catch {
+        return fail(res, 400, "Unsupported employee tool history");
+      }
+    }
     const safeTool = (t) =>
-      ["function", "custom"].includes(t.type) ||
-      (t.type === "namespace" &&
-        Array.isArray(t.tools) &&
-        t.tools.every(safeTool));
+      anthropic
+        ? (!t.type || t.type === "custom") &&
+          typeof t.name === "string" &&
+          t.input_schema?.type === "object"
+        : ["function", "custom"].includes(t.type) ||
+          (t.type === "namespace" &&
+            Array.isArray(t.tools) &&
+            t.tools.every(safeTool));
     if (Array.isArray(body.tools))
       body.tools = body.tools.filter(
         (t) => !["web_search", "web_search_preview"].includes(t.type),
       );
     if (body.tools?.some((t) => !safeTool(t)))
       return fail(res, 403, "Hosted tools unavailable");
-    body.max_output_tokens = 2048;
-    body.store = false;
+    if (anthropic) body.max_tokens = 2048;
+    else {
+      body.max_output_tokens = 2048;
+      body.store = false;
+    }
     const entry = ledger[key] ?? { spent: 0, requests: 0 };
     if (entry.spent + reserve > account.dailyLimit || entry.requests >= 300)
-      return fail(res, 429, "Employee daily model limit reached");
+      return reject(429, "Employee daily model limit reached");
     entry.spent += reserve;
     entry.requests++;
     ledger[key] = entry;
     // Persist reservation before spending; an unknown outcome retains its reservation.
     await persist();
     admitted = true;
-    const upstream = await fetch("https://openrouter.ai/api/v1/responses", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer " + cfg.upstreamKey,
-        "content-type": "application/json",
+    const upstream = await fetch(
+      `https://openrouter.ai/api/v1/${anthropic ? "messages" : "responses"}`,
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer " + cfg.upstreamKey,
+          "content-type": "application/json",
+          ...(anthropic ? { "anthropic-version": "2023-06-01" } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.any([
+          controller.signal,
+          AbortSignal.timeout(120000),
+        ]),
       },
-      body: JSON.stringify(body),
-      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]),
-    });
+    );
     if (!upstream.ok) {
-      return fail(res, 502, "Model provider rejected the request");
+      return reject(
+        502,
+        `Model provider rejected the request (HTTP ${upstream.status})`,
+      );
     }
     res.writeHead(200, {
       "content-type":
@@ -180,7 +227,7 @@ const server = http.createServer(async (req, res) => {
     } catch {}
     res.end();
   } catch {
-    if (!res.headersSent) fail(res, 502, "Employee model request failed");
+    if (!res.headersSent) reject(502, "Employee model request failed");
     else res.destroy();
   } finally {
     if (admitted) {

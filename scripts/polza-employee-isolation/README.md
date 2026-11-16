@@ -10,7 +10,8 @@ Polza VPS layout; they are not generic or safe-to-rerun bootstrap commands.
   template inside provision.py. Mount/volume setup must precede service startup.
 * `volumes.py`: FIRST RUN ONLY; stop staff, create private 4 GiB images, migrate
   their state and mount through root fstab. Refuses existing images.
-* `firewall.py`, `broker.mjs`, `ready.py`, `probe.py`: live root-owned boundary
+* `firewall.py`, `broker.mjs`, `anthropic-employee-payload.mjs`, `ready.py`,
+  `probe.py`: live root-owned boundary
   components installed under `/usr/local/lib/polza-employee-isolation/`.
 * `admin-cards.py`: rotates private realm admin passwords; do not rerun merely to
   inspect status. Does not change the employee password.
