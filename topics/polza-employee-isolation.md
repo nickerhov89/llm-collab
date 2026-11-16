@@ -116,3 +116,23 @@ On code updates, rebuild the server and deploy only to the root-owned staff
 runtime; preserve the runtime's other existing Polza patches. Never change the
 owner package to enable this dedicated runtime by default. Update broker and
 firewall first, verify readiness, then restart staff and confirm all probes.
+
+## Unified sign-in and account management — 2026-11-16
+
+The deployment now provides `/team` on the main owner origin as the common
+sign-in and owner-only administration page. Anonymous root visits redirect
+there; existing authenticated owner root visits keep their workspace. Users
+sign in with their previous credentials and are handed off automatically to
+their separate realm origin. The browser storage, runtime and filesystem
+boundaries remain separate. This is a common entry point, not a shared-origin
+multi-tenant app server.
+
+The owner can open a realm administratively, enable/disable its employee or
+set their password without a VPS shell. Named staff login explicitly revokes
+the prior main owner session in that browser and clears privileged cookies.
+Owner management accepts only an owner password-session validated at the main
+backend. See `scripts/polza-employee-isolation/team-entry/README.md` for the
+observable auth/handoff contract, trust boundaries, tests and rollback.
+This opt-in front door does not close the generic desktop-session fallback gap
+in all shared installations; it prevents that inheritance in its own sign-in
+flow while preserving the separate OS boundaries.

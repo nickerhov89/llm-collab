@@ -1,0 +1,30 @@
+[Unit]
+Description=Polza unified team sign-in and owner account administration
+After=network-online.target
+[Service]
+User=pcw-team
+Group=pcw-team
+Environment=TEAM_CONFIG=/etc/polza-team/config.json
+Environment=PORT=3460
+ExecStart=/usr/local/bin/node /usr/local/lib/polza-team/server.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectProc=invisible
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=192M
+TasksMax=32
+CPUQuota=50%
+[Install]
+WantedBy=multi-user.target
