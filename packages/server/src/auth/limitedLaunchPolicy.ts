@@ -212,10 +212,14 @@ export function limitExistingSessionLaunch(
     DEDICATED_EMPLOYEE_RUNTIME &&
     grants.lock.provider === "codex" &&
     grants.lock.model === "qwen/qwen3-coder" &&
-    settings.providerName === "claude";
+    (settings.providerName === "claude" ||
+      settings.providerName === "claude-ollama");
+  if (scopedLegacyClaude) settings.providerName = "claude";
   const conflict = lockConflictError(
     grants.lock,
-    scopedLegacyClaude && requested.provider === "claude"
+    scopedLegacyClaude &&
+      (requested.provider === "claude" ||
+        requested.provider === "claude-ollama")
       ? { ...requested, provider: "codex" }
       : requested,
   );

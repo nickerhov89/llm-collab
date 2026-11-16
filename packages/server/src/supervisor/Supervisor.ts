@@ -1037,6 +1037,9 @@ export class Supervisor {
         projectPath,
         modelSettings: {
           ...modelSettings,
+          ...(modelSettings?.providerName === "claude-ollama"
+            ? { providerName: "claude" as const }
+            : {}),
           sandboxLevel: "none",
           sandboxNetworkFirewall: false,
           sandboxStateKey: undefined,

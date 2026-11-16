@@ -1,4 +1,5 @@
 import type { Stats } from "node:fs";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../auth/dedicatedEmployeeRuntime.js";
 import { open } from "node:fs/promises";
 import {
   DEFAULT_PROVIDER,
@@ -760,7 +761,9 @@ export function buildSummaryFromState(
     : null;
   const model = extractModel(activeBranch);
   const provider: ProviderName =
-    model && !model.startsWith("claude-") ? "claude-ollama" : DEFAULT_PROVIDER;
+    !DEDICATED_EMPLOYEE_RUNTIME && model && !model.startsWith("claude-")
+      ? "claude-ollama"
+      : DEFAULT_PROVIDER;
   const resolveContextWindow =
     options.resolveContextWindow ?? getModelContextWindow;
 

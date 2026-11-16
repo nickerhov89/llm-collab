@@ -99,6 +99,22 @@ it("fails closed when the employee capability is missing", () => {
   );
 });
 
+it("normalizes a stale Ollama hint without relaxing the model lock", () => {
+  const settings: ModelSettings = { providerName: "claude-ollama" };
+  expect(
+    limitExistingSessionLaunch(grants, settings, { provider: "claude-ollama" }),
+  ).toBeNull();
+  expect(settings.providerName).toBe("claude");
+  expect(settings.model).toBe("qwen/qwen3-coder");
+  expect(
+    limitExistingSessionLaunch(
+      grants,
+      { providerName: "claude-ollama" },
+      { provider: "claude-ollama", model: "expensive-model" },
+    ),
+  ).toHaveProperty("error");
+});
+
 it("advertises only the scoped model and never offers an employee Claude OAuth login", async () => {
   const provider = new ClaudeProvider();
   expect((await provider.getAvailableModels()).map((m) => m.id)).toEqual([

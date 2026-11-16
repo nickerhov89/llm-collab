@@ -11,6 +11,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { DEDICATED_EMPLOYEE_RUNTIME } from "../auth/dedicatedEmployeeRuntime.js";
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -104,6 +105,10 @@ function needsClaudeSummaryRefresh(
   summary: CachedSessionSummary,
   persistedVersion: number,
 ): boolean {
+  // Old model-name heuristics mislabeled employee Qwen/Claude histories as
+  // Ollama. Reparse those once; the repaired summary is native Claude.
+  if (DEDICATED_EMPLOYEE_RUNTIME && summary.provider === "claude-ollama")
+    return true;
   if (
     summary.provider !== DEFAULT_PROVIDER &&
     summary.provider !== "claude-gateway" &&

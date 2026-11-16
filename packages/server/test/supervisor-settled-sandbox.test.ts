@@ -172,12 +172,17 @@ describe("Supervisor settled session sandbox", () => {
     ]);
   });
 
-  it.each(["resume", "reactivate"] as const)(
-    "uses the verified employee OS boundary for an imported sandbox on %s",
-    async (action) => {
+  it.each([
+    ["resume", "claude"],
+    ["reactivate", "claude"],
+    ["resume", "claude-ollama"],
+    ["reactivate", "claude-ollama"],
+  ] as const)(
+    "uses the verified employee OS boundary on %s for %s history",
+    async (action, providerName) => {
       employeeRuntime.dedicated = true;
       const settings = {
-        providerName: "claude" as const,
+        providerName,
         sandboxLevel: "project-write" as const,
         sandboxNetworkFirewall: true,
         sandboxStateKey: "imported-old-key",

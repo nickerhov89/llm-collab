@@ -221,3 +221,23 @@ Two consecutive real replies were verified on a temporary clone of the exact
 failing Telegram chat under limited `marker`. The clone was archived and the
 original session reactivated without a diagnostic prompt. The shared Telegram
 profile itself also passed a read-only check under the real marker UID.
+
+### Catalog and stale browser hints
+
+Native employee Claude histories remain classified as `claude` after Qwen
+replies. The normal non-Claude-model → Ollama heuristic remains enabled only
+outside dedicated employee runtimes. Persisted employee summaries previously
+classified as `claude-ollama` reparse once on index load; a corrected summary
+reuses the cache on subsequent restarts. Transcript bytes remain unchanged.
+Existing dedicated Codex/Qwen-locked sessions also normalize a stale
+`claude-ollama` browser hint to the scoped native Claude transport, retaining
+model, project, OS-boundary and other-provider checks. The Supervisor performs
+the same normalization for the private realm admin. This is not a general
+Ollama or alternate-model grant.
+
+Browser QA covers ordinary Send, reload, process shutdown and opening from the
+sidebar as limited marker. A real reply arrived without changing session URL;
+the original business draft was not edited. Diagnostics used a temporary clone
+which was archived afterward. Scoped cache repair and shared-runtime behavior
+are covered by an integration fixture with unchanged transcript bytes and no
+repeated parsing after the repair.
