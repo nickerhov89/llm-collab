@@ -5,6 +5,7 @@ After=network-online.target polza-employee-firewall.service polza-employee-broke
 BindsTo=polza-employee-firewall.service polza-employee-broker.service
 RequiresMountsFor=/var/lib/polza-employees/cto
 [Service]
+Environment=NODE_ENV=production
 User=pcw-cto
 Group=pcw-cto
 WorkingDirectory=/var/lib/polza-employees/cto

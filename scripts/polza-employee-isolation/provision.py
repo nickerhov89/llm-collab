@@ -60,6 +60,7 @@ Requires=polza-employee-firewall.service polza-employee-broker.service
 After=network-online.target polza-employee-firewall.service polza-employee-broker.service
 BindsTo=polza-employee-firewall.service polza-employee-broker.service
 [Service]
+Environment=NODE_ENV=production
 User={osname}
 Group={osname}
 WorkingDirectory={home}

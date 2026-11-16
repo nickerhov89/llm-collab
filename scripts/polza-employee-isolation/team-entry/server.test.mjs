@@ -116,12 +116,21 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
     stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
   t.after(async () => {
-    child.kill();
-    await once(child, "exit");
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, "exit");
+      child.kill();
+      await exited;
+    }
     for (const s of servers) s.close();
     await rm(folder, { recursive: true, force: true });
   });
-  const [{ port }] = await once(child, "message");
+  const { port } = await new Promise((resolve, reject) => {
+    child.once("message", resolve);
+    child.once("exit", (code, signal) =>
+      reject(Error(`Entry service exited before readiness: ${code ?? signal}`)),
+    );
+    child.once("error", reject);
+  });
   async function call(
     path,
     { host = "team.test", body, session, origin = true } = {},
