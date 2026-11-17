@@ -22,7 +22,7 @@ it("scopes model/config access through the actual process session, preserving ot
           lock: {},
           joinProjects: level === "join" ? ["p1"] : [],
           viewProjects: ["p1"],
-          newSessionProjects: [],
+          newSessionProjects: level === "join" ? ["p1"] : [],
           joinStaleOffsetMinutes: 0,
         }) as LimitedUserGrants,
       getCookieSessionUsername: async () => "marker",
@@ -41,6 +41,9 @@ it("scopes model/config access through the actual process session, preserving ot
     }),
   );
   app.all("/api/processes/:id/:action", (c) => c.json({ ok: true }));
+  app.post("/api/projects/:projectId/sessions/:sessionId/resume", (c) =>
+    c.json({ sessionId: c.req.param("sessionId") }),
+  );
   const post = (path: string) =>
     app.request(path, {
       method: "POST",
@@ -52,10 +55,18 @@ it("scopes model/config access through the actual process session, preserving ot
   expect((await post("/api/processes/other/model")).status).toBe(403);
   expect((await post("/api/processes/missing/model")).status).toBe(404);
   expect((await post("/api/processes/mine/abort")).status).toBe(403);
+  // An idle dedicated session must resume in place; it is not redirected.
+  const sameChat = await post("/api/projects/p1/sessions/s1/resume");
+  expect(sameChat.status).toBe(200);
+  expect(await sameChat.json()).toEqual({ sessionId: "s1" });
   level = "view";
+  expect((await post("/api/projects/p1/sessions/s1/resume")).status).toBe(403);
   expect((await post("/api/processes/mine/model")).status).toBe(403);
   level = "join";
   boundary.dedicated = false;
   expect((await post("/api/processes/mine/model")).status).toBe(403);
+  const coldShared = await post("/api/projects/p1/sessions/s1/resume");
+  expect(coldShared.status).toBe(403);
+  expect(await coldShared.json()).toMatchObject({ reason: "stale-session" });
   boundary.dedicated = true;
 });

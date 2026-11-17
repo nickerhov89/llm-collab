@@ -58,6 +58,7 @@ async function catalog() {
 // Bound wire memory separately from model context. Native Codex histories and
 // tool schemas exceed 100 KB even when they fit the model's token window.
 const MAX_REQUEST_BYTES = 2 * 1024 * 1024;
+const MAX_OUTPUT_TOKENS = 8192;
 let flush = Promise.resolve();
 const hash = (x) => createHash("sha256").update(x).digest("hex");
 const accounts = new Map(
@@ -109,14 +110,19 @@ const server = http.createServer(async (req, res) => {
     return;
   }
   const anthropic = req.url?.split("?")[0] === "/v1/messages";
-  // Claude Code retries 429/5xx internally. Scoped denials/timeouts require
-  // an explicit human retry, as in the employee Codex transport policy.
-  const reject = (status, error) =>
-    fail(
-      res,
-      anthropic && (status === 429 || status === 502) ? 424 : status,
-      error,
+  // Both native CLIs retry 429/5xx and may hide the broker's reason.
+  // Scoped denials are terminal, retaining their actionable message.
+  const reject = (status, error) => {
+    console.warn(
+      JSON.stringify({
+        event: "employee_model_rejected",
+        account: account.name,
+        status,
+        error,
+      }),
     );
+    return fail(res, status === 429 || status === 502 ? 424 : status, error);
+  };
   if (req.method !== "POST" || (!anthropic && req.url !== "/v1/responses"))
     return fail(res, 403, "Endpoint unavailable");
   if (active.has(account.name))
@@ -128,6 +134,14 @@ const server = http.createServer(async (req, res) => {
   let reserve = 0;
   let admitted = false;
   let spent = reserve;
+  const settle = async () => {
+    if (admitted) {
+      admitted = false;
+      ledger[key].spent += spent - reserve;
+      await persist();
+    }
+    active.delete(account.name);
+  };
   try {
     let size = 0;
     const chunks = [];
@@ -204,14 +218,20 @@ const server = http.createServer(async (req, res) => {
       );
     if (body.tools?.some((t) => !safeTool(t)))
       return fail(res, 403, "Hosted tools unavailable");
-    if (anthropic) body.max_tokens = 2048;
+    if (anthropic) body.max_tokens = MAX_OUTPUT_TOKENS;
     else {
-      body.max_output_tokens = 2048;
+      // Only the current employee catalog is executable. Historical catalogs
+      // duplicate names and can resurrect tools no longer granted to the user.
+      if (Array.isArray(body.input))
+        body.input = body.input.filter(
+          (item) => item.type !== "additional_tools",
+        );
+      body.max_output_tokens = MAX_OUTPUT_TOKENS;
       body.store = false;
     }
     const entry = ledger[key] ?? { spent: 0, requests: 0 };
     const remaining = account.dailyLimit - entry.spent;
-    const maxOutput = 2048;
+    const maxOutput = MAX_OUTPUT_TOKENS;
     const inputBound = Math.min(
       selected.context_length ?? 2097152,
       size +
@@ -283,9 +303,28 @@ const server = http.createServer(async (req, res) => {
       },
     );
     if (!upstream.ok) {
+      // Validation failures did not run inference; do not charge their reservation.
+      if (upstream.status === 400 || upstream.status === 422) spent = 0;
+      const failure = await upstream.json().catch(() => null);
+      let providerDetail;
+      try {
+        const raw = JSON.parse(failure?.error?.metadata?.raw ?? "null");
+        providerDetail = raw?.error?.message ?? raw?.message;
+      } catch {}
+      const detail =
+        typeof providerDetail === "string"
+          ? providerDetail
+              .slice(0, 400)
+              .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+          : typeof failure?.error?.message === "string"
+            ? failure.error.message
+                .slice(0, 400)
+                .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+            : "No provider error detail";
+      await settle();
       return reject(
         502,
-        `Model provider rejected the request (HTTP ${upstream.status})`,
+        `Model provider rejected the request (HTTP ${upstream.status}): ${detail}`,
       );
     }
     res.writeHead(200, {
@@ -326,19 +365,17 @@ const server = http.createServer(async (req, res) => {
       )
         spent = usage.cost;
     } catch {}
+    // Release the slot before the client observes completion and sends a tool result.
+    await settle();
     res.end();
   } catch {
     if (!res.headersSent) reject(502, "Employee model request failed");
     else res.destroy();
   } finally {
-    if (admitted) {
-      ledger[key].spent += spent - reserve;
-      await persist().catch(() => {
-        server.close();
-        process.exitCode = 1;
-      });
-    }
-    active.delete(account.name);
+    await settle().catch(() => {
+      server.close();
+      process.exitCode = 1;
+    });
   }
 });
 server.headersTimeout = 10000;

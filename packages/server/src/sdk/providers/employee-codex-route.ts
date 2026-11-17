@@ -26,12 +26,25 @@ export async function employeeCodexRouteArguments(
       throw new Error("Invalid employee Codex resume provider identity");
     }
   }
-  // Codex 0.167 checks the saved provider against the process selection on
-  // resume AND on input. A thread-only override cannot satisfy that check.
-  // The native name is an alias, never a source of endpoint/auth settings.
-  // The broker is HTTP-only; surface bounded failures rather than cycling
-  // WebSocket fallback or silently retrying budget/provider denials.
+  // Built-in openai cannot be redeclared. Its supported base URL override,
+  // plus ephemeral scoped API-key login, preserves native provider identity.
+  if (provider === "openai") {
+    return [
+      "-c",
+      'model_provider="openai"',
+      "-c",
+      'openai_base_url="http://127.0.0.1:3456/v1"',
+      "-c",
+      'cli_auth_credentials_store="ephemeral"',
+      "-c",
+      "features.responses_websockets=false",
+      "-c",
+      "features.responses_websockets_v2=false",
+    ];
+  }
   return [
+    "-c",
+    'cli_auth_credentials_store="ephemeral"',
     "-c",
     `model_provider=${tomlString(provider)}`,
     "-c",

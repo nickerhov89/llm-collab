@@ -41,23 +41,36 @@ async function history(provider: string | undefined, sessionId = id) {
 }
 
 it.each(["openai", "polza_employee", "old-gateway", undefined])(
-  "keeps native %s identity but pins its process route to the scoped broker",
+  "keeps native %s identity without modifying the recorded history",
   async (provider) => {
     const original = await history(provider);
     const args = await employeeCodexRouteArguments(id);
     const name = provider ?? "openai";
     expect(args).toContain(`model_provider="${name}"`);
-    expect(args).toContain(
-      `model_providers.${name}.base_url="http://127.0.0.1:3456/v1"`,
-    );
-    expect(args).toContain(`model_providers.${name}.env_key="OPENAI_API_KEY"`);
-    expect(args).toContain(
-      `model_providers.${name}.requires_openai_auth=false`,
-    );
+    expect(args).toContain('cli_auth_credentials_store="ephemeral"');
+    if (name === "openai") {
+      expect(args).toContain('openai_base_url="http://127.0.0.1:3456/v1"');
+      expect(
+        args.some((arg) => arg.startsWith("model_providers.openai.")),
+      ).toBe(false);
+      expect(args).toContain("features.responses_websockets=false");
+    } else {
+      expect(args).toContain(
+        `model_providers.${name}.base_url="http://127.0.0.1:3456/v1"`,
+      );
+      expect(args).toContain(
+        `model_providers.${name}.env_key="OPENAI_API_KEY"`,
+      );
+      expect(args).toContain(
+        `model_providers.${name}.requires_openai_auth=false`,
+      );
+      expect(args).toContain(
+        `model_providers.${name}.supports_websockets=false`,
+      );
+      expect(args).toContain(`model_providers.${name}.request_max_retries=0`);
+      expect(args).toContain(`model_providers.${name}.stream_max_retries=0`);
+    }
     expect(await readFile(file, "utf8")).toBe(original);
-    expect(args).toContain(`model_providers.${name}.supports_websockets=false`);
-    expect(args).toContain(`model_providers.${name}.request_max_retries=0`);
-    expect(args).toContain(`model_providers.${name}.stream_max_retries=0`);
   },
 );
 

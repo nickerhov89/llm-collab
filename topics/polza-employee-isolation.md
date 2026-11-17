@@ -282,3 +282,34 @@ including an imported obsolete project path.
 The dedicated Codex catalog alias `codex-oss` retains the source requested model
 and effort when creating a Codex handoff. A catalog label difference must not
 reset the employee's explicit model choice to the default.
+
+### Same-chat continuation — owner correction, 2026-11-17
+
+Dedicated employees may resume authorized chats after any idle duration. The
+limited-user freshness gate and Project Queue freshness callback no longer
+reject their turns or trigger an automatic handoff. Project/session grants,
+provider constraints and the verified OS boundary still apply; shared runtimes
+retain their existing freshness policy. Manual handoff remains available.
+
+Imported native OpenAI-provider Codex histories preserve their thread ID and
+recorded provider. The native built-in provider is not redeclared: the supported
+openai_base_url override pins inference to the scoped broker, and an ephemeral
+API-key login contains only the employee's broker capability. Owner OAuth and
+upstream credentials are never copied. Custom native aliases keep their scoped
+provider definitions and bounded retries. Native startup diagnostics include
+the actual error message.
+
+Responses requests exclude historical additional_tools catalogs: only the
+current scoped tools may execute. Conversation messages and native transcripts
+are not rewritten. This avoids duplicate function names and prevents obsolete
+tools from being reintroduced by history. Broker output is bounded at 8192
+tokens, with matching monetary reservations and unchanged $2/day account caps.
+Known upstream HTTP400/422 validation failures release their reservation;
+unknown outcomes remain charged conservatively. Broker denials retain their
+reason in a terminal response rather than becoming a generic retry-limit error.
+The active slot is released and accounting persisted before successful response
+completion, so the next tool-result request does not race ledger persistence.
+
+Maintenance note: stopping the broker can stop its dependent employee services;
+after broker maintenance explicitly start all employee realms and verify their
+private HTTPS backends in addition to fresh OS probes.

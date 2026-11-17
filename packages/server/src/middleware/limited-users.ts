@@ -459,6 +459,7 @@ export function createLimitedUsersMiddleware(
           );
         }
         if (
+          !DEDICATED_EMPLOYEE_RUNTIME &&
           decision.startsTurn &&
           !options.sessionAccess.isFresh(facts, {
             offsetMinutes: principal.grants.joinStaleOffsetMinutes,

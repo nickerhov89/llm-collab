@@ -1842,6 +1842,7 @@ export class CodexProvider implements AgentProvider {
   }
 
   private async requestAppServerRateLimits(): Promise<unknown> {
+    if (DEDICATED_EMPLOYEE_RUNTIME) return null;
     const appServer = new CodexAppServerClient(
       await this.resolveCodexCommand(),
       homedir(),
@@ -2911,6 +2912,7 @@ export class CodexProvider implements AgentProvider {
       await appServer.connect();
       const experimentalApiEnabled = await this.initializeAppServer(appServer);
       appServer.notify("initialized");
+      await this.loginWithEmployeeCapability(appServer);
 
       const lastTurnId =
         options.boundary?.kind === "turn"
@@ -3176,6 +3178,7 @@ export class CodexProvider implements AgentProvider {
         runtimeState.mcpAppViews,
       );
       appServer.notify("initialized");
+      await this.loginWithEmployeeCapability(appServer);
       await this.loginWithExternalChatgptAuth(appServer);
       await this.refreshCodexSkills(
         appServer,
@@ -4023,7 +4026,12 @@ export class CodexProvider implements AgentProvider {
       const codexFailureTrace = this.snapshotCodexFailureTrace(failureTrace);
       if (!signal.aborted) {
         log.error(
-          { error, codexFailureTrace },
+          {
+            error,
+            errorMessage:
+              error instanceof Error ? error.message : String(error),
+            codexFailureTrace,
+          },
           "Error in codex app-server session",
         );
         yield {
@@ -4287,6 +4295,16 @@ export class CodexProvider implements AgentProvider {
       );
       return false;
     }
+  }
+
+  /** Native built-in provider auth contains only this account's broker capability. */
+  private async loginWithEmployeeCapability(
+    appServer: CodexAppServerClient,
+  ): Promise<void> {
+    if (!DEDICATED_EMPLOYEE_RUNTIME) return;
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error("Employee model capability is unavailable");
+    await appServer.request("account/login/start", { type: "apiKey", apiKey });
   }
 
   private async loginWithExternalChatgptAuth(
@@ -4966,6 +4984,9 @@ export class CodexProvider implements AgentProvider {
       codexCommand,
       homedir(),
       this.getCodexEnv(),
+      undefined,
+      undefined,
+      await employeeCodexRouteArguments(),
     );
     appServer.setServerRequestHandler(async (request) =>
       this.handleRecapServerRequest(request),
@@ -4975,6 +4996,7 @@ export class CodexProvider implements AgentProvider {
       await appServer.connect();
       await this.initializeAppServer(appServer);
       appServer.notify("initialized");
+      await this.loginWithEmployeeCapability(appServer);
 
       const threadResult = await appServer.request<ThreadStartResponse>(
         "thread/start",
@@ -5102,6 +5124,7 @@ export class CodexProvider implements AgentProvider {
       await appServer.connect();
       const experimentalApiEnabled = await this.initializeAppServer(appServer);
       appServer.notify("initialized");
+      await this.loginWithEmployeeCapability(appServer);
 
       const threadResult = await appServer.request<ThreadResumeResponse>(
         "thread/resume",

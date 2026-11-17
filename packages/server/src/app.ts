@@ -1,3 +1,4 @@
+import { DEDICATED_EMPLOYEE_RUNTIME } from "./auth/dedicatedEmployeeRuntime.js";
 import { createPolzaTaskerRoutes } from "./routes/polza-tasker.js";
 import { AgentAuthRouter } from "./services/AgentAuthRouter.js";
 import { createAgentAuthRouterRoutes } from "./routes/agent-auth-router.js";
@@ -2324,9 +2325,10 @@ export function createApp(options: AppOptions): AppResult {
         const facts = await sessionAccessResolver.resolve(sessionId);
         return (
           facts !== null &&
-          sessionAccessResolver.isFresh(facts, {
-            offsetMinutes: grants.joinStaleOffsetMinutes,
-          })
+          (DEDICATED_EMPLOYEE_RUNTIME ||
+            sessionAccessResolver.isFresh(facts, {
+              offsetMinutes: grants.joinStaleOffsetMinutes,
+            }))
         );
       },
       onSessionStarted: async ({ item, process }) => {

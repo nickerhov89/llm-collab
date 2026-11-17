@@ -234,7 +234,14 @@ process without a turn. A refused request answers 403 with reason
 `stale-session`; a refused Project Queue item fails, saying the session has
 gone cold.
 
-**Redirect into a new session.** Where the user holds `newSessionProjects`
+**Dedicated employee continuation.** A root-validated dedicated employee
+runtime permits turns in authorized chats regardless of idle duration, including
+Project Queue delivery. It preserves the existing session ID and native history
+instead of rejecting for freshness and starting an automatic handoff. All other
+grants and OS-boundary checks still apply. This deployment policy does not
+change shared-runtime freshness behavior.
+
+**Redirect into a new session.** On shared runtimes, where the user holds `newSessionProjects`
 on the session's project, the refusal also carries
 `staleRedirect: "stale-handoff"`, and the client resends the same message
 to `POST …/sessions/:id/stale-handoff`. That starts a **new session** in the

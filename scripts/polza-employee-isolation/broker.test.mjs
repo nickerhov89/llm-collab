@@ -59,6 +59,22 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
       auth: req.headers.authorization,
       body: JSON.parse(Buffer.concat(chunks).toString()),
     });
+    if (upstreamBodies.at(-1).body.input === "reject-validation") {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(
+        JSON.stringify({
+          error: {
+            message: "Provider returned error",
+            metadata: {
+              raw: JSON.stringify({
+                error: { message: "Duplicate tool name" },
+              }),
+            },
+          },
+        }),
+      );
+      return;
+    }
     res.writeHead(200, { "content-type": "application/json" });
     res.end(
       JSON.stringify({
@@ -110,7 +126,7 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
     // A payload that passed parsing still cannot spend beyond its daily cap.
     assert.equal(
       (await call({ model: "allowed-model", input: largeHistory })).status,
-      429,
+      424,
     );
     assert.equal(
       (await call({ model: "allowed-model" }, "wrong-capability")).status,
@@ -193,7 +209,7 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
     assert.equal(upstreamBodies.length, 1);
     assert.equal(upstreamBodies[0].path, "/messages");
     assert.equal(upstreamBodies[0].auth, "Bearer unused-synthetic-key");
-    assert.equal(upstreamBodies[0].body.max_tokens, 2048);
+    assert.equal(upstreamBodies[0].body.max_tokens, 8192);
     assert.equal(upstreamBodies[0].body.model, "allowed-model");
     assert.equal(upstreamBodies[0].body.thinking, undefined);
     assert.equal(upstreamBodies[0].body.metadata, undefined);
@@ -207,14 +223,50 @@ test("broker admits native-sized JSON while retaining payload, model and budget 
     const alternate = await call(
       {
         model: "second-model",
-        input: "OK",
+        input: [
+          {
+            type: "additional_tools",
+            role: "developer",
+            tools: [{ type: "function", name: "old_owner_tool" }],
+          },
+          { role: "user", content: "Preserve the conversation" },
+        ],
+        tools: [
+          {
+            type: "function",
+            name: "current_scoped_tool",
+            parameters: { type: "object" },
+          },
+        ],
         provider: { max_price: { prompt: 999 } },
       },
       "second-capability",
     );
     assert.equal(alternate.status, 200);
+    await alternate.json();
     assert.equal(upstreamBodies[1].body.model, "second-model");
+    assert.deepEqual(upstreamBodies[1].body.input, [
+      { role: "user", content: "Preserve the conversation" },
+    ]);
+    assert.deepEqual(
+      upstreamBodies[1].body.tools.map((t) => t.name),
+      ["current_scoped_tool"],
+    );
     assert.equal(upstreamBodies[1].body.provider.max_price.prompt, 1);
+    const invalid = await call(
+      { model: "second-model", input: "reject-validation" },
+      "second-capability",
+    );
+    assert.equal(invalid.status, 424);
+    assert.match((await invalid.json()).error.message, /Duplicate tool name/);
+    const amounts = Object.entries(
+      JSON.parse(await readFile(ledger, "utf8")),
+    ).find(([key]) => key.endsWith(":second"))[1];
+    assert.equal(amounts.requests, 2);
+    assert.ok(
+      Math.abs(amounts.spent - 0.001) < 1e-10,
+      "Validation rejection releases its reservation",
+    );
   } finally {
     const exited = once(child, "exit");
     child.kill();
