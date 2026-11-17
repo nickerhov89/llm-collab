@@ -6164,7 +6164,10 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       const limited = limitedLaunch.kind === "applied";
       const sandbox: { level: SessionSandboxLevel; networkFirewall: boolean } =
         limited
-          ? { level: "project-write", networkFirewall: true }
+          ? {
+              level: launchBody.sandboxLevel as SessionSandboxLevel,
+              networkFirewall: launchBody.sandboxNetworkFirewall === true,
+            }
           : {
               level: originalMetadata?.sandboxLevel ?? "none",
               networkFirewall:
@@ -6185,7 +6188,13 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
         inheritSuccessorLaunchSettings(
           originalMetadata?.effectiveLaunchSettings,
           {
-            sameProvider: providerName === sourceProvider,
+            sameProvider:
+              providerName === sourceProvider ||
+              // Codex OSS is a catalog alias for the same employee transport.
+              (limited &&
+                sandbox.level === "none" &&
+                providerName === "codex" &&
+                sourceProvider === "codex-oss"),
             legacyRequestedModel: () =>
               deps.sessionMetadataService?.getRequestedModel(sessionId),
           },
@@ -6200,6 +6209,8 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
           ? requestedModel
           : undefined;
       const projectPath =
+        // The verified dedicated policy replaces imported nested-sandbox paths.
+        !(limited && sandbox.level === "none") &&
         originalMetadata?.sandboxLevel === "project-write"
           ? (originalMetadata.sandboxProjectPath ?? project.path)
           : project.path;

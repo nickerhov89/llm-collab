@@ -244,8 +244,12 @@ bounded transcript the manual Handoff builds, with its Source Session block
 request**, followed by the user's message under **New Message**. That
 framing is specific to this redirect; the manual Handoff keeps its own. The
 new session is the user's own, launched under the same policy as session
-create (sandbox and firewall forced, the lock applied, this host only),
-otherwise inheriting the old session's provider, model and effort. The old
+create (sandbox and firewall forced on shared runtimes, or the verified
+root-provisioned OS boundary on dedicated employee runtimes; the lock applied,
+this host only), otherwise inheriting the old session's provider, model and
+effort. A dedicated employee redirect uses the current authorized project path,
+not an imported nested-sandbox path. The same launch-policy result determines
+both the launched process and its recorded sandbox boundary. The old
 session is left exactly as it was: not compacted, interrupted, or resumed,
 since each would spend the cold context this exists to avoid. The client
 then opens the new session. With only a join grant there is no redirect:

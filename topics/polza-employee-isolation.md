@@ -265,3 +265,20 @@ Deployment backup: /root/polza-all-employee-models-20261116/ (private; includes
 authentication state). All four realms passed 116 isolation checks in total.
 Server validation: 286 tests passed, 5 existing skips; broker HTTP fixture also
 passed, including alternate-model forwarding and price override rejection.
+
+### Cold-session automatic handoff — 2026-11-17
+
+A dedicated employee's cold-session redirect follows the same launch policy as
+new-session creation: its verified OS boundary replaces nested Bubblewrap/slirp
+settings. The successor runs in the current private project, ignoring imported
+sandbox working paths. Its recorded boundary matches that policy. Shared
+runtimes retain mandatory project-write/network-firewall behavior.
+
+The route previously discarded the policy's sandbox result and hard-coded a
+nested sandbox, producing a slirp4netns dependency error before Send could
+complete. Regression coverage exercises both dedicated and shared handoffs,
+including an imported obsolete project path.
+
+The dedicated Codex catalog alias `codex-oss` retains the source requested model
+and effort when creating a Codex handoff. A catalog label difference must not
+reset the employee's explicit model choice to the default.
