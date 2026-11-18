@@ -10,7 +10,8 @@ Polza VPS layout; they are not generic or safe-to-rerun bootstrap commands.
   template inside provision.py. Mount/volume setup must precede service startup.
 * `volumes.py`: FIRST RUN ONLY; stop staff, create private 4 GiB images, migrate
   their state and mount through root fstab. Refuses existing images.
-* `firewall.py`, `broker.mjs`, `anthropic-employee-payload.mjs`, `ready.py`,
+* `firewall.py`, `broker.mjs`, `employee-admission.mjs`, `router-usage.mjs`,
+  `response-accounting.mjs`, `anthropic-employee-payload.mjs`, `ready.py`,
   `probe.py`: live root-owned boundary
   components installed under `/usr/local/lib/polza-employee-isolation/`.
 * `admin-cards.py`: rotates private realm admin passwords; do not rerun merely to
@@ -28,6 +29,6 @@ Employee model policy (2026-11-16): the native provider lock preserves the Codex
 transport for new sessions, while employees may choose any OpenRouter text model
 listed by the scoped broker, including on compatible imported Claude histories.
 Qwen remains the initial default, not a model lock. The server retains each
-account's $2/day budget, call/output/payload caps and isolated runtime. Model
+account's configured budget ($10/day after the 2026-11-17 owner update), call/output/payload caps and isolated runtime. Model
 changes require join access to the process's project; no operator-wide grant is
 given. Never copy owner OAuth credentials into employee homes.

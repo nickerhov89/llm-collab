@@ -16,6 +16,7 @@ import type {
 } from "../sdk/providers/types.js";
 import type { ModelInfoService } from "../services/ModelInfoService.js";
 import { getProviderImageSizing } from "../services/image-preparation.mjs";
+import { readModelUsage } from "../services/model-usage.js";
 import {
   ProviderLoginError,
   ProviderLoginService,
@@ -317,6 +318,11 @@ export function createProvidersRoutes(deps: ProviderRouteDeps = {}): Hono {
   });
 
   // GET /api/providers/:name/subscription-usage - normalized account limits
+  routes.get("/model-usage", async (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({ usage: await readModelUsage() });
+  });
+
   routes.get("/:name/subscription-usage", async (c) => {
     const forceRefresh = isRefreshRequest(c);
     const name = c.req.param("name");

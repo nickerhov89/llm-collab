@@ -22,7 +22,7 @@ RestrictNamespaces=yes
 CapabilityBoundingSet=
 ReadWritePaths=/var/lib/polza-broker
 UMask=0077
-MemoryMax=256M
+MemoryMax=384M
 TasksMax=32
 Restart=on-failure
 [Install]

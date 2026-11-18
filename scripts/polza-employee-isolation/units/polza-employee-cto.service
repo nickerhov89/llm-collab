@@ -1,8 +1,9 @@
 [Unit]
 Description=Isolated Cowork employee cto
-Requires=polza-employee-firewall.service polza-employee-broker.service
+Requires=polza-employee-firewall.service
+Wants=polza-employee-broker.service
 After=network-online.target polza-employee-firewall.service polza-employee-broker.service
-BindsTo=polza-employee-firewall.service polza-employee-broker.service
+BindsTo=polza-employee-firewall.service
 RequiresMountsFor=/var/lib/polza-employees/cto
 [Service]
 Environment=NODE_ENV=production

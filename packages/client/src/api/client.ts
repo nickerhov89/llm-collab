@@ -1,4 +1,5 @@
 import type {
+  ModelUsageSummary,
   AgentAuthRouterOverview,
   AgentAuthRouterPoolInput,
 } from "@yep-anywhere/shared";
@@ -581,6 +582,11 @@ export const api = {
       `/providers/${encodeURIComponent(provider)}/login/terminal`,
       { method: "POST" },
     ),
+
+  getModelUsage: (signal?: AbortSignal) =>
+    fetchJSON<{ usage: ModelUsageSummary | null }>("/providers/model-usage", {
+      signal,
+    }),
 
   getProviderSubscriptionUsage: (
     provider: ProviderName,

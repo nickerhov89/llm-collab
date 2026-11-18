@@ -10,6 +10,11 @@ export type {
 } from "./artifact-viewer.js";
 export * from "./vhost-oauth.js";
 export * from "./new-session-bootstrap.js";
+export type {
+  ModelUsageSummary,
+  RouterBillingSnapshot,
+} from "./model-usage.js";
+
 export {
   ARTIFACT_SANDBOX,
   MANAGED_ARTIFACT_MAX_FILE_BYTES,
