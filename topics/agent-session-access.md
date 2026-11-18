@@ -238,3 +238,16 @@ scripts themselves are same-host consumers and may ride the current
 surface immediately. Shipped-script exposure inside sessions is
 launch-time behavior owned by `new-session-agent-tooling.md` and ships
 default-off per `vanilla-defaults.md`.
+
+
+## Polza deployment adapter (2026-11-18)
+
+The Polza Cowork deployment now exposes opt-in read-only cross-chat context
+through its existing UID-authenticated integration broker: cowork.workspaces,
+projects, chats, read, search (and matching MCP tools). It acts as the current
+native limited principal and consumes existing project/session REST reads;
+owner workspace selection is separate from employee project authorization.
+No new general ya-agent launch credential, ask/reply record, transcript mirror
+or message delivery is implemented by this adapter. The general proposals
+above remain proposals. Read pagination is bounded and source-linked; see
+[deployment connector contract](../services/polza-access/README.md#cowork-chat-context-18-november-2026).

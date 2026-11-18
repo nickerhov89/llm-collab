@@ -30,6 +30,12 @@ JSON imports use `{version: 1, tasks: [...]}` with unique ids; existing ids are
 skipped. Export retains all tasks including Trash. Work KPI profiles remain in
 the existing profile store; task priority assessments are part of task records.
 
+Ordinary lists display newly added tasks first, including existing tasks.
+Storage and exports keep insertion order; filtering reverses a copy, so editing,
+completion and restoration do not change a task's position. Legacy tasks have
+no creation timestamps: their stored insertion order is used. Prioritize keeps
+score order, with newest first when scores are equal.
+
 Inbox, Today, Completed and area views share the same task records. New tasks,
 completion, planning flags and notes survive reload. Delete task moves the task
 to persistent Trash and offers Undo. Deleted tasks leave active, completed and
@@ -73,3 +79,27 @@ states: eight completion milestones, three daily-volume milestones, five daily
 streaks, early/night/weekend work, three/five areas, five Today tasks, and levels
 5/10. Earned badges remain unlocked. Calendar achievements use browser local time.
 The progress and badge collection are available at desktop and phone widths.
+
+## Automatic execution (Polza deployment)
+
+Each saved active task can choose Once, On a schedule, or Until a result. Select
+an existing granted project/chat; save settings, then explicitly Run now or
+Enable. Saving/importing does not start work. Schedule uses local time and IANA
+timezone; a goal counts human-accepted results, not provider self-declarations.
+The default is three attempts/day and at most three pending reviews. Tasker
+completion/XP remains independent from accepting automation results.
+
+The authenticated `/api/tasker/automation` adapter uses the same native Project
+Queue with the employee's real limited identity. No caller-selected account,
+credentials or cookies enter UI task data. Automation manifests/results live
+separately from `/api/tasker`, so worker progress cannot overwrite notes being
+typed. Config writes are revision guarded from the first local edit.
+
+Pause stops future/queued work while a running turn can finish; closing or
+trashing a task stops future runs. Human-input and uncertain-delivery states
+require inspection before continuation. A lost enqueue receipt is never blindly
+retried. Prepared articles require approval before publication or editorial
+sending. Settings on an unconfigured server report unavailable.
+
+See [execution adapter/runbook](../scripts/polza-task-automation/README.md) for
+storage, deployment, caps, restart/recovery and scheduling semantics.

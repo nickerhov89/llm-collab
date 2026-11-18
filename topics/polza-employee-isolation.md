@@ -29,7 +29,8 @@ break-glass administrator password. Credential cards are outside Git.
 * Private HOME `/var/lib/polza-employees/<login>` is mode 0700 on its own 4 GiB
   ext4 loop image. Images are root-only under `/var/lib/polza-employee-volumes`.
   Mounts are nodev/nosuid; underlying mountpoints are root-owned mode 000.
-* Services require their home mount and broker/firewall services. Systemd hides
+* Services require their home mount and firewall service; the model broker is
+  wanted/ordered but is not a BindsTo/Requires dependency. Systemd hides
   `/home` and `/root`, makes the host read-only, gives private bounded `/tmp`
   and `/var/tmp`, hides other processes and removes privileges/namespaces.
   Each has MemoryMax=1200M, CPUQuota=125%, TasksMax/LimitNPROC=160.
@@ -58,14 +59,26 @@ and router account overrides remain denied to limited principals.
 
 ## Model access and migrated data
 
-Employees currently use `qwen/qwen3-coder` through a separate UID 2010 broker on
-127.0.0.1:3456. Their readable capability authorizes only that broker, not the
-owner gateway or upstream key. The broker allows models/responses only, fixes
-the model, strips hosted web search and denies other hosted tools, caps output
-at 2048 tokens, one request at a time and 300/day per employee. Conservative
-persistent $0.10 reservations enforce a configured $2/day limit per employee;
-unknown-cost failures retain their reservation. Timeout is 120 seconds.
-The owner's provider/model routing is unchanged.
+Employees select OpenRouter text models through the UID-scoped broker on
+127.0.0.1:3456. The native Codex transport remains locked for new employee
+sessions; compatible imported Claude histories use its Messages route. Qwen is
+the initial default, not a model lock. Owner subscriptions and model choices
+are unchanged. Readable employee capabilities never authorize the owner gateway
+or disclose the upstream key. Hosted web search is stripped and other hosted tools are denied; native local
+tools still obey the employee OS/grant boundary.
+
+Current bounds: $10 per UTC day and 3000 model calls per employee, 8192 output
+tokens, 16 MiB per request and 24 MiB aggregate admitted request-body reservations.
+Four model requests per employee / sixteen globally may run concurrently. Six
+additional requests per employee can wait up to 90 seconds, without retaining
+full JSON/image bodies. Admission is FIFO among eligible accounts; an account
+at its four-slot limit cannot block another account's free slots. Memory
+pressure can still serialize large image/history requests. Queue cancellation
+releases its entry; duplicate settlement cannot free another request's slot.
+Overload, queue timeout and insufficient daily budget have distinct messages.
+Automatic inference retries are not added. Provider timeout remains 120 seconds.
+Auto routing reserves at most $1 per request by default, rather than taking the
+entire remaining daily budget and starving concurrent chats.
 
 Employee spaces are fresh. Only their own limited-user record/password and own
 Tasker file, if any, were copied. Owner histories, OAuth profiles, SSH keys,
@@ -185,12 +198,16 @@ The pinned 0.164.0 reference lacks that exact input check; both tagged source
 versions were inspected for this targeted deployment fix. This is not a full
 provider refresh or a new audited-through version declaration.
 
-The broker wire-size ceiling is 2 MiB, separately from the model's token
+The broker wire-size ceiling is 16 MiB, separately from the model's token
 window. The previous 100 KB ceiling rejected ordinary native history plus
 tool schemas. Daily dollar/call caps, reservation accounting, one active
 request per employee, model allowlist and output limits remain enforced.
 Oversized requests still receive 413; malformed or unauthorized routing is
 not retried through a different provider.
+All retained request buffers also share a 24 MiB admission ceiling. Pressure
+returns a terminal busy response before spending and is released on rejection,
+disconnect and completion. Inline image and history bytes are forwarded intact;
+raising the transport ceiling never changes daily budgets or model context.
 Employee aliases also disable WebSocket transport (the broker implements
 HTTP/SSE only) and set native request/stream retries to zero. Broker deadlines
 and visible terminal errors govern failures instead of native retry cycles.
@@ -303,13 +320,155 @@ Responses requests exclude historical additional_tools catalogs: only the
 current scoped tools may execute. Conversation messages and native transcripts
 are not rewritten. This avoids duplicate function names and prevents obsolete
 tools from being reintroduced by history. Broker output is bounded at 8192
-tokens, with matching monetary reservations and unchanged $2/day account caps.
+tokens, with matching monetary reservations; the later owner update sets $10/day account caps.
 Known upstream HTTP400/422 validation failures release their reservation;
 unknown outcomes remain charged conservatively. Broker denials retain their
 reason in a terminal response rather than becoming a generic retry-limit error.
 The active slot is released and accounting persisted before successful response
 completion, so the next tool-result request does not race ledger persistence.
 
-Maintenance note: stopping the broker can stop its dependent employee services;
-after broker maintenance explicitly start all employee realms and verify their
-private HTTPS backends in addition to fresh OS probes.
+Maintenance correction (17 November): employee services no longer bind to or
+require the model broker. A broker restart preserves their processes. Their
+fail-closed firewall binding and private home-mount requirement remain. Publish
+backend changes only after checking native turns are idle; a backend restart
+still stops its own workers.
+
+
+### Owner budget update and marketing tools — 2026-11-17
+
+The owner explicitly raised ceo/cfo/cto/marker to $10 per UTC day each. This
+supersedes the earlier $2 deployment setting; active requests, monetary
+reservations and upstream account credit still apply. The multichannel update
+below raises the independent internal call ceiling to 3000/day.
+Other grants and model choices remain unchanged.
+
+Marker's site uses pnpm 10.34.9 through its packageManager declaration and the
+root-owned runtime Corepack wrapper. Pillow/CairoSVG are installed as distro
+packages. Memory-intensive Next builds are requested with polza-site-build: a
+single bounded systemd path watch starts a fixed same-UID Webpack build, outside
+the chat's 1.2 GiB cgroup. It adds no sudo, arbitrary command or root execution.
+See services/polza-site-build/README.md for bounds and ownership.
+
+Images are independently granted to marker through the existing UID-authenticated
+connector; owner is implicit, other staff remain denied. The upstream key is
+private. Paid requests need a stable key, never automatically replay on unknown
+outcomes, and are limited separately from text-model dollars. See
+services/polza-access/README.md for commands, formats and retention.
+
+
+### Billing and visible counters — 2026-11-17
+
+The Polza sidebar displays Codex, Claude and OpenRouter in owner and employee
+realms. Subscription percentages appear only when the native provider reports
+a quota. Employee Codex/Claude API transports are labelled separately, with
+per-transport request counts and confirmed cost since tracking began. Absent
+quota/billing data is shown as unavailable, never as a fabricated zero.
+The Polza build flag remains the UI gate; vanilla/older servers retain their
+existing behavior and an unavailable optional billing route is nonfatal.
+
+`GET /api/providers/model-usage` reads the fixed loopback broker with the
+runtime's own capability. It returns only that employee's budget, active/queued
+counts and transport accounting, plus the shared upstream key's API-reported
+spend and account credit balance. The owner uses a separate status-only
+capability, which cannot invoke inference or enumerate individual employee
+ledgers. Keys are never returned to browsers. The owner runtime overlay also
+needs the existing `auth/dedicatedEmployeeRuntime.js` dependency, with its opt-in
+disabled in the owner service; do not copy an employee policy into that service.
+
+Router facts come from `GET /api/v1/key` and `/credits`, with a 60-second
+single-flight cache. An unavailable refresh retains a timestamped stale result
+or returns unavailable; it never turns missing data into zero. Refresh is
+explicit/view-owned, with no endless idle poll. A configured employee daily
+budget is distinct from the upstream key's own cap and the account credit
+balance; reaching either upstream limit can still prevent inference.
+
+Request reservations are not invoices. Terminal Responses/Anthropic SSE billing
+is parsed incrementally before forwarding the terminal bytes: a native SDK may
+cancel immediately after `response.completed`/`message_stop`, before HTTP EOF.
+Confirmed `usage.cost` is retained even then. If cost is absent but a recognized
+generation id exists, one bounded read of `/generation` can confirm `total_cost`.
+An unknown outcome retains its conservative reservation and is labelled
+unverified. Partial usage without a terminal event is not treated as a complete
+bill. Known provider validation failures release their reservation.
+
+The pre-tracking ledger has no per-request attribution. Its legacy upper bound
+is displayed separately from confirmed costs; it must not be called actual
+employee spending. On 17 November the marker legacy charge was safely capped
+by the actual cumulative spend of the shared upstream key, not reset to zero
+or falsely assigned a precise daily invoice. Twenty-four subsequent native
+requests were individually verified through OpenRouter generation records;
+their exact per-employee totals replaced only those known tracking-period
+reservations, preserving request counts and the legacy bound.
+
+Production verification: sixteen real native chats (four per ceo/cfo/cto/marker)
+completed, with a measured sixteen global/four per-account peak. All four native
+terminal probes passed 29 OS checks each. An initial cold parallel launch saw
+two Codex startup exits; the underlying cause was not established. After
+warming/restarting those runtimes, both the repeat pair and the final sixteen
+completed without that failure. This is evidence for current realms, not a
+claim that arbitrary future cold provisioning is proven. Diagnostic chats were
+archived. Scoped API reads passed in all five realms; a status-only token was
+rejected for inference. Focused broker/accounting tests cover early SSE client
+cancellation, queue cancellation, memory pressure and both wire formats.
+
+### Resource-selection audit — 2026-11-17
+
+The current boundary isolates employee UIDs from owner/other-employee state. It
+must not be advertised as fine-grained folder, exact-chat or per-external-account
+isolation inside an employee realm. Backend and worker share that UID; production
+metadata and a non-writing mount-namespace probe confirmed that its auth/grant
+stores and their parent are writable by it. See
+[authority-store gap](../gaps/polza-agent-writable-authority-store.md).
+
+The existing team admin edits projects and integration families for four
+preprovisioned realms; it is not a reusable isolated-employee creation flow.
+Native project view/join/new-session and path grants are not exact-chat grants or
+OS read/write folder mounts. Media has internal site scopes but its current
+connector uses one shared owner capability, without per-employee account choices
+in the admin. A native disable is not a single revocation action for inference,
+browser leases, filesystem workers and connector capabilities.
+
+[Managed employee/resource access](../docs/tactical/polza-managed-employee-access.md)
+records the requested target and migration/acceptance plan. It is a proposal,
+not a claim that the resource-selection wizard or separated execution identity
+has shipped. The audit did not provision users, change grants or restart services.
+
+### Production specialist account — 2026-11-17
+
+The owner requested `dimak_spec` for client project management and launch control.
+Native usernames currently accept hyphens but not underscores: the actual login
+is `dimak-spec`; its label remains `dimak_spec`. The new realm uses UID 2005,
+`pcw-dimak-spec`, port 3414 and `polza-employee-dimak-spec.service`. Its HOME is
+`/var/lib/polza-employees/dimak_spec`, on a separate 4 GiB loop filesystem.
+The four existing realms, histories and password hashes were preserved.
+
+`work/production` is a service-namespace bind of the existing production tree
+`/home/manager/аутрич-контур`. Named/default ACLs grant UID 2005 access only to
+that tree, not manager HOME. File edits are shared; historical owner chats were
+not migrated or synchronized. New employee chats are in this realm and the owner
+can open that same realm through team administration. Do not describe this as
+universal cross-realm chat sharing.
+
+The configured connector principal `dimak-spec` maps from UID 2005 and receives
+Telegram write (explicit recipient/text request and idempotency still required)
+and Portal read. It has no corporate Gmail, media, Docs, finance or deployment
+grant. The actual shared Telegram account checked as `@igor_grishin82`, without
+Premium. The model budget is $10/day UTC; the existing per-account concurrency
+and shared global admission limits remain in force.
+
+Portal exposes only `portal.status`, `portal.projects {limit,offset}`, and
+`portal.project {project_id}` via the UID broker. The fixed existing owner-only
+`portal-ro` helper holds credentials and opens a read-only transaction. The
+employee never receives a DSN, SSH key or arbitrary-SQL interface. Reports include
+bounded production fields, periods and campaign statuses, excluding finance and
+credentials. Project IDs must parse as UUIDs; list pagination is limited to 100
+rows and text fields are truncated. There are no campaign start/stop or project
+write operations. This is live querying, not a background data mirror.
+
+Acceptance: public limited login, unified team handoff, single project visibility,
+31 OS/network/filesystem probe checks, actual Telegram profile, Portal list/detail,
+negative Gmail/media/Docs/admin/project checks, and one real native Codex worker
+running `polza-integration portal.status`. The diagnostic chat was archived.
+Root-only rollback/configuration receipts are in
+`/root/polza-dimak-spec-20261117/`; credentials must never enter Git or this topic.
+The existing worker-writable realm authority-store gap remains unresolved.

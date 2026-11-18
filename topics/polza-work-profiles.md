@@ -32,7 +32,8 @@ calendar days, not local-midnight timestamps across DST. Unassessed, unmapped
 and blocked tasks have no score and stay below assessed work. The rationale
 and score are visible; the formula is available under Why this order. This is
 an explicit heuristic, not an AI revenue forecast. Completion never records
-revenue or leads. Ordinary Inbox and Today order stays unchanged.
+revenue or leads. Ordinary Inbox and Today lists show the newest added tasks
+first, independently of priority scores.
 
 Validation: client TypeScript, focused source/CSS checks, profile/ranking unit
 cases, UsersSettings tests, and limited-user service/instruction integration
