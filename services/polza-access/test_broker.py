@@ -10,6 +10,19 @@ spec.loader.exec_module(module)
 
 
 class AccessBoundary(unittest.TestCase):
+    def test_google_write_requires_current_write_grant(self):
+        with tempfile.TemporaryDirectory() as folder:
+            policy = Path(folder) / 'policy.json'
+            data = {'version': 1, 'connections': {'docs': {'configured': True}},
+                    'users': {'marker': {'docs': 'read'}}}
+            policy.write_text(json.dumps(data))
+            broker = module.Broker({'actors': {'2004': 'marker'}, 'policy': str(policy)})
+            broker.allowed('marker', 'docs.read')
+            for tool in module.GOOGLE_WRITES:
+                with self.assertRaises(module.Denied):broker.allowed('marker', tool)
+            data['users']['marker']['docs'] = 'write'
+            policy.write_text(json.dumps(data))
+            for tool in module.GOOGLE_WRITES:broker.allowed('marker', tool)
     def test_images_generation_requires_write_and_revocation_is_immediate(self):
         with tempfile.TemporaryDirectory() as folder:
             file = Path(folder) / "policy.json"

@@ -24,6 +24,7 @@ from proxy_access import proxy_call
 from image_access import image_call
 from cowork_access import cowork_call, CoworkError
 from portal_access import portal_call
+from google_write import write_call as google_write_call, OPERATIONS as GOOGLE_WRITES
 
 LIMIT = 512 * 1024
 OUTPUT_LIMIT = 8 * 1024 * 1024
@@ -40,6 +41,8 @@ READ_TOOLS = {
 }
 WRITE_TOOLS = {"gmail.send", "media.open", "media.login", "media.job", "media.cancel", "media.resume", "telegram.send", "images.generate"}
 TOOLS = READ_TOOLS | WRITE_TOOLS
+WRITE_TOOLS |= GOOGLE_WRITES
+TOOLS |= GOOGLE_WRITES
 
 
 class Denied(ValueError):
@@ -201,6 +204,8 @@ class Broker:
         if tool.startswith("proxy."):
             return proxy_call(self.config["proxyConfig"], tool, arguments)
         if tool.startswith("docs."):
+            if tool in GOOGLE_WRITES:
+                return google_write_call(self.config, actor, tool, arguments)
             value = "--check" if tool == "docs.check" else arguments.get("url")
             if not isinstance(value, str) or len(value) > 2000:
                 raise ValueError("Expected a Google Docs URL")

@@ -61,7 +61,7 @@ policy_file.write_text(json.dumps({"version": 1, "users": users, "connections": 
 os.chown(policy_file, team.pw_uid, manager.pw_gid)
 policy_file.chmod(0o640)
 LIB.mkdir(mode=0o755, exist_ok=True)
-for name in ("broker.py", "client.py", "proxy_access.py", "telegram_worker.py", "telegram_client.py", "image_access.py", "image_client.py", "media_cli.py"):
+for name in ("broker.py", "client.py", "proxy_access.py", "telegram_worker.py", "telegram_client.py", "image_access.py", "image_client.py", "media_cli.py", "google_write.py"):
     shutil.copy2(SOURCE / name, LIB / name)
     (LIB / name).chmod(0o644)
 original_reader = Path("/usr/local/bin/google-doc-read")
@@ -77,6 +77,9 @@ runtime = {
     "searchReport": str(home / "work/polza-seo-pr/scripts/seo-search-report.py"),
 }
 runtime_file = private / "runtime.json"
+existing_runtime = json.loads(runtime_file.read_text()) if runtime_file.exists() else {}
+if existing_runtime.get("googleWriteCredentials"):
+    runtime["googleWriteCredentials"] = existing_runtime["googleWriteCredentials"]
 runtime_file.write_text(json.dumps(runtime))
 os.chown(runtime_file, manager.pw_uid, manager.pw_gid)
 runtime_file.chmod(0o600)

@@ -1,0 +1,149 @@
+"""Native Docs/Sheets writes with scoped OAuth and durable no-replay receipts."""
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+
+OPERATIONS = {'docs.create', 'docs.update', 'docs.create_sheet',
+              'docs.write_sheet', 'docs.format_sheet'}
+
+
+def api(url, token=None, body=None, form=None):
+    headers = {'Accept': 'application/json'}
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    data = None
+    if body is not None:
+        headers['Content-Type'] = 'application/json'
+        data = json.dumps(body).encode()
+    if form is not None:
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
+        data = urllib.parse.urlencode(form).encode()
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = response.read(5 * 1024 * 1024 + 1)
+            if len(data) > 5 * 1024 * 1024:
+                raise ValueError('Google response exceeds limit')
+            return json.loads(data)
+    except urllib.error.HTTPError as error:
+        # Never relay token responses or user content into logs/receipts.
+        raise ValueError('Google API refused the operation (HTTP %s)' % error.code) from None
+
+
+def identifier(value):
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_-]{10,200}', value):
+        raise ValueError('Expected a Google document or spreadsheet ID')
+    return value
+
+
+def write_call(config, actor, tool, args):
+    if tool not in OPERATIONS:
+        raise ValueError('Unsupported Google write operation')
+    key = args.get('idempotency_key')
+    if not isinstance(key, str) or not 1 <= len(key) <= 200:
+        raise ValueError('Google writes require a stable idempotency_key')
+    title = args.get('title', '')
+    if tool in ('docs.create', 'docs.create_sheet') and (not isinstance(title, str) or not 1 <= len(title) <= 300):
+        raise ValueError('Expected a title of 1–300 characters')
+    if tool == 'docs.create' and not isinstance(args.get('text', ''), str):
+        raise ValueError('Document text must be a string')
+    if tool == 'docs.create_sheet':
+        values = args.get('values', [])
+        if not isinstance(values, list) or len(values) > 10000 or any(
+            not isinstance(row, list) or len(row) > 200 or any(
+                not isinstance(cell, (str, int, float, bool)) and cell is not None
+                for cell in row) for row in values):
+            raise ValueError('Expected a bounded matrix of scalar cells')
+    if tool in ('docs.update', 'docs.format_sheet'):
+        requests = args.get('requests')
+        if not isinstance(requests, list) or not 1 <= len(requests) <= 100:
+            raise ValueError('Expected 1–100 native batchUpdate requests')
+    if tool not in ('docs.create', 'docs.create_sheet'):
+        identifier(args.get('document_id'))
+    if tool == 'docs.write_sheet':
+        if not isinstance(args.get('data'), list) or not 1 <= len(args['data']) <= 100:
+            raise ValueError('Expected 1–100 range/value entries')
+        if args.get('value_input_option', 'RAW') not in ('RAW', 'USER_ENTERED'):
+            raise ValueError('Expected RAW or USER_ENTERED')
+    root = Path(config['state']) / 'google-write-receipts'
+    root.mkdir(mode=0o700, exist_ok=True)
+    path = root / (hashlib.sha256((actor + ':' + key).encode()).hexdigest() + '.json')
+    digest = hashlib.sha256(json.dumps([tool, args], sort_keys=True).encode()).hexdigest()
+    if path.exists():
+        saved = json.loads(path.read_text())
+        if saved['request_hash'] != digest:
+            raise ValueError('Idempotency key conflicts with an earlier request')
+        return {k: v for k, v in saved.items() if k != 'request_hash'}
+    if sum(1 for _ in root.glob('*.json')) >= 5000:
+        raise ValueError('Google receipt limit reached; ask the owner to archive receipts')
+    # Refresh and verify identity before creating a pending write receipt.
+    credentials = json.loads(Path(config['googleWriteCredentials']).read_text())
+    if credentials.get('account') != 'info@polzaagency.com':
+        raise ValueError('Unexpected corporate Google account')
+    token = api('https://oauth2.googleapis.com/token', form={
+        'client_id': credentials['client_id'], 'client_secret': credentials['client_secret'],
+        'refresh_token': credentials['refresh_token'], 'grant_type': 'refresh_token'})['access_token']
+    who = api('https://openidconnect.googleapis.com/v1/userinfo', token)
+    if who.get('email') != 'info@polzaagency.com' or who.get('email_verified') is not True:
+        raise ValueError('Google identity mismatch')
+    receipt = {'request_hash': digest, 'status': 'needs_review', 'operation': tool}
+    def save():
+        tmp = path.with_suffix('.next')
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as out:
+            json.dump(receipt, out)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp, path)
+    save()
+    # A failed/uncertain write is never repeated automatically, including an
+    # interrupted create whose upstream resource ID has not been received.
+    if tool == 'docs.create':
+        doc = api('https://docs.googleapis.com/v1/documents', token, {'title': title})
+        resource = identifier(doc['documentId'])
+        receipt.update(document_id=resource, url='https://docs.google.com/document/d/' + resource + '/edit')
+        save()
+        if args.get('text'):
+            api('https://docs.googleapis.com/v1/documents/' + resource + ':batchUpdate', token,
+                {'requests': [{'insertText': {'location': {'index': 1}, 'text': args['text']}}]})
+    elif tool == 'docs.create_sheet':
+        def cell_value(cell):
+            if cell is None:
+                return {}
+            if isinstance(cell, bool):
+                return {'boolValue': cell}
+            if isinstance(cell, (int, float)):
+                return {'numberValue': cell}
+            return {'stringValue': cell}
+        rows = [{'values': [{'userEnteredValue': cell_value(cell)} for cell in row]}
+                for row in values]
+        sheet = api('https://sheets.googleapis.com/v4/spreadsheets', token, {
+            'properties': {'title': title},
+            'sheets': [{'properties': {'title': 'Лист1', 'gridProperties': {
+                'rowCount': max(1000, len(rows)),
+                'columnCount': max(26, max((len(r) for r in values), default=0))}},
+                'data': [{'startRow': 0, 'startColumn': 0, 'rowData': rows}]}]})
+        receipt.update(document_id=identifier(sheet['spreadsheetId']), url=sheet['spreadsheetUrl'])
+    elif tool == 'docs.update':
+        body = {'requests': args['requests']}
+        if args.get('write_control'):
+            body['writeControl'] = args['write_control']
+        api('https://docs.googleapis.com/v1/documents/' + args['document_id'] + ':batchUpdate', token, body)
+    elif tool == 'docs.write_sheet':
+        api('https://sheets.googleapis.com/v4/spreadsheets/' + args['document_id'] + '/values:batchUpdate', token,
+            {'valueInputOption': args.get('value_input_option', 'RAW'), 'data': args['data']})
+    elif tool == 'docs.format_sheet':
+        api('https://sheets.googleapis.com/v4/spreadsheets/' + args['document_id'] + ':batchUpdate', token,
+            {'requests': args['requests']})
+    receipt['status'] = 'completed'
+    if tool not in ('docs.create', 'docs.create_sheet'):
+        kind = 'document' if tool == 'docs.update' else 'spreadsheets'
+        receipt.update(document_id=args['document_id'],
+                       url='https://docs.google.com/' + kind + '/d/' + args['document_id'] + '/edit')
+    save()
+    return {k: v for k, v in receipt.items() if k != 'request_hash'}
