@@ -106,3 +106,11 @@ storage, deployment, caps, restart/recovery and scheduling semantics.
 
 Chat-header Goal and recurring chat runs are separate from Tasker cards; see
 [Polza chat execution modes](polza-chat-execution.md).
+
+Completion celebrations use twelve Russian encouragements, rotating with the
+credited completion count. Four restrained color/shape treatments vary the
+reward card; level-ups and newly unlocked rewards have their own Russian copy.
+The +25 XP value stays visible. Forty decorative, noninteractive confetti pieces
+fall across the viewport behind the card, then disappear; the card dismisses
+automatically after 4.2 seconds or with its close button. Reduced motion removes
+confetti and all card/icon movement. These effects never change the XP ledger.

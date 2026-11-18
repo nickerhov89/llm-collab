@@ -99,21 +99,50 @@
   color: #6b865c;
 }
 .celebration {
+  --reward-accent: #527344;
+  --reward-soft: #edf2e7;
   position: fixed;
   z-index: 1100;
   bottom: 28px;
   left: 50%;
   transform: translateX(-50%);
-  width: min(440px, calc(100vw - 32px));
+  box-sizing: border-box;
+  width: min(520px, calc(100vw - 32px));
   display: flex;
   align-items: center;
   gap: 14px;
   background: var(--bg-surface, #fff);
-  border: 1px solid #829b73;
+  border: 1px solid color-mix(in srgb, var(--reward-accent) 40%, transparent);
   border-radius: 18px;
   box-shadow: 0 12px 50px #203b2226;
   padding: 18px;
   animation: arrival 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.celebration[data-tone="1"] {
+  --reward-accent: #456e91;
+  --reward-soft: #edf3fa;
+  border-radius: 24px 24px 24px 8px;
+}
+.celebration[data-tone="2"] {
+  --reward-accent: #84622b;
+  --reward-soft: #faf3e4;
+  border-top: 3px solid var(--reward-accent);
+}
+.celebration[data-tone="3"] {
+  --reward-accent: #79608b;
+  --reward-soft: #f3edf8;
+  border-radius: 10px 24px 10px 24px;
+}
+.xp {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: var(--reward-soft);
+  color: var(--reward-accent);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .celebrationIcon {
   display: grid;
@@ -121,14 +150,15 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: #edf2e7;
-  color: #527344;
+  background: var(--reward-soft);
+  color: var(--reward-accent);
   font-size: 26px;
   flex-shrink: 0;
   animation: pop 0.6s cubic-bezier(0.2, 1.8, 0.4, 1);
 }
 .celebration strong {
   font-size: 18px;
+  overflow-wrap: anywhere;
 }
 .celebration p {
   font-size: 12px;
@@ -139,6 +169,8 @@
   margin-left: auto;
 }
 .levelUp {
+  --reward-accent: #94731e;
+  --reward-soft: #f8edcf;
   border-color: #baa15f;
 }
 .levelUp .celebrationIcon {
@@ -146,21 +178,28 @@
   color: #94731e;
 }
 .sparkles {
-  position: absolute;
+  position: fixed;
+  z-index: 1099;
   inset: 0;
   pointer-events: none;
-  overflow: visible;
+  overflow: hidden;
 }
 .sparkles i {
   position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 5px;
-  height: 9px;
+  left: var(--x);
+  top: -20px;
+  width: 7px;
+  height: 12px;
   border-radius: 2px;
   background: hsl(calc(var(--particle) * 28), 55%, 55%);
-  animation: burst 0.95s ease-out both;
-  transform: rotate(calc(var(--particle) * 30deg));
+  animation: burst var(--duration) cubic-bezier(0.2, 0.5, 0.5, 1) var(--delay)
+    both;
+  will-change: transform, opacity;
+}
+.sparkles i:nth-child(3n) {
+  border-radius: 50%;
+  width: 9px;
+  height: 9px;
 }
 @keyframes arrival {
   from {
@@ -182,12 +221,17 @@
 }
 @keyframes burst {
   0% {
+    opacity: 0;
+    transform: translate3d(0, -20px, 0) rotate(0);
+  }
+  10%,
+  75% {
     opacity: 1;
-    transform: rotate(calc(var(--particle) * 30deg)) translateY(0);
   }
   100% {
     opacity: 0;
-    transform: rotate(calc(var(--particle) * 30deg)) translateY(-130px);
+    transform: translate3d(var(--drift), 105vh, 0)
+      rotate(calc(var(--particle) * 47deg));
   }
 }
 @media (max-width: 600px) {
@@ -196,6 +240,19 @@
   }
   .celebration {
     bottom: 16px;
+    gap: 10px;
+    padding: 14px 12px;
+  }
+  .celebration strong {
+    font-size: 16px;
+  }
+  .celebrationIcon {
+    width: 40px;
+    height: 40px;
+  }
+  .xp {
+    margin-left: 0;
+    margin-top: 5px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { Modal } from "./ui/Modal";
 import { useI18n } from "../i18n";
 import {
@@ -13,6 +14,25 @@ export interface TaskerCelebration {
   leveled: boolean;
   badges: BadgeId[];
 }
+const cheers = [
+  ["Красиво закрыл!", "Одним делом меньше. Дышится легче.", "✓"],
+  ["Минус задача, плюс кайф", "Забирай свои +25 XP. Ты их заработал.", "↗"],
+  ["Вот это темп!", "Маленькая победа тоже считается.", "✦"],
+  [
+    "Сделано. Можно выдохнуть",
+    "Ещё один пункт больше не висит над головой.",
+    "✓",
+  ],
+  ["Ты сегодня в ударе", "Продолжай в своём ритме.", "✶"],
+  ["Плюс один повод гордиться", "Дело двигается — и это твоя заслуга.", "↗"],
+  ["Так держать!", "Большие результаты собираются из таких шагов.", "✦"],
+  ["Задача сдалась", "А ты стал на 25 XP опытнее.", "✓"],
+  ["Хорошая работа", "Не обязательно успеть всё. Этот шаг уже сделан.", "✶"],
+  ["Ещё ближе к цели", "Сегодняшний ты помог завтрашнему себе.", "↗"],
+  ["Есть контакт!", "План превращается в результат.", "✦"],
+  ["Можно поставить галочку", "И на секунду порадоваться. Заслуженно.", "✓"],
+] as const;
+
 export function TaskerProgress({
   progress,
   unlocked,
@@ -25,12 +45,16 @@ export function TaskerProgress({
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [show, setShow] = useState(false);
+  const [cheerIndex, setCheerIndex] = useState(0);
   useEffect(() => {
     if (!celebration) return;
+    // Rotate with the completion count, rather than changing copy on rerenders.
+    setCheerIndex(progress.completed % cheers.length);
     setShow(true);
     const timer = setTimeout(() => setShow(false), 4200);
     return () => clearTimeout(timer);
-  }, [celebration]);
+  }, [celebration, progress.completed]);
+  const cheer = cheers[cheerIndex] ?? cheers[0];
   return (
     <>
       <button
@@ -54,32 +78,54 @@ export function TaskerProgress({
         </span>
         <span aria-hidden="true">↗</span>
       </button>
+      {show &&
+        celebration &&
+        createPortal(
+          <div
+            key={celebration.id}
+            className={styles.sparkles}
+            aria-hidden="true"
+          >
+            {Array.from({ length: 40 }, (_, i) => (
+              <i
+                key={i}
+                style={
+                  {
+                    "--particle": i,
+                    "--x": `${(i * 37) % 100}%`,
+                    "--drift": `${((i * 53) % 240) - 120}px`,
+                    "--delay": `${(i % 8) * 0.055}s`,
+                    "--duration": `${1.6 + (i % 5) * 0.2}s`,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </div>,
+          document.body,
+        )}
       {show && celebration && (
         <div
           key={celebration.id}
           className={`${styles.celebration} ${celebration.leveled ? styles.levelUp : ""}`}
+          data-tone={cheerIndex % 4}
           role="status"
         >
-          <div className={styles.sparkles} aria-hidden="true">
-            {Array.from({ length: 12 }, (_, i) => (
-              <i key={i} style={{ "--particle": i } as CSSProperties} />
-            ))}
-          </div>
           <span className={styles.celebrationIcon} aria-hidden="true">
-            {celebration.leveled ? "★" : "✓"}
+            {celebration.leveled ? "★" : cheer[2]}
           </span>
           <div>
             <strong>
               {celebration.leveled
-                ? t("taskerLevelUp", { level: celebration.level })
-                : t("taskerXpEarned")}
+                ? `Новый уровень — ${celebration.level}!`
+                : cheer[0]}
             </strong>
+            <span className={styles.xp}>+25 XP</span>
             <p>
               {celebration.badges.length
-                ? celebration.badges
-                    .map((id) => t(`taskerBadge_${id}`))
-                    .join(" · ")
-                : t("taskerKeepGoing")}
+                ? "И новая награда в коллекции. Забирай!"
+                : celebration.leveled
+                  ? "Растёшь над собой. Вот это приятно."
+                  : cheer[1]}
             </p>
           </div>
           <button
