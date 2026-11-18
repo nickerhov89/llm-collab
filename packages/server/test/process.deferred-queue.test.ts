@@ -905,11 +905,6 @@ describe("Process", () => {
         metadata: { deliveryIntent: "patient" },
       });
 
-      // Only patient entries accept the steer-through action.
-      expect(
-        process.steerPatientDeferredMessagesThrough("temp-regular"),
-      ).toMatchObject({ success: false });
-
       expect(
         process.steerPatientDeferredMessagesThrough("temp-patient-2"),
       ).toEqual({ success: true, steered: 2 });
@@ -935,6 +930,68 @@ describe("Process", () => {
         },
       ]);
 
+      controller.finish();
+      await process.abort();
+    });
+
+    it("steers a regular item once without rewriting text or consuming other queued items", async () => {
+      const controller = createControllableIterator();
+      const queue = new MessageQueue();
+      const process = new Process(controller.iterator, {
+        projectPath: "/test",
+        projectId: "proj-1" as UrlProjectId,
+        sessionId: "regular-steer",
+        provider: "claude",
+        queue,
+        idleTimeoutMs: 100,
+      });
+      process.deferMessage({
+        text: "earlier patient",
+        tempId: "patient",
+        metadata: { deliveryIntent: "patient" },
+      });
+      process.deferMessage({
+        text: "when done, keep these words",
+        tempId: "regular",
+        metadata: { deliveryIntent: "deferred" },
+      });
+      process.deferMessage({
+        text: "later",
+        tempId: "later",
+        metadata: { deliveryIntent: "deferred" },
+      });
+      expect(process.steerPatientDeferredMessagesThrough("regular")).toEqual({
+        success: true,
+        steered: 1,
+      });
+      expect(queue.drain()).toMatchObject([
+        {
+          text: "when done, keep these words",
+          tempId: "regular",
+          metadata: { deliveryIntent: "steer" },
+        },
+      ]);
+      expect(process.getDeferredQueueSummary().map((m) => m.tempId)).toEqual([
+        "patient",
+        "later",
+      ]);
+      expect(
+        process.steerPatientDeferredMessagesThrough("regular"),
+      ).toMatchObject({ success: false });
+      expect(queue.depth).toBe(0);
+      process.deferMessage({
+        text: "careful",
+        tempId: "effort",
+        metadata: { deliveryIntent: "deferred", turnEffort: "slow" },
+      });
+      expect(
+        process.steerPatientDeferredMessagesThrough("effort"),
+      ).toMatchObject({ success: false });
+      expect(process.getDeferredQueueSummary().map((m) => m.tempId)).toEqual([
+        "patient",
+        "later",
+        "effort",
+      ]);
       controller.finish();
       await process.abort();
     });

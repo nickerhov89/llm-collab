@@ -6001,16 +6001,19 @@ export class Process {
   }
 
   /**
-   * A queued patient message rewritten for immediate steering: the steer
+   * A queued message rewritten for immediate steering: the steer
    * delivery intent replaces the patient one (and its now-moot patience),
-   * and one recognized patient prefix is stripped because its "when done"
+   * and a patient-only recognized prefix is stripped because its "when done"
    * wording no longer applies to an immediate send.
    */
   private toSteeredPatientMessage(message: UserMessage): UserMessage {
     const { patienceSeconds: _patience, ...metadata } = message.metadata ?? {};
     return {
       ...message,
-      text: stripPatientQueuePrefix(message.text),
+      text:
+        message.metadata?.deliveryIntent === "patient"
+          ? stripPatientQueuePrefix(message.text)
+          : message.text,
       metadata: { ...metadata, deliveryIntent: "steer" },
     };
   }
@@ -6019,7 +6022,8 @@ export class Process {
    * Steer a queued patient entry — and every patient entry ahead of it, so
    * earlier patient context is never skipped — into the session now instead
    * of waiting for verified quiet. Regular deferred entries keep their queue
-   * positions. When the join window (queued-send batching) is enabled the
+   * positions. An explicitly selected regular entry steers by itself and keeps
+   * its original text. When the join window (queued-send batching) is enabled the
    * group delivers as one concatenated steering turn; with the default
    * window of 0 each entry is steered separately in queue order.
    */
@@ -6035,13 +6039,14 @@ export class Process {
       return { success: false, error: "Deferred message not found" };
     }
     const target = this.deferredQueue[targetIndex]!;
-    if (target.message.metadata?.deliveryIntent !== "patient") {
-      return { success: false, error: "Not a patient queued message" };
-    }
-
-    const group = this.deferredQueue
-      .slice(0, targetIndex + 1)
-      .filter((entry) => entry.message.metadata?.deliveryIntent === "patient");
+    const group =
+      target.message.metadata?.deliveryIntent === "patient"
+        ? this.deferredQueue
+            .slice(0, targetIndex + 1)
+            .filter(
+              (entry) => entry.message.metadata?.deliveryIntent === "patient",
+            )
+        : [target];
     if (group.some((entry) => entry.message.metadata?.turnEffort)) {
       return {
         success: false,

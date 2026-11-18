@@ -67,6 +67,19 @@ Rationale:
 - The phrase `when done, ` is ordinary user-authored prompt text, not a YA queue
   mechanism. New patient queue submissions do not prepend it.
 - Regular queue sends attach `deliveryIntent: "deferred"`.
+- Explicit `Steer now` accepts both ordinary deferred and patient entries.
+  An ordinary entry is sent by itself with its text unchanged; other queued
+  entries retain their positions. Patient selection keeps its existing
+  patient-through ordering. Effort modifiers still require a new turn.
+  The historical patient-named endpoint remains compatible with older clients.
+  On 18 November, the Polza frontend already offered regular-item steering
+  while its installed supervisor still refused it. The deployed supervisor was
+  updated for all six runtimes, including existing Process instances, without
+  restarting provider work or submitting the owner's queued text. A separate
+  native Codex fixture returned success for regular queue → steer, contained
+  exactly one corresponding user turn and completed with the requested reply.
+  The owner's original active process ID remained unchanged. The fixture was
+  archived; temporary root-only diagnostics were closed and removed.
 - Patient queue sends attach `deliveryIntent: "patient"` and keep their own
   accepted queue timestamp/metadata. Changing the patient setting later does
   not mutate already queued items.
