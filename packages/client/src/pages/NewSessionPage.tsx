@@ -289,7 +289,9 @@ export function NewSessionPage() {
             onProjectChange={handleProjectChange}
             preferredProvider={preferredProvider as ProviderName | undefined}
             preferredModel={preferredModel}
-            separateProjectDraft={searchParams.get("separateProjectDraft") === "1"}
+            separateProjectDraft={
+              searchParams.get("separateProjectDraft") === "1"
+            }
             preferredThinking={preferredThinking}
             preferredPermissionMode={preferredPermissionMode}
             preferredExecutor={preferredExecutor || undefined}

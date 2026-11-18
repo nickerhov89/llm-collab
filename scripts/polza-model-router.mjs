@@ -429,8 +429,9 @@ async function runCli(selected, prompt, directory, requiredKeys) {
             "Answer the task provided on standard input.",
           ];
   const executable =
-    process.env[`POLZA_${selected.provider.toUpperCase().replaceAll("-", "_")}_CLI_BIN`] ??
-    selected.provider;
+    process.env[
+      `POLZA_${selected.provider.toUpperCase().replaceAll("-", "_")}_CLI_BIN`
+    ] ?? selected.provider;
   const input = requiredKeys.length
     ? `${prompt}\nReturn only valid JSON containing keys: ${requiredKeys.join(", ")}.`
     : prompt;

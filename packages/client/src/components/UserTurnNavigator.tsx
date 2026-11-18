@@ -809,7 +809,13 @@ export const UserTurnNavigator = memo(function UserTurnNavigator({
         ? previous
         : nextLayout;
     });
-  }, [getRenderIdTop, messageListRef, minAnchorCount, polzaRail, shouldMeasure]);
+  }, [
+    getRenderIdTop,
+    messageListRef,
+    minAnchorCount,
+    polzaRail,
+    shouldMeasure,
+  ]);
 
   const scheduleLayoutUpdate = useCallback(
     (kind: LayoutUpdateKind = "scroll") => {

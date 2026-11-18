@@ -301,7 +301,10 @@ export function ProjectCard({
                 <span className={styles.separator}>·</span>
                 <span className={styles.time}>
                   {polzaUi
-                    ? new Date(project.lastActivity).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })
+                    ? new Date(project.lastActivity).toLocaleDateString(
+                        "ru-RU",
+                        { day: "numeric", month: "short" },
+                      )
                     : formatRelativeTime(project.lastActivity)}
                 </span>
               </>

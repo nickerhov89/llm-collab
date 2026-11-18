@@ -154,7 +154,12 @@ describe("sidebar named sections", () => {
     const row = (
       id: string,
       fields: Partial<SessionCollectionRecord> = {},
-    ): SessionCollectionRecord => ({ id, createdAt: old, observedAt: 0, ...fields });
+    ): SessionCollectionRecord => ({
+      id,
+      createdAt: old,
+      observedAt: 0,
+      ...fields,
+    });
     const pinned = row("pinned", { isStarred: true, updatedAt: recent });
     const records = [
       row("old"),

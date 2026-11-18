@@ -1393,18 +1393,26 @@
 }
 
 .polza-ui .polza-project-directory-card > a,
-.polza-ui .polza-search-results .session-list-item--card .session-list-item__link {
+.polza-ui
+  .polza-search-results
+  .session-list-item--card
+  .session-list-item__link {
   min-width: 0;
   padding: 18px 20px;
   border: 1px solid var(--border-color);
   border-radius: 16px;
   background: var(--bg-surface);
   box-shadow: 0 2px 8px rgb(0 0 0 / 0.025);
-  transition: background 140ms ease, border-color 140ms ease;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease;
 }
 
 .polza-ui .polza-project-directory-card > a:hover,
-.polza-ui .polza-search-results .session-list-item--card .session-list-item__link:hover {
+.polza-ui
+  .polza-search-results
+  .session-list-item--card
+  .session-list-item__link:hover {
   border-color: #d8d9dc;
   background: #fafafb;
 }
@@ -1430,17 +1438,28 @@
 }
 
 .polza-ui .polza-project-directory-card > a > div:first-child > button:hover,
-.polza-ui .polza-project-directory-card > a > div:first-child > button:focus-visible {
+.polza-ui
+  .polza-project-directory-card
+  > a
+  > div:first-child
+  > button:focus-visible {
   border-color: var(--border-input);
 }
 
-.polza-ui .polza-project-directory-card > a > div:first-child > button:last-child {
+.polza-ui
+  .polza-project-directory-card
+  > a
+  > div:first-child
+  > button:last-child {
   background: var(--bg-secondary);
   color: var(--text-primary);
 }
 
 .polza-ui .polza-project-directory-card > a:focus-visible,
-.polza-ui .polza-search-results .session-list-item--card .session-list-item__link:focus-visible {
+.polza-ui
+  .polza-search-results
+  .session-list-item--card
+  .session-list-item__link:focus-visible {
   outline: 2px solid #4b83ef;
   outline-offset: 2px;
 }
@@ -1484,7 +1503,10 @@
   }
 
   .polza-ui .polza-project-directory-card > a,
-  .polza-ui .polza-search-results .session-list-item--card .session-list-item__link {
+  .polza-ui
+    .polza-search-results
+    .session-list-item--card
+    .session-list-item__link {
     padding: 15px 16px;
   }
 }

@@ -3114,33 +3114,17 @@ export function MessageInput({
       if (e.nativeEvent.isComposing) return;
 
       // Cmd+Enter sends directly while the busy Enter action queues.
-      if (
-        onQueue &&
-        e.metaKey &&
-        !e.shiftKey &&
-        !e.altKey
-      ) {
+      if (onQueue && e.metaKey && !e.shiftKey && !e.altKey) {
         e.preventDefault();
-        void handleSubmit(
-          undefined,
-          "steer",
-        );
+        void handleSubmit(undefined, "steer");
         return;
       }
 
       // Cmd/Ctrl+Shift+Enter is the explicit direct-send chord. Plain
       // Shift+Enter remains available for a newline in the composer.
-      if (
-        onQueue &&
-        (e.metaKey || e.ctrlKey) &&
-        e.shiftKey &&
-        !e.altKey
-      ) {
+      if (onQueue && (e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey) {
         e.preventDefault();
-        void handleSubmit(
-          undefined,
-          "steer",
-        );
+        void handleSubmit(undefined, "steer");
         return;
       }
 

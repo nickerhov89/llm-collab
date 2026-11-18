@@ -24,14 +24,7 @@ interface Props {
 function AddMenuIcon({
   kind,
 }: {
-  kind:
-    | "file"
-    | "folder"
-    | "goal"
-    | "plan"
-    | "photos"
-    | "camera"
-    | "research";
+  kind: "file" | "folder" | "goal" | "plan" | "photos" | "camera" | "research";
 }) {
   const paths = {
     camera: (

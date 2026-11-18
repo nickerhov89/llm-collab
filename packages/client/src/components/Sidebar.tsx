@@ -495,15 +495,22 @@ export function Sidebar({
   } = useProjects();
   const [projectPinVersion, setProjectPinVersion] = useState(0);
   useEffect(() => {
-    const refresh = () => setProjectPinVersion(value => value + 1);
-    window.addEventListener('polza-project-pin-changed', refresh);
-    return () => window.removeEventListener('polza-project-pin-changed', refresh);
+    const refresh = () => setProjectPinVersion((value) => value + 1);
+    window.addEventListener("polza-project-pin-changed", refresh);
+    return () =>
+      window.removeEventListener("polza-project-pin-changed", refresh);
   }, []);
-  const polzaOrderedProjects = useMemo(() => [...projects].sort((a, b) => {
-    const pinnedA = localStorage.getItem(`polza-project-pin:${a.id}`) === '1';
-    const pinnedB = localStorage.getItem(`polza-project-pin:${b.id}`) === '1';
-    return Number(pinnedB) - Number(pinnedA);
-  }), [projects, projectPinVersion]);
+  const polzaOrderedProjects = useMemo(
+    () =>
+      [...projects].sort((a, b) => {
+        const pinnedA =
+          localStorage.getItem(`polza-project-pin:${a.id}`) === "1";
+        const pinnedB =
+          localStorage.getItem(`polza-project-pin:${b.id}`) === "1";
+        return Number(pinnedB) - Number(pinnedA);
+      }),
+    [projects, projectPinVersion],
+  );
   const sourceControlProjectId = useMemo(
     () =>
       getProjectIdFromLocation(location.pathname, location.search) ??
@@ -1223,7 +1230,9 @@ export function Sidebar({
             /* Desktop expanded mode: brand at the left edge, collapse toggle
                at the right edge so the control stays inside the sidebar. */
             <>
-              <div className={sidebarStyles.brandLink}><PolzaWorkspaceSwitch /></div>
+              <div className={sidebarStyles.brandLink}>
+                <PolzaWorkspaceSwitch />
+              </div>
               <Link
                 to={`${basePath}/sessions`}
                 className="polza-sidebar-search"
@@ -1253,7 +1262,9 @@ export function Sidebar({
           ) : (
             /* Mobile mode: brand text + close button */
             <>
-              <div className={sidebarStyles.brandLink}><PolzaWorkspaceSwitch /></div>
+              <div className={sidebarStyles.brandLink}>
+                <PolzaWorkspaceSwitch />
+              </div>
               <button
                 type="button"
                 className="sidebar-close"
@@ -1578,19 +1589,29 @@ export function Sidebar({
           {displayed.recent.length > 0 && (
             <div className="sidebar-section">
               <SidebarSectionHeader
-                title={polzaRecentsMode ? "Recents" : t("sidebarSectionLast24Hours")}
+                title={
+                  polzaRecentsMode ? "Recents" : t("sidebarSectionLast24Hours")
+                }
                 expanded={recentDayExpanded}
                 onToggle={() =>
                   setSidebarSectionExpanded("recentDay", (prev) => !prev)
                 }
-                controlsId={polzaRecentsMode ? "sidebar-recents-list" : "sidebar-last-24-hours-list"}
+                controlsId={
+                  polzaRecentsMode
+                    ? "sidebar-recents-list"
+                    : "sidebar-last-24-hours-list"
+                }
                 expandLabel={t("sidebarSectionExpand")}
                 collapseLabel={t("sidebarSectionCollapse")}
                 count={displayed.recent.length + displayed.hiddenRecent.length}
               />
               {recentDayExpanded && (
                 <ul
-                  id={polzaRecentsMode ? "sidebar-recents-list" : "sidebar-last-24-hours-list"}
+                  id={
+                    polzaRecentsMode
+                      ? "sidebar-recents-list"
+                      : "sidebar-last-24-hours-list"
+                  }
                   className="sidebar-session-list"
                 >
                   {displayed.recent.map(renderCompactSession)}
@@ -1629,7 +1650,17 @@ export function Sidebar({
 
           {projects.length > 0 && !isCollapsed && (
             <div className="sidebar-section polza-project-section">
-              <div className="polza-project-heading">Проекты <Link to={`${basePath}/projects?create=1`} onClick={onNavigate} aria-label="Создать проект" title="Создать проект">＋</Link></div>
+              <div className="polza-project-heading">
+                Проекты{" "}
+                <Link
+                  to={`${basePath}/projects?create=1`}
+                  onClick={onNavigate}
+                  aria-label="Создать проект"
+                  title="Создать проект"
+                >
+                  ＋
+                </Link>
+              </div>
               <ul className="polza-project-list">
                 {polzaOrderedProjects.map((project) => (
                   <li key={project.id}>
@@ -1652,11 +1683,30 @@ export function Sidebar({
                     </div>
                     <PolzaProjectActions project={project} compact />
                     <ul className="polza-project-chat-sublist">
-                      {globalQueryRecords.filter(record => record.projectId === project.id && !record.isArchived).map(record => {
-                        const session = sessionCollectionRecordToGlobalSessionItem(record);
-                        const title = session ? getSessionDisplayTitle(session) : record.title;
-                        return <li key={record.id}><Link to={`${basePath}/projects/${encodeURIComponent(project.id)}/sessions/${encodeURIComponent(record.id)}`} onClick={onNavigate} title={title ?? undefined}>{title || 'Новый чат'}</Link></li>;
-                      })}
+                      {globalQueryRecords
+                        .filter(
+                          (record) =>
+                            record.projectId === project.id &&
+                            !record.isArchived,
+                        )
+                        .map((record) => {
+                          const session =
+                            sessionCollectionRecordToGlobalSessionItem(record);
+                          const title = session
+                            ? getSessionDisplayTitle(session)
+                            : record.title;
+                          return (
+                            <li key={record.id}>
+                              <Link
+                                to={`${basePath}/projects/${encodeURIComponent(project.id)}/sessions/${encodeURIComponent(record.id)}`}
+                                onClick={onNavigate}
+                                title={title ?? undefined}
+                              >
+                                {title || "Новый чат"}
+                              </Link>
+                            </li>
+                          );
+                        })}
                     </ul>
                   </li>
                 ))}

@@ -23,7 +23,9 @@ export function formatDocumentTitle(
   if (!projectName) return BASE_TITLE;
   const safeProjectName = sanitizeSessionTitle(projectName);
   if (!sessionName)
-    return POLZA_COWORK ? `${safeProjectName} · ${BASE_TITLE}` : safeProjectName;
+    return POLZA_COWORK
+      ? `${safeProjectName} · ${BASE_TITLE}`
+      : safeProjectName;
   const safeSessionName = sanitizeSessionTitle(sessionName);
   if (projectCodeName) {
     const safeCodeName = sanitizeSessionTitle(projectCodeName);

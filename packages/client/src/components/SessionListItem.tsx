@@ -303,7 +303,10 @@ export function SessionListItem({
   const liRef = useRef<HTMLLIElement>(null);
   // True while this row's ... menu is open; suppresses new card shows.
   const menuOpenRef = useRef(false);
-  const [contextMenuRequest, setContextMenuRequest] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuRequest, setContextMenuRequest] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Computed values with optimistic fallback
   const isStarred = localIsStarred ?? isStarredProp;
@@ -802,8 +805,16 @@ export function SessionListItem({
 
   const handleSessionContextKey = useCallback(
     (event: React.KeyboardEvent<HTMLAnchorElement>) => {
-      if (!contextMenuOnly || !provider || !showMenu ||
-          !(event.key === "ContextMenu" || (event.key === "F10" && event.shiftKey))) return;
+      if (
+        !contextMenuOnly ||
+        !provider ||
+        !showMenu ||
+        !(
+          event.key === "ContextMenu" ||
+          (event.key === "F10" && event.shiftKey)
+        )
+      )
+        return;
       event.preventDefault();
       const rect = event.currentTarget.getBoundingClientRect();
       setContextMenuRequest({ x: rect.left + 20, y: rect.bottom });
@@ -1179,7 +1190,11 @@ export function SessionListItem({
         )}
       </div>
       {isEditing && contextMenuOnly && (
-        <Modal title="Rename chat" initialFocusRef={renameInputRef} onClose={handleCancelEditing}>
+        <Modal
+          title="Rename chat"
+          initialFocusRef={renameInputRef}
+          onClose={handleCancelEditing}
+        >
           <div className="polza-rename-chat">
             <p>Keep it short and recognizable</p>
             <input
@@ -1191,10 +1206,26 @@ export function SessionListItem({
               aria-label="Chat name"
               disabled={isSaving}
             />
-            {renameError && <p className="polza-rename-chat-error" role="alert">{renameError}</p>}
+            {renameError && (
+              <p className="polza-rename-chat-error" role="alert">
+                {renameError}
+              </p>
+            )}
             <div className="polza-rename-chat-actions">
-              <button type="button" onClick={handleCancelEditing} disabled={isSaving}>Cancel</button>
-              <button type="button" onClick={() => void handleSaveRename()} disabled={isSaving || !renameValue.trim()}>Save</button>
+              <button
+                type="button"
+                onClick={handleCancelEditing}
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveRename()}
+                disabled={isSaving || !renameValue.trim()}
+              >
+                Save
+              </button>
             </div>
           </div>
         </Modal>

@@ -1095,9 +1095,16 @@ function UserEditor({
     return provider?.models ?? [];
   }, [providers, draft.provider]);
   const lock = lockSummary(user);
-  const profileBlocks = POLZA_ADMIN_UI ? draft.instructionBlocks.filter(block => block.text.startsWith(PROFILE_MARKER)) : [];
-  const visibleInstructionBlocks = POLZA_ADMIN_UI ? draft.instructionBlocks.filter(block => !block.text.startsWith(PROFILE_MARKER)) : draft.instructionBlocks;
-
+  const profileBlocks = POLZA_ADMIN_UI
+    ? draft.instructionBlocks.filter((block) =>
+        block.text.startsWith(PROFILE_MARKER),
+      )
+    : [];
+  const visibleInstructionBlocks = POLZA_ADMIN_UI
+    ? draft.instructionBlocks.filter(
+        (block) => !block.text.startsWith(PROFILE_MARKER),
+      )
+    : draft.instructionBlocks;
 
   return (
     <div
@@ -1397,11 +1404,14 @@ function UserEditor({
       {supportsInstructions && (
         <>
           {POLZA_ADMIN_UI && (
-            <section className={styles.roleNotice} aria-label="Профиль специалиста">
+            <section
+              className={styles.roleNotice}
+              aria-label="Профиль специалиста"
+            >
               <strong>Инструкции специалиста</strong>
               <p>
-                Добавляет в аккаунт рабочий маршрут по Portal, правила цепочек
-                и редактуру писем. Доступ к проектам назначается отдельно.
+                Добавляет в аккаунт рабочий маршрут по Portal, правила цепочек и
+                редактуру писем. Доступ к проектам назначается отдельно.
               </p>
               <button
                 type="button"
@@ -1419,7 +1429,9 @@ function UserEditor({
                       ...draft,
                       instructionBlocks: [
                         ...draft.instructionBlocks,
-                        ...instructionBlockDrafts([POLZA_SPECIALIST_INSTRUCTIONS]),
+                        ...instructionBlockDrafts([
+                          POLZA_SPECIALIST_INSTRUCTIONS,
+                        ]),
                       ],
                     },
                     true,
@@ -1440,10 +1452,7 @@ function UserEditor({
               change(
                 {
                   ...draft,
-                  instructionBlocks: [
-                    ...instructionBlocks,
-                    ...profileBlocks,
-                  ],
+                  instructionBlocks: [...instructionBlocks, ...profileBlocks],
                 },
                 instructionBlocks.map((block) => block.id).join() !==
                   visibleInstructionBlocks.map((block) => block.id).join(),

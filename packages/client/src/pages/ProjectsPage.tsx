@@ -170,7 +170,9 @@ export function ProjectsPage() {
       setShowAddForm(false);
       // A just-added project has no sessions to list, so confirming the
       // form goes straight to starting its first session.
-      navigate(`${basePath}/new-session?projectId=${encodeURIComponent(project.id)}`);
+      navigate(
+        `${basePath}/new-session?projectId=${encodeURIComponent(project.id)}`,
+      );
     };
 
     try {
@@ -373,15 +375,74 @@ export function ProjectsPage() {
 
   return (
     <MainContent isWideScreen={isWideScreen}>
-      {createOpen && <Modal title="Создать проект" onClose={closeCreate}>
-        <form className="polza-create-project" onSubmit={(event) => { event.preventDefault(); const name = polzaName.trim(); const path = polzaPath.trim(); if (name && path) void handleAddProject({ name, path }); }}>
-          <label>Название проекта<input autoFocus value={polzaName} placeholder="Название проекта" onChange={(event) => { const value = event.target.value; setPolzaName(value); if (!polzaPathEdited) setPolzaPath(pathForProjectName(value, newProjectBase, projects, false)); }} required /></label>
-          <label>Рабочая папка на сервере<input value={polzaPath} placeholder="/work/название" onChange={(event) => { setPolzaPath(event.target.value); setPolzaPathEdited(true); }} required /></label>
-          <p>Файлы проекта и чаты будут связаны с этой папкой. Если папки ещё нет, она будет создана.</p>
-          {addError && <p role="alert" className="polza-project-error">{addError}</p>}
-          <div className="polza-create-project-actions"><button type="button" onClick={closeCreate}>Отмена</button><button type="submit" disabled={adding || !polzaName.trim() || !polzaPath.trim()}>{adding ? 'Создаю…' : 'Создать проект'}</button></div>
-        </form>
-      </Modal>}
+      {createOpen && (
+        <Modal title="Создать проект" onClose={closeCreate}>
+          <form
+            className="polza-create-project"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const name = polzaName.trim();
+              const path = polzaPath.trim();
+              if (name && path) void handleAddProject({ name, path });
+            }}
+          >
+            <label>
+              Название проекта
+              <input
+                autoFocus
+                value={polzaName}
+                placeholder="Название проекта"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setPolzaName(value);
+                  if (!polzaPathEdited)
+                    setPolzaPath(
+                      pathForProjectName(
+                        value,
+                        newProjectBase,
+                        projects,
+                        false,
+                      ),
+                    );
+                }}
+                required
+              />
+            </label>
+            <label>
+              Рабочая папка на сервере
+              <input
+                value={polzaPath}
+                placeholder="/work/название"
+                onChange={(event) => {
+                  setPolzaPath(event.target.value);
+                  setPolzaPathEdited(true);
+                }}
+                required
+              />
+            </label>
+            <p>
+              Файлы проекта и чаты будут связаны с этой папкой. Если папки ещё
+              нет, она будет создана.
+            </p>
+            {addError && (
+              <p role="alert" className="polza-project-error">
+                {addError}
+              </p>
+            )}
+            <div className="polza-create-project-actions">
+              <button type="button" onClick={closeCreate}>
+                Отмена
+              </button>
+              <button
+                type="submit"
+                disabled={adding || !polzaName.trim() || !polzaPath.trim()}
+              >
+                {adding ? "Создаю…" : "Создать проект"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
       <PageHeader
         title={polzaUi ? "Проекты" : t("pageTitleProjects")}
         onOpenSidebar={openSidebar}
@@ -389,7 +450,9 @@ export function ProjectsPage() {
       />
 
       <main className="page-scroll-container">
-        <div className={`page-content-inner${polzaUi ? " polza-directory-page" : ""}`}>
+        <div
+          className={`page-content-inner${polzaUi ? " polza-directory-page" : ""}`}
+        >
           {loading && projects.length === 0 && (
             <div role="status">{t("projectsLoading")}</div>
           )}
@@ -552,10 +615,13 @@ export function ProjectsPage() {
             <ul className="project-list-cards">
               {sortedProjects.map((project) => (
                 <ProjectCard
-                  appEnabled={!polzaUi && serverHasCapability(
-                    version,
-                    SERVER_CAPABILITIES.projectService.name,
-                  )}
+                  appEnabled={
+                    !polzaUi &&
+                    serverHasCapability(
+                      version,
+                      SERVER_CAPABILITIES.projectService.name,
+                    )
+                  }
                   key={project.id}
                   project={project}
                   needsAttentionCount={

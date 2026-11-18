@@ -69,12 +69,18 @@ export function useSidebarSessionOrder(
       // The starred feed can include sessions beyond the currently loaded
       // global page. Keep one row per id in Recents and retain the pin flag.
       for (const record of starred) {
-        merged.set(record.id, { ...merged.get(record.id), ...record, isStarred: true });
+        merged.set(record.id, {
+          ...merged.get(record.id),
+          ...record,
+          isStarred: true,
+        });
       }
       return {
         starred: order(starred.filter((record) => !record.isArchived)),
         categories: [],
-        recent: order([...merged.values()].filter((record) => !record.isArchived)),
+        recent: order(
+          [...merged.values()].filter((record) => !record.isArchived),
+        ),
         creators: [],
         older: [],
       };

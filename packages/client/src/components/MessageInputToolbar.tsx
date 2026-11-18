@@ -1542,9 +1542,10 @@ export function MessageInputToolbarView({
       command.name.replace(/^\/+/, "").toLowerCase() === "deep-research" &&
       command.invocation?.kind === "skill",
   );
-  const onDeepResearch = deepResearchCommand && slashControl
-    ? () => slashControl.onSelectCommand(deepResearchCommand)
-    : undefined;
+  const onDeepResearch =
+    deepResearchCommand && slashControl
+      ? () => slashControl.onSelectCommand(deepResearchCommand)
+      : undefined;
   const controlPriority = priority ?? DEFAULT_SESSION_TOOLBAR_PRIORITY;
   const effectivePriority = (
     key: SessionToolbarVisibilityKey,

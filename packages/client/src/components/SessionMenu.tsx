@@ -259,15 +259,23 @@ export function SessionMenu({
     const { width, height } = dropdown.getBoundingClientRect();
     const margin = 8;
     if (contextMenuRequest) {
-      const preferredLeft = contextMenuRequest.x + width + margin <= window.innerWidth
-        ? contextMenuRequest.x
-        : contextMenuRequest.x - width;
-      const preferredTop = contextMenuRequest.y + height + margin <= window.innerHeight
-        ? contextMenuRequest.y
-        : contextMenuRequest.y - height;
+      const preferredLeft =
+        contextMenuRequest.x + width + margin <= window.innerWidth
+          ? contextMenuRequest.x
+          : contextMenuRequest.x - width;
+      const preferredTop =
+        contextMenuRequest.y + height + margin <= window.innerHeight
+          ? contextMenuRequest.y
+          : contextMenuRequest.y - height;
       setDropdownPosition({
-        top: Math.max(margin, Math.min(preferredTop, window.innerHeight - height - margin)),
-        left: Math.max(margin, Math.min(preferredLeft, window.innerWidth - width - margin)),
+        top: Math.max(
+          margin,
+          Math.min(preferredTop, window.innerHeight - height - margin),
+        ),
+        left: Math.max(
+          margin,
+          Math.min(preferredLeft, window.innerWidth - width - margin),
+        ),
       });
       return;
     }

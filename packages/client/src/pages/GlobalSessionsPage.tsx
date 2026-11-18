@@ -16,7 +16,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Navigate,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import { createSessionApi } from "../api/sessionClient";
 import { useCurrentSourceRuntime } from "../contexts/SourceRuntimeContext";
 import { BulkActionBar } from "../components/BulkActionBar";
@@ -100,7 +105,12 @@ export function GlobalSessionsPage() {
   const basePath = useRemoteBasePath();
   const projectId = params.get("project");
   if (import.meta.env.VITE_POLZA_ADMIN_UI === "true" && projectId) {
-    return <Navigate to={`${basePath}/new-session?projectId=${encodeURIComponent(projectId)}`} replace />;
+    return (
+      <Navigate
+        to={`${basePath}/new-session?projectId=${encodeURIComponent(projectId)}`}
+        replace
+      />
+    );
   }
   return <SessionSearchPage key={sourceKey} />;
 }
@@ -684,191 +694,207 @@ function SessionSearchPage() {
       isWideScreen={isWideScreen}
       innerClassName={paneOpen ? styles.withDetail : undefined}
     >
-      <div className={`${styles.mobilePageHeader} ${mobileFiltersOpen ? styles.mobileFiltersOpen : ""}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-header" : ""}`}>
-      <PageHeader
-        title={t("globalSessionsTitle")}
-        onOpenSidebar={openSidebar}
-        isWideScreen={isWideScreen}
-        titleElement={
-          <div className={styles.mobileSearchHeader}>
-          <strong className={styles.mobileTitle}>Чаты</strong>
-          <SearchHeader
-            query={query}
-            onQuery={onQuery}
-            intersection={intersection}
-            onIntersection={setIntersection}
-            fields={effectiveFields}
-            onFields={updateFields}
-            supported={supported}
-            supportKnown={version !== null && version !== undefined}
-            sessionCount={
-              effectiveFields.includes("title")
-                ? candidates.length
-                : effectiveFields.length
-                  ? contentCandidates.length
-                  : 0
-            }
-            scanning={scan.running}
-            acquiring={scan.acquiring || feed.loading || feed.hasMore}
-            status={
-              scan.running
-                ? t("sessionSearchProgress", {
-                    count: scan.scanned,
-                    total: contentCandidates.length,
-                  })
-                : scan.limited
-                  ? t("sessionSearchCapped", { count: scan.limited })
-                  : feed.loading || feed.hasMore
-                    ? t("sessionSearchLoadingCatalog")
-                    : t("sessionSearchWatching")
-            }
-          />
-          </div>
-        }
-        actions={
-          <div className={styles.mobileHeaderActions}>
-            <button type="button" aria-expanded={mobileFiltersOpen} onClick={() => setMobileFiltersOpen((value) => !value)}>
-              Фильтры
-            </button>
-            <button type="button" aria-pressed={mobileSelecting} onClick={() => {
-              if (mobileSelecting) {
-                setSelected(new Set());
-                setManage(false);
-              }
-              setMobileSelecting((value) => !value);
-            }}>
-              {mobileSelecting ? "Готово" : "Выбрать"}
-            </button>
-          </div>
-        }
-      />
+      <div
+        className={`${styles.mobilePageHeader} ${mobileFiltersOpen ? styles.mobileFiltersOpen : ""}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-header" : ""}`}
+      >
+        <PageHeader
+          title={t("globalSessionsTitle")}
+          onOpenSidebar={openSidebar}
+          isWideScreen={isWideScreen}
+          titleElement={
+            <div className={styles.mobileSearchHeader}>
+              <strong className={styles.mobileTitle}>Чаты</strong>
+              <SearchHeader
+                query={query}
+                onQuery={onQuery}
+                intersection={intersection}
+                onIntersection={setIntersection}
+                fields={effectiveFields}
+                onFields={updateFields}
+                supported={supported}
+                supportKnown={version !== null && version !== undefined}
+                sessionCount={
+                  effectiveFields.includes("title")
+                    ? candidates.length
+                    : effectiveFields.length
+                      ? contentCandidates.length
+                      : 0
+                }
+                scanning={scan.running}
+                acquiring={scan.acquiring || feed.loading || feed.hasMore}
+                status={
+                  scan.running
+                    ? t("sessionSearchProgress", {
+                        count: scan.scanned,
+                        total: contentCandidates.length,
+                      })
+                    : scan.limited
+                      ? t("sessionSearchCapped", { count: scan.limited })
+                      : feed.loading || feed.hasMore
+                        ? t("sessionSearchLoadingCatalog")
+                        : t("sessionSearchWatching")
+                }
+              />
+            </div>
+          }
+          actions={
+            <div className={styles.mobileHeaderActions}>
+              <button
+                type="button"
+                aria-expanded={mobileFiltersOpen}
+                onClick={() => setMobileFiltersOpen((value) => !value)}
+              >
+                Фильтры
+              </button>
+              <button
+                type="button"
+                aria-pressed={mobileSelecting}
+                onClick={() => {
+                  if (mobileSelecting) {
+                    setSelected(new Set());
+                    setManage(false);
+                  }
+                  setMobileSelecting((value) => !value);
+                }}
+              >
+                {mobileSelecting ? "Готово" : "Выбрать"}
+              </button>
+            </div>
+          }
+        />
       </div>
-      <main className={`page-scroll-container${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-session-search" : ""}`}>
+      <main
+        className={`page-scroll-container${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-session-search" : ""}`}
+      >
         <div
           className={`${styles.content} ${selected.size ? styles.withBulkBar : ""}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-content" : ""}`}
         >
-          <div className={`${styles.mobileAdvanced} ${mobileFiltersOpen ? styles.mobileAdvancedOpen : ""}`}>
-          <SearchFilters
-            basis={basis}
-            onBasis={setBasis}
-            young={young}
-            old={old}
-            onYoung={setYoung}
-            onOld={setOld}
-            limit={limit}
-            onLimit={setLimit}
-            showLimit={effectiveFields.some((field) => field !== "title")}
+          <div
+            className={`${styles.mobileAdvanced} ${mobileFiltersOpen ? styles.mobileAdvancedOpen : ""}`}
           >
-            <FilterDropdown
-              label={t("sessionSearchProjects")}
-              className={styles.dropdownContainer}
-              placeholder={t("sessionSearchProjects")}
-              align="right"
-              triggerClassName={styles.dropdown}
-              options={[
-                // An explicit first row, so returning to every project is a
-                // visible choice rather than a re-click on the current one.
-                {
-                  value: "",
-                  label: t("globalSessionsFilterProjectPlaceholder"),
-                  clearSelection: true,
-                },
-                ...projectGroups.current.map((p) => ({
-                  value: p.id,
-                  label: p.name,
-                })),
-                ...projectGroups.older.map((p, index) => ({
-                  value: p.id,
-                  label: p.name,
-                  groupLabelBefore:
-                    index === 0 && projectGroups.current.length > 0
-                      ? t("globalSessionsFilterProjectOlder")
-                      : undefined,
-                })),
-              ]}
-              selected={project ? [project] : []}
-              onChange={(value) => changeParam("project", value[0] ?? "")}
-              multiSelect={false}
-            />
-            <FilterDropdown
-              label={t("sessionSearchProviders")}
-              className={styles.dropdownContainer}
-              placeholder={t("sessionSearchProviders")}
-              align="right"
-              triggerClassName={styles.dropdown}
-              options={ALL_PROVIDERS.filter((p) =>
-                sessions.some((s) => s.provider === p),
-              ).map((p) => ({
-                value: p,
-                label: p,
-                description: t(
-                  !supported
-                    ? "sessionSearchProviderUpgrade"
-                    : turnSearchProviders.has(p)
-                      ? "sessionSearchProviderBounded"
-                      : "sessionSearchProviderTitleOnly",
-                ),
-              }))}
-              selected={providers}
-              onChange={(value) => changeParam("provider", value.join(","))}
-            />
-            {Object.keys(feed.stats.executorCounts).length > 1 && (
+            <SearchFilters
+              basis={basis}
+              onBasis={setBasis}
+              young={young}
+              old={old}
+              onYoung={setYoung}
+              onOld={setOld}
+              limit={limit}
+              onLimit={setLimit}
+              showLimit={effectiveFields.some((field) => field !== "title")}
+            >
               <FilterDropdown
-                label={t("globalSessionsFilterExecutor")}
-                placeholder={t("globalSessionsFilterMachinePlaceholder")}
-                triggerClassName={styles.dropdown}
-                options={Object.keys(feed.stats.executorCounts).map(
-                  (value) => ({ value, label: value }),
-                )}
-                selected={executors}
-                onChange={(value) => changeParam("executor", value.join(","))}
-              />
-            )}
-            {creationProvenanceAvailable && (
-              <FilterDropdown
-                label={t("sessionSearchCreatedFrom")}
-                placeholder={t("sessionSearchCreatedFromPlaceholder")}
+                label={t("sessionSearchProjects")}
+                className={styles.dropdownContainer}
+                placeholder={t("sessionSearchProjects")}
                 align="right"
                 triggerClassName={styles.dropdown}
                 options={[
-                  { value: "web", label: t("sessionSearchCreatedWeb") },
+                  // An explicit first row, so returning to every project is a
+                  // visible choice rather than a re-click on the current one.
                   {
-                    value: "desktop",
-                    label: t("sessionSearchCreatedDesktop"),
+                    value: "",
+                    label: t("globalSessionsFilterProjectPlaceholder"),
+                    clearSelection: true,
                   },
-                  {
-                    value: "unspecified",
-                    label: t("sessionSearchCreatedUnspecified"),
-                  },
+                  ...projectGroups.current.map((p) => ({
+                    value: p.id,
+                    label: p.name,
+                  })),
+                  ...projectGroups.older.map((p, index) => ({
+                    value: p.id,
+                    label: p.name,
+                    groupLabelBefore:
+                      index === 0 && projectGroups.current.length > 0
+                        ? t("globalSessionsFilterProjectOlder")
+                        : undefined,
+                  })),
                 ]}
-                selected={created}
-                onChange={(value) => changeParam("created", value.join(","))}
+                selected={project ? [project] : []}
+                onChange={(value) => changeParam("project", value[0] ?? "")}
+                multiSelect={false}
               />
-            )}
-          </SearchFilters>
+              <FilterDropdown
+                label={t("sessionSearchProviders")}
+                className={styles.dropdownContainer}
+                placeholder={t("sessionSearchProviders")}
+                align="right"
+                triggerClassName={styles.dropdown}
+                options={ALL_PROVIDERS.filter((p) =>
+                  sessions.some((s) => s.provider === p),
+                ).map((p) => ({
+                  value: p,
+                  label: p,
+                  description: t(
+                    !supported
+                      ? "sessionSearchProviderUpgrade"
+                      : turnSearchProviders.has(p)
+                        ? "sessionSearchProviderBounded"
+                        : "sessionSearchProviderTitleOnly",
+                  ),
+                }))}
+                selected={providers}
+                onChange={(value) => changeParam("provider", value.join(","))}
+              />
+              {Object.keys(feed.stats.executorCounts).length > 1 && (
+                <FilterDropdown
+                  label={t("globalSessionsFilterExecutor")}
+                  placeholder={t("globalSessionsFilterMachinePlaceholder")}
+                  triggerClassName={styles.dropdown}
+                  options={Object.keys(feed.stats.executorCounts).map(
+                    (value) => ({ value, label: value }),
+                  )}
+                  selected={executors}
+                  onChange={(value) => changeParam("executor", value.join(","))}
+                />
+              )}
+              {creationProvenanceAvailable && (
+                <FilterDropdown
+                  label={t("sessionSearchCreatedFrom")}
+                  placeholder={t("sessionSearchCreatedFromPlaceholder")}
+                  align="right"
+                  triggerClassName={styles.dropdown}
+                  options={[
+                    { value: "web", label: t("sessionSearchCreatedWeb") },
+                    {
+                      value: "desktop",
+                      label: t("sessionSearchCreatedDesktop"),
+                    },
+                    {
+                      value: "unspecified",
+                      label: t("sessionSearchCreatedUnspecified"),
+                    },
+                  ]}
+                  selected={created}
+                  onChange={(value) => changeParam("created", value.join(","))}
+                />
+              )}
+            </SearchFilters>
           </div>
-          <div className={`${styles.mobileSelection} ${mobileSelecting || mobileFiltersOpen ? styles.mobileSelectionOpen : ""}`}>
-          <SearchSelection
-            helpInline={helpInline}
-            onHelpInline={setHelpInline}
-            count={selected.size}
-            shown={results.length}
-            allShownSelected={results.every(({ session }) =>
-              selected.has(session.id),
-            )}
-            filters={filters}
-            onToggle={(status) =>
-              changeParam("status", toggleStatus(filters, status).join(","))
-            }
-            onSelectShown={() =>
-              setSelected((previous) => new Set([...previous, ...shownIds]))
-            }
-            onClear={() => setSelected(new Set())}
-            onlySelected={onlySelected}
-            onOnlySelected={setOnlySelected}
-            onManage={() => setManage((value) => !value)}
-            pending={pending}
-          />
+          <div
+            className={`${styles.mobileSelection} ${mobileSelecting || mobileFiltersOpen ? styles.mobileSelectionOpen : ""}`}
+          >
+            <SearchSelection
+              helpInline={helpInline}
+              onHelpInline={setHelpInline}
+              count={selected.size}
+              shown={results.length}
+              allShownSelected={results.every(({ session }) =>
+                selected.has(session.id),
+              )}
+              filters={filters}
+              onToggle={(status) =>
+                changeParam("status", toggleStatus(filters, status).join(","))
+              }
+              onSelectShown={() =>
+                setSelected((previous) => new Set([...previous, ...shownIds]))
+              }
+              onClear={() => setSelected(new Set())}
+              onlySelected={onlySelected}
+              onOnlySelected={setOnlySelected}
+              onManage={() => setManage((value) => !value)}
+              pending={pending}
+            />
           </div>
           {activeProject && (
             <div className={`global-sessions-project-cta ${styles.projectCta}`}>
@@ -918,7 +944,10 @@ function SessionSearchPage() {
               {t("globalSessionsNoResultsTitle")}
             </p>
           )}
-          <ul ref={resultList} className={`${styles.results}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-results" : ""}`}>
+          <ul
+            ref={resultList}
+            className={`${styles.results}${import.meta.env.VITE_POLZA_ADMIN_UI === "true" ? " polza-search-results" : ""}`}
+          >
             {results.slice(0, renderedCount).map(({ session, matches }) => (
               <SessionListItem
                 key={session.id}
@@ -957,11 +986,22 @@ function SessionSearchPage() {
                 mode="card"
                 showContextUsage={false}
                 isSelected={selected.has(session.id)}
-                onSelect={isMobile && !mobileSelecting && selected.size === 0 ? undefined : select}
-                onSessionNavigate={isMobile && mobileSelecting ? (intent) => {
-                  intent.event.preventDefault();
-                  select(intent.sessionId, !selected.has(intent.sessionId));
-                } : undefined}
+                onSelect={
+                  isMobile && !mobileSelecting && selected.size === 0
+                    ? undefined
+                    : select
+                }
+                onSessionNavigate={
+                  isMobile && mobileSelecting
+                    ? (intent) => {
+                        intent.event.preventDefault();
+                        select(
+                          intent.sessionId,
+                          !selected.has(intent.sessionId),
+                        );
+                      }
+                    : undefined
+                }
                 showProjectName={!project}
                 projectName={session.projectName}
                 basePath={basePath}
@@ -1006,7 +1046,10 @@ function SessionSearchPage() {
               {t("sessionSearchMore")}
             </button>
           )}
-          {!helpInline && (!isMobile || mobileFiltersOpen || mobileSelecting) && <SearchHelp />}
+          {!helpInline &&
+            (!isMobile || mobileFiltersOpen || mobileSelecting) && (
+              <SearchHelp />
+            )}
           <div className={styles.footer}>
             {manage && (
               <section
