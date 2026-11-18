@@ -175,6 +175,29 @@ ConnectionError must not be attributed to a locally applied result limit.
 
 ## Cowork chat context (18 November 2026)
 
+Agent discovery must use the provider process's actual `CODEX_HOME`, not an
+assumed `~/.codex` path. The owner runtime uses `/home/manager/.codex-vps`;
+employees use their private `.codex` homes. Each active profile needs both
+`mcp_servers.polza_integrations` pointing to `polza-integration --mcp` and
+instructions describing the read-only Cowork tools. A working UID-level CLI
+probe alone does not establish that an agent can discover those tools.
+Validate a natural-language cross-chat request in a real provider conversation.
+The 18 November owner recheck found the MCP registration and Cowork guide in
+an inactive/default home instead of `.codex-vps`. They were added to the active
+profile with private backups, retaining authentication, selected models and
+existing grants. Natural-language probes under both marker and owner called
+`cowork_read` and returned a native source link; the owner also returned a
+canonical message ID. Four connector boundary tests passed. Diagnostic chats
+were archived; no active user conversation was restarted or rewritten.
+
+MCP registration is captured when the provider starts. Existing processes do
+not acquire newly registered tools just because the web page reloads. Their
+terminal can use the same granted `polza-integration cowork.*` CLI; obtaining
+new native MCP tools requires restarting that provider when its work is safely
+finished. Do not restart unrelated/active user conversations during a probe.
+Other conversations are retrieved on request, never silently copied into every
+chat's prompt or treated as automatic shared memory.
+
 `cowork.workspaces`, `cowork.projects`, `cowork.chats`, `cowork.read` and `cowork.search` expose
 read-only context from this actor's native Cowork realm. Linux peer UID selects
 the actor; the broker establishes the real limited principal and rechecks
