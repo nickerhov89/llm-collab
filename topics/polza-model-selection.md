@@ -1,5 +1,14 @@
 # Polza model selection
 
+## Cowork client build profile
+
+Owner and employee Cowork clients use `pnpm --filter @yep-anywhere/client
+build:polza`. This explicit deployment profile includes the compact new-chat
+composer without depending on an operator shell's `VITE_POLZA_ADMIN_UI` value.
+The normal new-chat screen shows a project chooser and composer; provider and
+effort controls remain inside the settings disclosure instead of a separate
+technical options form. Vanilla YA builds keep their existing defaults.
+
 The branded in-chat OpenRouter action reactivates the **same** session through
 a compatible harness: Claude → Claude Gateway, Codex → CodexOSS. It does not
 create, fork, hand off, rewrite a transcript, or navigate to a new-session URL.
