@@ -13,6 +13,8 @@ interface Config {
   sessionId: string;
   cadence: string;
   time: string;
+  weekdays?: number[];
+  intervalMinutes?: number;
   timezone: string;
   criteria: string;
   target: number;
@@ -23,6 +25,7 @@ type RunStatus =
   | "dispatching"
   | "queued"
   | "running"
+  | "completed"
   | "review"
   | "approved"
   | "rejected"
@@ -41,7 +44,7 @@ interface Run {
   hasResult?: boolean;
   resultTruncated?: boolean;
 }
-interface Job {
+export interface Job {
   revision: number;
   config: Config;
   enabled: boolean;
@@ -49,6 +52,7 @@ interface Job {
   nextAt: number | null;
   reason?: string;
   runs: Run[];
+  prompt?: string;
 }
 interface Reply {
   available: boolean;
@@ -72,14 +76,36 @@ const endpoint = "/tasker/automation";
 export function PolzaTaskAutomation({
   taskId,
   disabled,
+  chat,
+  onJobChange,
+  onBeforeEnable,
 }: {
   taskId: string;
   disabled: boolean;
+  chat?: { projectId: string; sessionId: string };
+  onJobChange?: (job: Job | null) => void;
+  onBeforeEnable?: () => Promise<void>;
 }) {
   const { t } = useI18n();
+  const chatSubject = Boolean(chat);
   const base = useRemoteBasePath();
   const { projects } = useProjects();
-  const [config, setConfig] = useState<Config>(initial);
+  const identity: Record<string, string> = chat
+    ? { subject: "chat", projectId: chat.projectId, sessionId: chat.sessionId }
+    : { taskId };
+  const identityQuery = new URLSearchParams(identity).toString();
+  const [config, setConfig] = useState<Config>(() =>
+    chat
+      ? {
+          ...initial(),
+          mode: "schedule",
+          projectId: chat.projectId,
+          sessionId: chat.sessionId,
+          dailyLimit: 24,
+        }
+      : initial(),
+  );
+  const [prompt, setPrompt] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [sessions, setSessions] = useState<{ id: string; title: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -105,14 +131,16 @@ export function PolzaTaskAutomation({
     const load = async () => {
       const sequence = ++requests.current;
       try {
-        const reply = await fetchJSON<Reply>(
-          `${endpoint}?taskId=${encodeURIComponent(taskId)}`,
-          { signal: controller.signal },
-        );
+        const reply = await fetchJSON<Reply>(`${endpoint}?${identityQuery}`, {
+          signal: controller.signal,
+        });
         if (!alive.current || sequence !== requests.current) return;
         setAvailable(reply.available);
         setJob(reply.job ?? null);
-        if (reply.job && !dirtyRef.current) setConfig(reply.job.config);
+        if (reply.job && !dirtyRef.current) {
+          setConfig(reply.job.config);
+          setPrompt(reply.job.prompt ?? "");
+        }
       } catch {
         if (alive.current && !controller.signal.aborted) setAvailable(false);
       }
@@ -126,9 +154,9 @@ export function PolzaTaskAutomation({
       controller.abort();
       window.removeEventListener("focus", focus);
     };
-  }, [taskId, disabled, reloadKey]);
+  }, [taskId, disabled, reloadKey, identityQuery]);
   useEffect(() => {
-    if (!available || !config.projectId) {
+    if (chatSubject || !available || !config.projectId) {
       setSessions([]);
       return;
     }
@@ -145,7 +173,7 @@ export function PolzaTaskAutomation({
         if (!controller.signal.aborted) setProblem(t("automationContextError"));
       });
     return () => controller.abort();
-  }, [available, config.projectId, t]);
+  }, [available, config.projectId, t, chatSubject]);
   // Only the opened card owns this refresh; hidden/unmounted pages have no interval.
   useEffect(() => {
     if (
@@ -164,10 +192,9 @@ export function PolzaTaskAutomation({
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible" || inFlight || busy) return;
       inFlight = true;
-      void fetchJSON<Reply>(
-        `${endpoint}?taskId=${encodeURIComponent(taskId)}`,
-        { signal: controller.signal },
-      )
+      void fetchJSON<Reply>(`${endpoint}?${identityQuery}`, {
+        signal: controller.signal,
+      })
         .then((reply) => {
           if (!controller.signal.aborted) setJob(reply.job ?? null);
         })
@@ -180,7 +207,10 @@ export function PolzaTaskAutomation({
       clearInterval(timer);
       controller.abort();
     };
-  }, [available, busy, job, taskId]);
+  }, [available, busy, job, identityQuery]);
+  useEffect(() => {
+    onJobChange?.(job);
+  }, [job, onJobChange]);
   function change(patch: Partial<Config>) {
     if (!dirtyRef.current) draftRevision.current = job?.revision ?? 0;
     setConfig((old) => ({ ...old, ...patch }));
@@ -192,11 +222,14 @@ export function PolzaTaskAutomation({
     setProblem("");
     ++requests.current;
     try {
+      if (operation === "run" || operation === "resume")
+        await onBeforeEnable?.();
       const reply = await fetchJSON<Reply>(endpoint, {
         method: "POST",
         body: JSON.stringify({
           operation,
-          taskId,
+          ...identity,
+          ...(chat ? { prompt } : {}),
           revision:
             operation === "save" && draftRevision.current !== null
               ? draftRevision.current
@@ -212,7 +245,10 @@ export function PolzaTaskAutomation({
         dirtyRef.current = false;
         draftRevision.current = null;
         setDirty(false);
-        if (reply.job) setConfig(reply.job.config);
+        if (reply.job) {
+          setConfig(reply.job.config);
+          setPrompt(reply.job.prompt ?? "");
+        }
       }
     } catch (error) {
       if (alive.current)
@@ -226,7 +262,7 @@ export function PolzaTaskAutomation({
   async function result(runId: string) {
     try {
       const r = await fetchJSON<Reply>(
-        `${endpoint}?operation=result&taskId=${encodeURIComponent(taskId)}&runId=${encodeURIComponent(runId)}`,
+        `${endpoint}?operation=result&${identityQuery}&runId=${encodeURIComponent(runId)}`,
       );
       if (alive.current)
         setResults((old) => ({ ...old, [runId]: r.text ?? "" }));
@@ -250,56 +286,80 @@ export function PolzaTaskAutomation({
       data-task-automation="true"
       aria-label={t("automationTitle")}
     >
-      <h3>{t("automationTitle")}</h3>
-      <p className={styles.help}>{t("automationHelp")}</p>
+      {!chat && (
+        <>
+          <h3>{t("automationTitle")}</h3>
+          <p className={styles.help}>{t("automationHelp")}</p>
+        </>
+      )}
+      {chat && (
+        <label>
+          {t("chatExecutionPrompt")}
+          <textarea
+            value={prompt}
+            maxLength={6000}
+            disabled={blocked}
+            onChange={(e) => {
+              change({});
+              setPrompt(e.target.value);
+            }}
+          />
+        </label>
+      )}
       {available === false && <p role="status">{t("automationUnavailable")}</p>}
-      <label>
-        {t("automationMode")}
-        <select
-          aria-label={t("automationMode")}
-          value={config.mode}
-          disabled={blocked}
-          onChange={(e) => change({ mode: e.target.value as Mode })}
-        >
-          <option value="once">{t("automationOnce")}</option>
-          <option value="schedule">{t("automationSchedule")}</option>
-          <option value="goal">{t("automationGoal")}</option>
-        </select>
-      </label>
-      <label>
-        {t("automationProject")}
-        <select
-          aria-label={t("automationProject")}
-          value={config.projectId}
-          disabled={blocked}
-          onChange={(e) => change({ projectId: e.target.value, sessionId: "" })}
-        >
-          <option value="">{t("automationChooseProject")}</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name ?? p.path}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        {t("automationChat")}
-        <select
-          aria-label={t("automationChat")}
-          value={config.sessionId}
-          disabled={blocked || !config.projectId}
-          onChange={(e) => change({ sessionId: e.target.value })}
-        >
-          <option value="">{t("automationChooseChat")}</option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      {config.projectId && !sessions.length && available && (
-        <p className={styles.help}>{t("automationCreateChat")}</p>
+      {!chat && (
+        <>
+          <label>
+            {t("automationMode")}
+            <select
+              aria-label={t("automationMode")}
+              value={config.mode}
+              disabled={blocked}
+              onChange={(e) => change({ mode: e.target.value as Mode })}
+            >
+              <option value="once">{t("automationOnce")}</option>
+              <option value="schedule">{t("automationSchedule")}</option>
+              <option value="goal">{t("automationGoal")}</option>
+            </select>
+          </label>
+          <label>
+            {t("automationProject")}
+            <select
+              aria-label={t("automationProject")}
+              value={config.projectId}
+              disabled={blocked}
+              onChange={(e) =>
+                change({ projectId: e.target.value, sessionId: "" })
+              }
+            >
+              <option value="">{t("automationChooseProject")}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name ?? p.path}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            {t("automationChat")}
+            <select
+              aria-label={t("automationChat")}
+              value={config.sessionId}
+              disabled={blocked || !config.projectId}
+              onChange={(e) => change({ sessionId: e.target.value })}
+            >
+              <option value="">{t("automationChooseChat")}</option>
+              {sessions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {config.projectId && !sessions.length && available && (
+            <p className={styles.help}>{t("automationCreateChat")}</p>
+          )}
+        </>
       )}
       {config.mode === "schedule" && (
         <div className={styles.grid}>
@@ -309,15 +369,42 @@ export function PolzaTaskAutomation({
               aria-label={t("automationCadence")}
               value={config.cadence}
               disabled={blocked}
-              onChange={(e) => change({ cadence: e.target.value })}
+              onChange={(e) =>
+                change({
+                  cadence: e.target.value,
+                  ...(e.target.value === "interval"
+                    ? { intervalMinutes: config.intervalMinutes ?? 60 }
+                    : {}),
+                })
+              }
             >
+              {chat && (
+                <option value="interval">{t("chatExecutionInterval")}</option>
+              )}
               <option value="hourly">{t("automationHourly")}</option>
               <option value="daily">{t("automationDaily")}</option>
               <option value="weekdays">{t("automationWeekdays")}</option>
-              <option value="weekly">{t("automationWeekly")}</option>
+              <option value="weekly">
+                {t(chat ? "chatExecutionWeekly" : "automationWeekly")}
+              </option>
             </select>
           </label>
-          {config.cadence !== "hourly" && (
+          {config.cadence === "interval" && (
+            <label>
+              {t("chatExecutionIntervalMinutes")}
+              <input
+                type="number"
+                min={1}
+                max={10080}
+                value={config.intervalMinutes ?? 60}
+                disabled={blocked}
+                onChange={(e) =>
+                  change({ intervalMinutes: Number(e.target.value) })
+                }
+              />
+            </label>
+          )}
+          {config.cadence !== "hourly" && config.cadence !== "interval" && (
             <label>
               {t("automationTime")}
               <input
@@ -327,6 +414,30 @@ export function PolzaTaskAutomation({
                 onChange={(e) => change({ time: e.target.value })}
               />
             </label>
+          )}
+          {chat && config.cadence === "weekly" && (
+            <fieldset className={styles.wide}>
+              <legend>{t("chatExecutionWeekdays")}</legend>
+              <div className={styles.days}>
+                {([1, 2, 3, 4, 5, 6, 0] as const).map((d) => (
+                  <label key={d}>
+                    <input
+                      type="checkbox"
+                      checked={(config.weekdays ?? [1]).includes(d)}
+                      disabled={blocked}
+                      onChange={(e) =>
+                        change({
+                          weekdays: e.target.checked
+                            ? [...(config.weekdays ?? [1]), d]
+                            : (config.weekdays ?? [1]).filter((v) => v !== d),
+                        })
+                      }
+                    />
+                    {t(`chatExecutionDay${d}`)}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
           )}
           <label className={styles.wide}>
             {t("automationTimezone")}
@@ -375,22 +486,29 @@ export function PolzaTaskAutomation({
             onChange={(e) => change({ dailyLimit: Number(e.target.value) })}
           />
         </label>
-        <label>
-          {t("automationPendingLimit")}
-          <input
-            type="number"
-            min={1}
-            max={3}
-            value={config.pendingLimit}
-            disabled={blocked}
-            onChange={(e) => change({ pendingLimit: Number(e.target.value) })}
-          />
-        </label>
+        {!chat && (
+          <label>
+            {t("automationPendingLimit")}
+            <input
+              type="number"
+              min={1}
+              max={3}
+              value={config.pendingLimit}
+              disabled={blocked}
+              onChange={(e) => change({ pendingLimit: Number(e.target.value) })}
+            />
+          </label>
+        )}
       </div>
       <div className={styles.actions}>
         <button
           type="button"
-          disabled={blocked || !config.projectId || !config.sessionId}
+          disabled={
+            blocked ||
+            !config.projectId ||
+            !config.sessionId ||
+            (Boolean(chat) && !prompt.trim())
+          }
           onClick={() => void action("save")}
         >
           {t("automationSave")}

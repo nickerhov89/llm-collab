@@ -117,3 +117,17 @@
     min-height: 44px;
   }
 }
+
+.days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.days label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.days input {
+  width: auto;
+}

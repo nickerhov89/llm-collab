@@ -103,3 +103,6 @@ sending. Settings on an unconfigured server report unavailable.
 
 See [execution adapter/runbook](../scripts/polza-task-automation/README.md) for
 storage, deployment, caps, restart/recovery and scheduling semantics.
+
+Chat-header Goal and recurring chat runs are separate from Tasker cards; see
+[Polza chat execution modes](polza-chat-execution.md).

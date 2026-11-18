@@ -113,6 +113,24 @@ export class AutomationEngine {
       throw Error("Save an active task first");
     return task;
   }
+  async chat(client, projectId, sessionId, allowClosed = false) {
+    const projects = await client.call("GET", "/projects");
+    if (!(projects.projects ?? []).some((p) => p.id === projectId))
+      throw Error("Project access denied");
+    const detail = await client.call(
+      "GET",
+      `/projects/${projectId}/sessions/${sessionId}/metadata`,
+    );
+    const session = detail.session ?? {};
+    if (!allowClosed && session.isArchived)
+      throw Error("Restore the archived chat first");
+    return {
+      id: `chat:${fileKey(`${projectId}:${sessionId}`)}`,
+      title: session.customTitle ?? session.title ?? "Scheduled chat",
+      deleted: session.isArchived === true,
+      note: "",
+    };
+  }
   path(job) {
     return `/projects/${encodeURIComponent(job.config.projectId)}/sessions/${encodeURIComponent(job.config.sessionId)}`;
   }
@@ -145,27 +163,43 @@ export class AutomationEngine {
           available: true,
           ...(await this.context(client, request.projectId)),
         };
-      if (
-        typeof request.taskId !== "string" ||
-        !request.taskId ||
-        request.taskId.length > 512
-      )
-        throw Error("Invalid task");
-      const task = await this.task(
-        client,
-        request.taskId,
-        [
-          "get",
-          "pause",
-          "result",
-          "approve",
-          "reject",
-          "acknowledge",
-          "inspect",
-        ].includes(request.operation),
-      );
+      const chatSubject = request.subject === "chat";
+      if (request.subject && !["chat", "task"].includes(request.subject))
+        throw Error("Invalid execution subject");
+      const allowClosed = [
+        "get",
+        "pause",
+        "result",
+        "approve",
+        "reject",
+        "acknowledge",
+        "inspect",
+      ].includes(request.operation);
+      let task;
+      if (chatSubject) {
+        const ids = validateConfig({
+          mode: "once",
+          projectId: request.projectId,
+          sessionId: request.sessionId,
+        });
+        task = await this.chat(
+          client,
+          ids.projectId,
+          ids.sessionId,
+          allowClosed,
+        );
+      } else {
+        if (
+          typeof request.taskId !== "string" ||
+          !request.taskId ||
+          request.taskId.length > 512
+        )
+          throw Error("Invalid task");
+        task = await this.task(client, request.taskId, allowClosed);
+      }
       const state = await this.read(account);
-      let job = state.jobs.find((j) => j.taskId === request.taskId);
+      let job = state.jobs.find((j) => j.taskId === task.id);
+      if (chatSubject) task.note = job?.prompt ?? "";
       if (request.operation === "get")
         return { available: true, job: job ?? null };
       if (request.operation === "result") {
@@ -195,6 +229,24 @@ export class AutomationEngine {
             "Wait for the active run before changing its configuration",
           );
         const config = validateConfig(request.config);
+        if (chatSubject) {
+          if (
+            config.projectId !== request.projectId ||
+            config.sessionId !== request.sessionId
+          )
+            throw Error("Chat binding mismatch");
+          if (!["once", "schedule"].includes(config.mode))
+            throw Error(
+              "Use the provider's native Goal control for chat goals",
+            );
+          if (
+            typeof request.prompt !== "string" ||
+            !request.prompt.trim() ||
+            request.prompt.length > 6000
+          )
+            throw Error("Describe what the chat should do on each run");
+        }
+
         const permitted = await this.context(client, config.projectId);
         if (!permitted.sessions.some((s) => s.id === config.sessionId))
           throw Error("Chat access denied");
@@ -227,6 +279,11 @@ export class AutomationEngine {
             title: task.title,
           };
           state.jobs.push(job);
+        }
+        if (chatSubject) {
+          job.subject = "chat";
+          job.prompt = request.prompt.trim();
+          job.title = task.title;
         }
         job.config = config;
         job.enabled = false;
@@ -335,8 +392,40 @@ export class AutomationEngine {
         .length >= job.config.dailyLimit
     )
       throw Error("Daily execution limit reached");
+    const retired = [];
+    if (job.subject === "chat") {
+      while (job.runs.length >= 100) {
+        const index = job.runs.findIndex((r) =>
+          [
+            "completed",
+            "approved",
+            "rejected",
+            "cancelled",
+            "dismissed",
+            "failed",
+          ].includes(r.status),
+        );
+        if (index < 0) break;
+        retired.push(job.runs.splice(index, 1)[0].id);
+      }
+    }
     if (job.runs.length >= 100)
-      throw Error("Execution history limit reached; create a new task");
+      throw Error("Execution history limit reached; review old runs first");
+    if (job.subject === "chat") {
+      const metadata = await client.call("GET", `${this.path(job)}/metadata`);
+      const commands = metadata.slashCommands ?? [];
+      const nativeGoal = commands.find(
+        (c) => c.name === "goal",
+      )?.providerDetails;
+      if (
+        nativeGoal?.codex?.goalStatus === "active" ||
+        nativeGoal?.claude?.goalStatus === "active"
+      ) {
+        job.enabled = false;
+        job.nextAt = null;
+        throw Error("Pause the native Goal before enabling scheduled runs");
+      }
+    }
     const detail = await client.call("GET", this.path(job));
     const baseline = detail.messages?.at(-1)?.uuid ?? null;
     const run = {
@@ -352,6 +441,11 @@ export class AutomationEngine {
     this.bump(job);
     // Persist the intention before any non-idempotent native call. Never replay an uncertain enqueue.
     await this.write(account, state);
+    await Promise.allSettled(
+      retired.map((id) =>
+        fs.unlink(join(this.directory, fileKey(account), `${id}.json`)),
+      ),
+    );
     try {
       const result = await client.call(
         "POST",
@@ -432,7 +526,7 @@ export class AutomationEngine {
     );
     const correlated = start >= 0 ? messages.slice(start + 1) : [];
 
-    // The result is always reviewed by a human; provider self-declaration is not goal completion.
+    // Tasker results require review; chat schedules record completed turns, not goal completion.
     const assistant = correlated
       .filter((m) => m.type === "assistant")
       .flatMap((m) => m.message?.content ?? [])
@@ -443,11 +537,14 @@ export class AutomationEngine {
       assistant &&
       (processState === "idle" || detail.ownership?.owner !== "self")
     ) {
-      run.status = "review";
+      run.status = job.subject === "chat" ? "completed" : "review";
       run.result = assistant.slice(-80000);
       run.resultTruncated = assistant.length > 80000;
       run.finishedAt = this.now();
-      job.reason = "Result awaiting your review";
+      job.reason =
+        job.subject === "chat"
+          ? "Scheduled run completed; result is in the chat"
+          : "Result awaiting your review";
     } else if (
       this.now() - run.startedAt > 60000 &&
       processState !== "in-turn"
@@ -501,10 +598,33 @@ export class AutomationEngine {
             await this.write(account, state);
             return;
           }
-          const list = await client.call("GET", "/tasker");
+          const list = candidates.some((j) => j.subject !== "chat")
+            ? await client.call("GET", "/tasker")
+            : null;
           for (const job of candidates) {
             if (this.stopped) break;
-            const task = list.data?.tasks?.find((t) => t.id === job.taskId);
+            let task;
+            try {
+              task =
+                job.subject === "chat"
+                  ? await this.chat(
+                      client,
+                      job.config.projectId,
+                      job.config.sessionId,
+                      true,
+                    )
+                  : list?.data?.tasks?.find((t) => t.id === job.taskId);
+              if (task && job.subject === "chat") task.note = job.prompt;
+            } catch {
+              job.enabled = false;
+              job.nextAt = null;
+              job.reason =
+                "Chat access unavailable; restore access before continuing";
+              for (const r of job.runs.filter(isActiveRun))
+                r.status = "unknown";
+              this.bump(job);
+              continue;
+            }
             if (!task || task.deleted || task.done) {
               job.enabled = false;
               job.reason = "Task completed or removed";
@@ -531,7 +651,10 @@ export class AutomationEngine {
                 }
               }
               if (/Daily execution/.test(e.message))
-                job.nextAt = this.now() + 3600000;
+                job.nextAt = nextDue(
+                  { ...job.config, cadence: "daily", time: "00:00" },
+                  this.now(),
+                );
               else if (!job.runs.some(isActiveRun)) {
                 job.enabled = false;
                 job.nextAt = null;

@@ -124,6 +124,8 @@ import { QuestionAnswerPanel } from "../components/QuestionAnswerPanel";
 import { RecentSessionsDropdown } from "../components/RecentSessionsDropdown";
 import { RestartSessionModal } from "../components/RestartSessionModal";
 import { routerBindingChip } from "../components/RouterPoolSelector";
+import { PolzaChatExecution } from "../components/PolzaChatExecution";
+import chatExecutionStyles from "../components/PolzaChatExecution.module.css";
 import { SessionHeartbeatModal } from "../components/SessionHeartbeatModal";
 import { SessionMenu } from "../components/SessionMenu";
 import {
@@ -2604,6 +2606,7 @@ function SessionPageContent({
   const [approvalCollapsed, setApprovalCollapsed] = useState(false);
 
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
+  const [showChatExecution, setShowChatExecution] = useState(false);
   const [showProjectSettingsModal, setShowProjectSettingsModal] =
     useState(false);
   const [showRecapModal, setShowRecapModal] = useState(false);
@@ -6620,6 +6623,18 @@ function SessionPageContent({
                     />
                   </button>
                 )}
+              {import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+                !loading &&
+                actualSessionId && (
+                  <button
+                    type="button"
+                    className={chatExecutionStyles.trigger}
+                    onClick={() => setShowChatExecution(true)}
+                    aria-label={t("chatExecutionTitle")}
+                  >
+                    ◷ {t("chatExecutionTitle")}
+                  </button>
+                )}
               {!loading && (
                 <SessionMenu
                   sessionId={sessionId}
@@ -6790,6 +6805,42 @@ function SessionPageContent({
             canFork={longContextEffortWarning.canFork}
             busy={longContextEffortWarning.busy}
             onChoose={(choice) => void chooseLongContextEffortWarning(choice)}
+          />
+        )}
+
+        {showChatExecution && (
+          <PolzaChatExecution
+            key={actualSessionId}
+            projectId={projectId}
+            sessionId={actualSessionId}
+            goal={currentGoal}
+            goalStatus={goalDetails?.goalStatus}
+            running={
+              processState === "in-turn" || processState === "waiting-input"
+            }
+            onActivateGoal={async () => {
+              const result = await api.reactivateSession(
+                projectId,
+                actualSessionId,
+              );
+              setStatus({
+                owner: "self",
+                processId: result.processId,
+                permissionMode: result.permissionMode,
+                appliedPermissionMode: result.appliedPermissionMode,
+                modeVersion: result.modeVersion,
+                recapAfterSeconds: result.recapAfterSeconds,
+              });
+              reconnectStream();
+            }}
+            onGoalCommand={async (command) => {
+              const accepted = await handleSend(command, undefined, {
+                preserveComposer: true,
+                localControl: true,
+              });
+              if (accepted === false) throw new Error(t("chatExecutionFailed"));
+            }}
+            onClose={() => setShowChatExecution(false)}
           />
         )}
 

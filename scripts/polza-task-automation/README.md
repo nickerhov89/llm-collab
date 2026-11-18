@@ -21,6 +21,18 @@ instructions prohibit automatic publication/editorial sending. The scheduler
 is not a sandbox for arbitrary agent actions: existing project and tool policy
 continues to govern the chat. Review does not dispatch a publishing action.
 
+## Conversation schedules
+
+Chat-header settings use `subject: "chat"` plus the native project/session IDs.
+The engine derives the internal subject key and revalidates the exact binding.
+No Tasker record is created or read. The prompt belongs to the configuration.
+Successful chat occurrences are completed without a Tasker review gate; their
+history rotates at 100 terminal runs. Uncertain work still blocks continuation.
+The chat UI uses native provider Goal, not this adapter's Tasker goal counter.
+
+See [chat execution modes](../../topics/polza-chat-execution.md) for the public
+contract, control behavior, intervals and selected weekly days.
+
 ## Scheduling and lifecycle
 
 - Hourly means one hour from activation/last enqueue. Daily/weekday/Monday

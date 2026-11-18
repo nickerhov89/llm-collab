@@ -34,11 +34,30 @@ export function validateConfig(raw) {
     timezone,
     cadence: raw.cadence ?? "daily",
     time: raw.time ?? "09:00",
+    ...(raw.intervalMinutes !== undefined
+      ? { intervalMinutes: number(raw.intervalMinutes, 60, 10080) }
+      : {}),
+    ...(raw.weekdays !== undefined ? { weekdays: raw.weekdays } : {}),
   };
-  if (!["hourly", "daily", "weekdays", "weekly"].includes(config.cadence))
+  if (
+    !["interval", "hourly", "daily", "weekdays", "weekly"].includes(
+      config.cadence,
+    )
+  )
     throw Error("Invalid schedule");
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(config.time))
     throw Error("Invalid schedule time");
+  if (config.cadence === "interval" && !config.intervalMinutes)
+    throw Error("Choose a repeat interval");
+  if (
+    config.weekdays !== undefined &&
+    (!Array.isArray(config.weekdays) ||
+      !config.weekdays.length ||
+      config.weekdays.length > 7 ||
+      config.weekdays.some((d) => !Number.isInteger(d) || d < 0 || d > 6) ||
+      new Set(config.weekdays).size !== config.weekdays.length)
+  )
+    throw Error("Choose valid weekdays");
   if (config.mode === "goal" && !config.criteria)
     throw Error("Describe the expected result");
   return config;
@@ -64,6 +83,8 @@ export function dayKey(at, timezone) {
 }
 /** One occurrence per local calendar day; nonexistent DST times are skipped. */
 export function nextDue(config, after) {
+  if (config.cadence === "interval")
+    return after + config.intervalMinutes * 60000;
   if (config.cadence === "hourly") return after + 3600000;
   const p = parts(after, config.timezone);
   const start = Date.UTC(p.year, p.month - 1, p.day);
@@ -72,7 +93,11 @@ export function nextDue(config, after) {
     const day = new Date(start + i * 86400000);
     const weekday = day.getUTCDay();
     if (config.cadence === "weekdays" && [0, 6].includes(weekday)) continue;
-    if (config.cadence === "weekly" && weekday !== 1) continue;
+    if (
+      config.cadence === "weekly" &&
+      !(config.weekdays ?? [1]).includes(weekday)
+    )
+      continue;
     const wall = day.getTime() + (hour * 60 + minute) * 60000;
     let utc = wall;
     for (let pass = 0; pass < 3; pass++) {
@@ -99,6 +124,8 @@ export function nextDue(config, after) {
   throw Error("No next schedule occurrence");
 }
 export function instruction(task, job, run) {
+  if (job.subject === "chat")
+    return `${job.prompt}\n\nTasker execution ${run.id}. This is the scheduled continuation of this same chat. Return the result and evidence in this chat. Articles and editorial submissions still require the owner's approval of final text and destinations. If blocked or awaiting user input, explain it and stop.`;
   const base = `${task.title}${task.note ? `\n\n${task.note}` : ""}`;
   if (job.config.mode === "once")
     return `${base}\n\nTasker execution ${run.id}. Return the finished result with evidence for human review. Do not publish articles or send them to editors before the owner approves the final text and destinations.`;

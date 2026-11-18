@@ -27,11 +27,14 @@ async function fixture(t) {
   let result = false;
   let revoked = false;
   let prompt = "";
+  let archived = false;
+  const paths = [];
   const fake = {
     ready: async () => {
       if (revoked) throw Error("revoked");
     },
     call: async (method, path, body) => {
+      paths.push(path);
       if (path === "/tasker")
         return {
           data: {
@@ -44,7 +47,8 @@ async function fixture(t) {
         return { projects: [{ id: "project", name: "Marketing" }] };
       if (path === "/projects/project/sessions")
         return { sessions: [{ id: "session", title: "Writing" }] };
-      if (path.endsWith("/metadata")) return { processState: "idle" };
+      if (path.endsWith("/metadata"))
+        return { processState: "idle", session: { isArchived: archived } };
       if (path.startsWith("/projects/project/sessions/session"))
         return {
           ownership: { owner: "self" },
@@ -119,6 +123,10 @@ async function fixture(t) {
     },
     loseReply: () => {
       failAfterPost = true;
+    },
+    paths,
+    archive: () => {
+      archived = true;
     },
     calls: () => calls,
   };
@@ -206,4 +214,148 @@ test("schedule uses Moscow calendar, skips missed runs and respects DST gaps", (
   );
   assert.throws(() => validateConfig(config({ dailyLimit: 500 })));
   assert.throws(() => validateConfig(config({ projectId: "../../owner" })));
+});
+
+test("chat schedules belong to the exact chat and keep repeating without Tasker reviews", async (t) => {
+  const f = await fixture(t);
+  const identity = {
+    subject: "chat",
+    projectId: "project",
+    sessionId: "session",
+  };
+  const chat = async (operation, extra = {}) => {
+    const current = await f.engine.handle("staff", {
+      ...identity,
+      operation: "get",
+    });
+    return f.engine.handle("staff", {
+      ...identity,
+      operation,
+      revision: current.job?.revision ?? 0,
+      ...extra,
+    });
+  };
+  const before = f.paths.filter((p) => p === "/tasker").length;
+  await chat("save", {
+    prompt: "Prepare the daily report",
+    config: config({
+      mode: "schedule",
+      cadence: "interval",
+      intervalMinutes: 1,
+    }),
+  });
+  await chat("resume");
+  await f.engine.tick();
+  assert.equal(f.calls(), 0);
+  for (let i = 1; i <= 3; i++) {
+    f.advance(61000);
+    await f.engine.tick();
+    assert.equal(f.calls(), i);
+    f.done();
+    await f.engine.tick();
+    const job = (await chat("get")).job;
+    assert.equal(job.runs.at(-1).status, "completed");
+    assert.equal(job.enabled, true);
+  }
+  f.advance(61000);
+  await f.engine.tick();
+  assert.equal(f.calls(), 3);
+  const job = (await chat("get")).job;
+  assert.equal(job.enabled, true);
+  assert.equal(new Date(job.nextAt).toISOString(), "2026-11-18T21:00:00.000Z");
+  assert.equal(f.paths.filter((p) => p === "/tasker").length, before);
+  await assert.rejects(
+    chat("save", {
+      prompt: "Wrong chat",
+      config: config({ mode: "schedule", sessionId: "other" }),
+    }),
+  );
+  await chat("pause");
+});
+
+test("archiving a scheduled chat stops future work; weekly days and interval validation are explicit", async (t) => {
+  const f = await fixture(t);
+  const identity = {
+    subject: "chat",
+    projectId: "project",
+    sessionId: "session",
+  };
+  const saved = await f.engine.handle("staff", {
+    ...identity,
+    operation: "save",
+    revision: 0,
+    prompt: "Report",
+    config: config({
+      mode: "schedule",
+      cadence: "interval",
+      intervalMinutes: 1,
+    }),
+  });
+  await f.engine.handle("staff", {
+    ...identity,
+    operation: "resume",
+    revision: saved.job.revision,
+  });
+  f.archive();
+  f.advance(61000);
+  await f.engine.tick();
+  const job = (
+    await f.engine.handle("staff", { ...identity, operation: "get" })
+  ).job;
+  assert.equal(job.enabled, false);
+  assert.equal(f.calls(), 0);
+  assert.throws(() =>
+    validateConfig(config({ cadence: "interval", intervalMinutes: 0 })),
+  );
+  assert.throws(() =>
+    validateConfig(config({ cadence: "weekly", weekdays: [] })),
+  );
+  assert.equal(
+    new Date(
+      nextDue(
+        validateConfig(
+          config({ cadence: "weekly", weekdays: [5], time: "10:30" }),
+        ),
+        Date.parse("2026-11-18T06:00:00Z"),
+      ),
+    ).toISOString(),
+    "2026-11-20T07:30:00.000Z",
+  );
+});
+
+test("chat history rotates confirmed runs without exceeding the retention bound", async (t) => {
+  const f = await fixture(t);
+  const identity = {
+    subject: "chat",
+    projectId: "project",
+    sessionId: "session",
+  };
+  const saved = await f.engine.handle("staff", {
+    ...identity,
+    operation: "save",
+    revision: 0,
+    prompt: "Report",
+    config: config({ mode: "schedule", cadence: "daily" }),
+  });
+  const state = await f.engine.read("staff");
+  const job = state.jobs.find((j) => j.taskId === saved.job.taskId);
+  job.runs = Array.from({ length: 100 }, (_, index) => ({
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    status: "completed",
+    result: "Earlier result",
+    startedAt: f.now() - 86400000,
+  }));
+  await f.engine.write("staff", state);
+  await f.engine.handle("staff", {
+    ...identity,
+    operation: "run",
+    revision: job.revision,
+  });
+  const current = (
+    await f.engine.handle("staff", { ...identity, operation: "get" })
+  ).job;
+  assert.equal(current.runs.length, 100);
+  assert.equal(current.runs[0].id.endsWith("000000000001"), true);
+  assert.equal(current.runs.at(-1).status, "queued");
+  assert.equal(f.calls(), 1);
 });
