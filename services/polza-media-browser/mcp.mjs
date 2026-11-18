@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 import { SITES } from "./config.mjs";
+import { existsSync } from "node:fs";
+import { mediaBrokerCall } from "./broker-client.mjs";
 
 const site = { type: "string", enum: Object.keys(SITES) };
 const text = { type: "string" };
@@ -118,6 +120,9 @@ const tools = [
 ];
 
 async function call(name, args) {
+  if (existsSync("/usr/local/bin/polza-integration")) {
+    return mediaBrokerCall(name, args);
+  }
   const actor = process.env.POLZA_MEDIA_ACTOR || "marker";
   if (!["owner", "marker"].includes(actor))
     throw new Error("Invalid configured actor");

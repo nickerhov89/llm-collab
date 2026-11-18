@@ -29,15 +29,24 @@ isolation requirement before admitting untrusted actors.
 
 Project-scoped MCP polza-media-browser is the primary interface: status, open,
 snapshot, login, submit_job, job_status, resume and close. CLI remains a fallback.
-In the UID-isolated deployment, use `polza_integrations` with `media.*` or
-`/usr/local/bin/polza-media`. This CLI delegates to the existing UID broker,
+In the UID-isolated deployment, named MCP tools (`media_status`, `media_open`,
+etc.), `polza_integrations` with `media.*`, and `/usr/local/bin/polza-media`
+all delegate to the existing UID broker. The MCP adapter and CLI
 does not read bearer files and refuses `--actor`; current user grants remain
-authoritative. It supports status, open, snapshot, login, job, job-status,
-resume and cancel. Older project MCP workers can retain the legacy marker
-capability and return `agent_access_denied` even while the caller's UID
-connector works. Use the UID CLI fallback in those active chats; do not change
-roles or rotate website cookies to repair that error. On 18 November the
-owner and marker UID calls succeeded and the ungranted CFO call was refused.
+authoritative. The CLI supports status, open, snapshot, login, job, job-status,
+resume and cancel. The named MCP also supports close through the same broker.
+Open preserves an explicitly supplied allowed site URL. A UID denial is final:
+the adapter never retries using a legacy bearer or another actor. Standalone
+installations without the UID broker retain their existing bearer transport.
+
+On 18 November an owner chat's still-running legacy MCP continued using the
+obsolete marker capability after the CLI had been migrated. Its next calls
+were bridged to the UID broker without restarting the provider. Five active
+MCP workers returned successful status, and native stdio `media_status` and
+`media_open` verified Workspace access. The original owner process remained
+running. This changes tool authentication, not website cookies or platform
+account identity. Temporary root-only diagnostics were closed after applying
+the live bridge. New MCP workers use the installed broker adapter directly.
 The plan covers 18 channels: 17 browser profiles and the separate T-Business
 Telegram bot. Editorial email routes use the corporate Gmail MCP. Catalog
 membership does not assert registration, correct credentials or live login.

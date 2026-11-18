@@ -39,7 +39,7 @@ READ_TOOLS = {
     "telegram.search", "telegram.links", "telegram.similar", "telegram.search_chats",
     "images.status", "images.download",
 }
-WRITE_TOOLS = {"gmail.send", "media.open", "media.login", "media.job", "media.cancel", "media.resume", "telegram.send", "images.generate"}
+WRITE_TOOLS = {"gmail.send", "media.open", "media.login", "media.close", "media.job", "media.cancel", "media.resume", "telegram.send", "images.generate"}
 TOOLS = READ_TOOLS | WRITE_TOOLS
 WRITE_TOOLS |= GOOGLE_WRITES
 TOOLS |= GOOGLE_WRITES
@@ -246,12 +246,12 @@ class Broker:
         command = tool.split(".")[1]
         body = None
         site = arguments.get("site", "")
-        if command in ("open", "snapshot", "login"):
+        if command in ("open", "snapshot", "login", "close"):
             if site not in cfg.get("sites", []):
                 raise Denied("Media platform is not granted")
             route = "/sites/" + urllib.parse.quote(site, safe="") + "/" + command
             if command != "snapshot":
-                body = {}
+                body = {"url": arguments["url"]} if command == "open" and arguments.get("url") else {}
         elif command == "status":
             route = "/status"
         elif command == "job":
