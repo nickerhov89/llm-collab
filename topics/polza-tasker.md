@@ -31,7 +31,16 @@ skipped. Export retains all tasks including Trash. Work KPI profiles remain in
 the existing profile store; task priority assessments are part of task records.
 
 Ordinary lists display newly added tasks first, including existing tasks.
-Storage and exports keep insertion order; filtering reverses a copy, so editing,
+Ordinary lists support manual ordering using the dedicated drag handle with
+mouse/touch, or Up/Down while the handle has keyboard focus. A drop saves once
+through the existing account/revision guarded storage; cancelled gestures do
+not save. Only the visible task slots are reordered, preserving hidden tasks,
+task content, selection, completion rewards and automation metadata. Manual
+order survives reload and JSON export/import. New tasks still appear first.
+Priority keeps calculated score order and Trash remains read-only, so neither
+offers drag handles. A drag never starts a Cowork task or grants XP.
+
+Storage and exports retain the current underlying task order; filtering reverses a copy, so editing,
 completion and restoration do not change a task's position. Legacy tasks have
 no creation timestamps: their stored insertion order is used. Prioritize keeps
 score order, with newest first when scores are equal.
@@ -114,3 +123,13 @@ The +25 XP value stays visible. Forty decorative, noninteractive confetti pieces
 fall across the viewport behind the card, then disappear; the card dismisses
 automatically after 4.2 seconds or with its close button. Reduced motion removes
 confetti and all card/icon movement. These effects never change the XP ledger.
+
+Reordering verification (2026-11-18): the real page with 40 isolated tasks was
+checked in Chrome at 1000×600 and 375×812. Pointer and keyboard moves persisted
+through reload; Today moved visible tasks; Prioritize kept its calculated order.
+Sequential task entry after reordering and adding a new task first worked.
+Reviewed captures: `.artifacts/tasker-reorder-20261118/desktop.png` and
+`.artifacts/tasker-reorder-20261118/phone.png`. Focused order/storage tests (6),
+client typecheck and changed TypeScript Biome checks passed. The global CSS
+architecture check still reports the existing PolzaProjectActions.css and
+frozen polza-codex.css/polza-transcript.css debt; no baselines were raised.

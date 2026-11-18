@@ -194,6 +194,46 @@
 .selected {
   background: var(--bg-hover, #f7f7f8);
 }
+.dragHandle {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.dragHandle:hover,
+.dragHandle:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.dragHandle:focus-visible {
+  outline: 2px solid var(--text-muted);
+  outline-offset: 1px;
+}
+.dragging {
+  opacity: 0.55;
+}
+.dragging .dragHandle {
+  cursor: grabbing;
+}
+.dropTarget {
+  box-shadow: inset 0 -2px var(--text-muted);
+  background: var(--bg-hover);
+}
+@media (pointer: coarse) {
+  .dragHandle {
+    flex-basis: 40px;
+    width: 40px;
+    height: 44px;
+  }
+}
 .row > input,
 .option input {
   flex-shrink: 0;

@@ -27,6 +27,8 @@ import { setNewSessionPrefill } from "../lib/newSessionPrefill";
 import { useI18n } from "../i18n";
 import styles from "./PolzaTaskerPage.module.css";
 import { PolzaTaskAutomation } from "../components/PolzaTaskAutomation";
+import { reorderTaskSubset } from "../lib/taskerOrder";
+import { useTaskerReordering } from "../hooks/useTaskerReordering";
 
 interface Task {
   earnedXp?: number;
@@ -254,6 +256,28 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
     .reverse();
   if (view === "priority")
     visible.sort((a, b) => (score(b) ?? -1) - (score(a) ?? -1));
+  const canReorder =
+    !loadError &&
+    phase !== "loading" &&
+    view !== "priority" &&
+    view !== "trash";
+  const reordering = useTaskerReordering(
+    view,
+    visible.map((item) => item.id),
+    canReorder,
+    (from, to) => {
+      const before = dataRef.current;
+      const tasks = reorderTaskSubset(
+        before.tasks,
+        visible.map((item) => item.id),
+        from,
+        to,
+      );
+      if (tasks === before.tasks) return;
+      update({ ...before, tasks });
+      setStatus(t("taskerOrderChanged"));
+    },
+  );
   const profile = data.profile;
   async function importData(importFile: File) {
     try {
@@ -451,7 +475,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
           <span className={styles.saved}>{t("taskerWorkspace")}</span>
         </header>
         <div className={styles.workspace}>
-          <section className={styles.list}>
+          <section className={styles.list} data-tasker-list>
             <h1>
               {view === "all"
                 ? t("taskerInbox")
@@ -540,8 +564,33 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
             {visible.map((item) => (
               <div
                 key={item.id}
-                className={`${styles.row} ${selected === item.id ? styles.selected : ""}`}
+                data-tasker-row={item.id}
+                className={`${styles.row} ${selected === item.id ? styles.selected : ""} ${reordering.dragging === item.id ? styles.dragging : ""} ${reordering.over === item.id && reordering.dragging !== item.id ? styles.dropTarget : ""}`}
               >
+                {canReorder && (
+                  <button
+                    type="button"
+                    className={styles.dragHandle}
+                    aria-label={t("taskerReorder", { title: item.title })}
+                    title={t("taskerReorderHint")}
+                    {...reordering.handle(item.id)}
+                  >
+                    <svg
+                      width="16"
+                      height="20"
+                      viewBox="0 0 16 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      {[5, 10, 15].map((y) => (
+                        <g key={y}>
+                          <circle cx="5" cy={y} r="1.2" />
+                          <circle cx="11" cy={y} r="1.2" />
+                        </g>
+                      ))}
+                    </svg>
+                  </button>
+                )}
                 <input
                   type="checkbox"
                   checked={item.done}
