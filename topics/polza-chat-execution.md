@@ -1,7 +1,7 @@
 # Polza chat execution modes
 
-In the Polza deployment, each conversation header offers **Chat mode**. The
-settings apply to that existing conversation; creating a Tasker card is not
+In the Polza deployment, the composer **+** menu offers **Goal** and
+**Schedule**, each opening its own tab in Chat mode. The settings apply to that existing conversation; creating a Tasker card is not
 required. Modes start disabled. Opening settings or selecting a mode does not
 submit a turn. Manual work uses the normal composer.
 
@@ -71,3 +71,29 @@ should not enable duplicate schedules for the same shared chat.
 See the [execution adapter runbook](../scripts/polza-task-automation/README.md)
 for storage, restart/recovery and service operations. The native provider owns
 Goal; the scheduler owns recurring occurrences.
+
+## Research and planning in the composer
+
+Deep Research is a provider skill for the next submitted message, not a model
+selection. Its add-menu checkbox inserts one leading canonical skill token and
+preserves the research brief. Selecting it again removes only that token.
+Changing models leaves the brief and Research selection intact. On a provider
+change the leading token adapts to its advertised skill prefix. Temporary loss
+of the skill inventory retains the draft, and an active marker can still be
+removed. A missing skill is not advertised as available. Merely selecting
+Research never submits a turn or changes model/permissions.
+
+The deployment supplies the same small, versioned research skill in each
+account's global Codex and Claude skill directories. It researches with the
+actual available tools, cites evidence and reports unavailable sources. It
+provides no additional credentials, permissions or external publication rights.
+Source: `scripts/polza-agent-skills/deep-research/SKILL.md`.
+
+Plan mode uses the existing provider permission selector. Toggling it on
+remembers the preceding permission choice for this composer; toggling off
+restores that choice when supported, including after an in-place model change.
+An explicit different permission choice replaces that remembered return mode.
+A newly mounted composer already in Plan has no previous choice and falls back
+to Ask for approval. Native next-turn/pending mode semantics remain visible.
+The add menu retains at least 44px touch targets and scrolls when necessary;
+its mode descriptions and icons occupy separate, consistently aligned columns.

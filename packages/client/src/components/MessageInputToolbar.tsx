@@ -263,6 +263,9 @@ export interface MessageInputToolbarProps {
   onAttachClick?: (kind?: "files" | "photos" | "camera") => void;
   onFolderClick?: () => void;
   onGoalClick?: () => void;
+  onScheduleClick?: () => void;
+  onDeepResearchClick?: () => void;
+  deepResearchActive?: boolean;
 
   // Voice input
   voiceButtonRef?: RefObject<VoiceInputButtonRef | null>;
@@ -542,6 +545,7 @@ function getCompactStatusMatchMedia() {
 type ToolbarRenderModeState = "rendered" | "source" | "mixed";
 
 interface ToolbarModeControl {
+  scopeKey?: string;
   mode: PermissionMode;
   onModeChange: (mode: PermissionMode) => void;
   modes?: readonly PermissionMode[];
@@ -557,6 +561,9 @@ interface ToolbarAttachmentControl {
   onAttachClick?: (kind?: "files" | "photos" | "camera") => void;
   onFolderClick?: () => void;
   onGoalClick?: () => void;
+  onScheduleClick?: () => void;
+  onDeepResearchClick?: () => void;
+  deepResearchActive?: boolean;
 }
 
 interface ToolbarSlashControl {
@@ -1543,8 +1550,41 @@ export function MessageInputToolbarView({
       command.invocation?.kind === "skill",
   );
   const onDeepResearch =
-    deepResearchCommand && slashControl
+    attachmentControl.onDeepResearchClick ??
+    (deepResearchCommand && slashControl
       ? () => slashControl.onSelectCommand(deepResearchCommand)
+      : undefined);
+  const planScope = modeControl?.scopeKey;
+  const selectedPlanMode = modeControl?.mode;
+  const planReturnMode = useRef<{
+    scope: string | undefined;
+    mode: PermissionMode;
+  }>({ scope: planScope, mode: "default" });
+  useEffect(() => {
+    if (planReturnMode.current.scope !== planScope) {
+      planReturnMode.current = {
+        scope: planScope,
+        mode:
+          selectedPlanMode === "plan"
+            ? "default"
+            : (selectedPlanMode ?? "default"),
+      };
+    } else if (selectedPlanMode && selectedPlanMode !== "plan") {
+      planReturnMode.current.mode = selectedPlanMode;
+    }
+  }, [planScope, selectedPlanMode]);
+  const togglePlan =
+    modeControl && (!modeControl.modes || modeControl.modes.includes("plan"))
+      ? () => {
+          const previous = planReturnMode.current.mode;
+          modeControl.onModeChange(
+            modeControl.mode === "plan"
+              ? !modeControl.modes || modeControl.modes.includes(previous)
+                ? previous
+                : "default"
+              : "plan",
+          );
+        }
       : undefined;
   const controlPriority = priority ?? DEFAULT_SESSION_TOOLBAR_PRIORITY;
   const effectivePriority = (
@@ -2306,15 +2346,10 @@ export function MessageInputToolbarView({
               onFiles={attachmentControl.onAttachClick}
               onFolder={attachmentControl.onFolderClick}
               onGoal={attachmentControl.onGoalClick}
+              onSchedule={attachmentControl.onScheduleClick}
+              researchActive={attachmentControl.deepResearchActive}
               onDeepResearch={onDeepResearch}
-              onPlan={
-                modeControl
-                  ? () =>
-                      modeControl.onModeChange(
-                        modeControl.mode === "plan" ? "default" : "plan",
-                      )
-                  : undefined
-              }
+              onPlan={togglePlan}
               planActive={modeControl?.mode === "plan"}
               onMemo={attachmentControl.onRecordAudioMemo}
               onPanel={attachmentControl.onAttachmentPanel}
@@ -3423,6 +3458,9 @@ export function MessageInputToolbar({
   onAttachClick,
   onFolderClick,
   onGoalClick,
+  onScheduleClick,
+  onDeepResearchClick,
+  deepResearchActive,
   voiceButtonRef,
   onVoiceTranscript,
   onInterimTranscript,
@@ -4194,6 +4232,7 @@ export function MessageInputToolbar({
         onModeChange && supportsPermissionMode
           ? {
               mode,
+              scopeKey: sessionId ?? "new",
               onModeChange,
               modes: permissionModeOptions,
               changesApplyNextTurn: modeChangesApplyNextTurn,
@@ -4209,6 +4248,9 @@ export function MessageInputToolbar({
         onAttachClick,
         onFolderClick,
         onGoalClick,
+        onScheduleClick,
+        onDeepResearchClick,
+        deepResearchActive,
       }}
       slashControl={
         onSelectSlashCommand

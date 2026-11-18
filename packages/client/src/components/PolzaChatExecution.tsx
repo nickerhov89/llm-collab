@@ -10,6 +10,7 @@ import { Modal } from "./ui/Modal";
 import styles from "./PolzaChatExecution.module.css";
 
 interface Props {
+  initialMode?: "goal" | "schedule";
   projectId: string;
   sessionId: string;
   goal?: string | null;
@@ -26,6 +27,7 @@ interface NativeGoal {
 }
 const endpoint = "/tasker/automation";
 export function PolzaChatExecution({
+  initialMode,
   projectId,
   sessionId,
   goal,
@@ -36,7 +38,7 @@ export function PolzaChatExecution({
   onClose,
 }: Props) {
   const { t } = useI18n();
-  const [mode, setMode] = useState("manual");
+  const [mode, setMode] = useState(initialMode ?? "manual");
   const [objective, setObjective] = useState(goal ?? "");
   const [native, setNative] = useState<NativeGoal>({
     objective: goal ?? null,
@@ -83,11 +85,12 @@ export function PolzaChatExecution({
         setNative(current);
         if (!dirtyObjective.current) setObjective(current.objective ?? "");
         setMode(
-          current.status === "active"
-            ? "goal"
-            : automated.job?.enabled
-              ? "schedule"
-              : "manual",
+          initialMode ??
+            (current.status === "active"
+              ? "goal"
+              : automated.job?.enabled
+                ? "schedule"
+                : "manual"),
         );
       })
       .catch((e) => {
@@ -101,7 +104,7 @@ export function PolzaChatExecution({
       alive.current = false;
       controller.abort();
     };
-  }, [query, readNative, t]);
+  }, [query, readNative, t, initialMode]);
 
   useEffect(() => {
     if (goalStatus !== undefined)

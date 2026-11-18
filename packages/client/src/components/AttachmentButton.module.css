@@ -41,9 +41,9 @@
 }
 
 .menu:global(.polza-add-menu) button {
-  min-height: 64px;
+  min-height: 52px;
   gap: 14px;
-  padding: 8px 12px;
+  padding: 4px 12px;
   border-radius: 16px;
   color: inherit;
   font-size: 18px;
@@ -76,6 +76,26 @@
   border-radius: 50%;
   background: var(--bg-hover);
   color: inherit;
+}
+
+.menu:global(.polza-add-menu) button > span:not(.icon) {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+}
+.menu:global(.polza-add-menu) button small {
+  display: block;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.menu:global(.polza-add-menu) button[aria-checked="true"] {
+  background: var(--bg-hover);
+}
+.menu:global(.polza-add-menu) button[aria-checked="true"]::after {
+  content: "✓";
+  margin-left: auto;
+  padding-left: 6px;
 }
 
 @media (width <= 700px) {

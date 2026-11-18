@@ -1,3 +1,8 @@
+import {
+  hasResearchDraft,
+  researchDraft,
+  researchToken,
+} from "../lib/researchDraft";
 import { DraftSyncNotice } from "./DraftSyncNotice";
 import { AudioMemoPanel } from "./AudioMemoPanel";
 import { ComposerRecents } from "./ComposerRecents";
@@ -247,6 +252,8 @@ function getComposerViewportHeight(): number {
 }
 
 interface Props {
+  onConfigureGoal?: () => void;
+  onConfigureSchedule?: () => void;
   onVoiceControl?: (control: VoiceInputButtonRef | null) => void;
   onSend: (text: string, metadata?: MessageSubmissionMetadata) => void;
   questionAside?: {
@@ -454,6 +461,8 @@ function bangCompletionQueryKey(draft: string): string | null {
 }
 
 export function MessageInput({
+  onConfigureGoal,
+  onConfigureSchedule,
   onVoiceControl,
   onSend,
   questionAside,
@@ -3708,6 +3717,15 @@ export function MessageInput({
     return () => document.removeEventListener("keydown", startMemo, true);
   }, [onAttachAudioMemo, disabled, speechPending, audioMemoOpen]);
 
+  const researchMarker = researchToken(slashCommands);
+  const researchActive = hasResearchDraft(text);
+  useEffect(() => {
+    if (import.meta.env.VITE_POLZA_ADMIN_UI !== "true" || !researchMarker)
+      return;
+    const normalized = researchDraft(text, researchMarker, false);
+    if (normalized !== text) controls.setDraft(normalized);
+  }, [text, researchMarker, controls]);
+
   const toolbarProps: MessageInputToolbarProps = {
     onAttachmentPanel:
       canAttach && !disabled ? () => setAttachmentPanelOpen(true) : undefined,
@@ -3726,10 +3744,21 @@ export function MessageInput({
     attachmentCount: attachments.length,
     onAttachClick: openFilePicker,
     onFolderClick: () => folderInputRef.current?.click(),
-    onGoalClick: () => {
-      controls.setDraft(`/goal ${text.replace(/^\/goal\s*/i, "")}`);
-      textareaRef.current?.focus();
-    },
+    onGoalClick:
+      onConfigureGoal ??
+      (() => {
+        controls.setDraft(`/goal ${text.replace(/^\/goal\s*/i, "")}`);
+        textareaRef.current?.focus();
+      }),
+    onScheduleClick: onConfigureSchedule,
+    deepResearchActive: researchActive,
+    onDeepResearchClick:
+      researchMarker || researchActive
+        ? () => {
+            controls.setDraft(researchDraft(text, researchMarker, true));
+            textareaRef.current?.focus();
+          }
+        : undefined,
     voiceButtonRef,
     onVoiceTranscript: handleVoiceTranscript,
     onInterimTranscript: handleInterimTranscript,

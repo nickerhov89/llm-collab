@@ -16,6 +16,8 @@ interface Props {
   onPanel?: () => void;
   onFolder?: () => void;
   onGoal?: () => void;
+  onSchedule?: () => void;
+  researchActive?: boolean;
   onPlan?: () => void;
   onDeepResearch?: () => void;
   planActive?: boolean;
@@ -24,7 +26,15 @@ interface Props {
 function AddMenuIcon({
   kind,
 }: {
-  kind: "file" | "folder" | "goal" | "plan" | "photos" | "camera" | "research";
+  kind:
+    | "file"
+    | "folder"
+    | "goal"
+    | "plan"
+    | "photos"
+    | "camera"
+    | "research"
+    | "schedule";
 }) {
   const paths = {
     camera: (
@@ -57,6 +67,12 @@ function AddMenuIcon({
     plan: (
       <>
         <path d="M9 18h6M10 21h4M8 15c-1.8-1.3-3-3-3-5a7 7 0 0 1 14 0c0 2-1.2 3.7-3 5-.6.5-1 1.1-1 2H9c0-.9-.4-1.5-1-2Z" />
+      </>
+    ),
+    schedule: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 6v6l4 2" />
       </>
     ),
     research: (
@@ -94,6 +110,8 @@ export function AttachmentButton({
   onPanel,
   onFolder,
   onGoal,
+  onSchedule,
+  researchActive = false,
   onPlan,
   onDeepResearch,
   planActive = false,
@@ -277,7 +295,8 @@ export function AttachmentButton({
               {onDeepResearch && (
                 <button
                   type="button"
-                  role="menuitem"
+                  role="menuitemcheckbox"
+                  aria-checked={researchActive}
                   disabled={disabled}
                   onClick={() => {
                     setAddOpen(false);
@@ -289,7 +308,13 @@ export function AttachmentButton({
                   </span>
                   <span>
                     {t("attachmentDeepResearch")}
-                    <small>{t("attachmentDeepResearchDescription")}</small>
+                    <small>
+                      {t(
+                        researchActive
+                          ? "attachmentResearchOff"
+                          : "attachmentDeepResearchDescription",
+                      )}
+                    </small>
                   </span>
                 </button>
               )}
@@ -315,23 +340,52 @@ export function AttachmentButton({
                     onGoal();
                   }}
                 >
-                  <AddMenuIcon kind="goal" /> Goal{" "}
-                  <small>Set a goal to keep pursuing</small>
+                  <span className={styles.icon}>
+                    <AddMenuIcon kind="goal" />
+                  </span>
+                  <span>
+                    {t("attachmentGoal")}
+                    <small>{t("attachmentGoalDescription")}</small>
+                  </span>
                 </button>
               )}
-              {onPlan && (
+              {onSchedule && (
                 <button
                   type="button"
                   role="menuitem"
                   onClick={() => {
                     setAddOpen(false);
+                    onSchedule();
+                  }}
+                >
+                  <span className={styles.icon}>
+                    <AddMenuIcon kind="schedule" />
+                  </span>
+                  <span>
+                    {t("attachmentSchedule")}
+                    <small>{t("attachmentScheduleDescription")}</small>
+                  </span>
+                </button>
+              )}
+              {onPlan && (
+                <button
+                  type="button"
+                  role="menuitemcheckbox"
+                  aria-checked={planActive}
+                  onClick={() => {
+                    setAddOpen(false);
                     onPlan();
                   }}
                 >
-                  <AddMenuIcon kind="plan" /> Plan mode{" "}
-                  <small>
-                    {planActive ? "Turn plan mode off" : "Turn plan mode on"}
-                  </small>
+                  <span className={styles.icon}>
+                    <AddMenuIcon kind="plan" />
+                  </span>
+                  <span>
+                    {t("attachmentPlan")}
+                    <small>
+                      {t(planActive ? "attachmentPlanOff" : "attachmentPlanOn")}
+                    </small>
+                  </span>
                 </button>
               )}
             </div>,

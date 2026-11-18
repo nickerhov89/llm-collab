@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "../i18n";
 import {
   type SessionToolbarVisibility,
@@ -54,6 +54,7 @@ function renderToolbar(overrides: Partial<MessageInputToolbarViewProps> = {}) {
 }
 
 describe("MessageInputToolbar quick hide", () => {
+  afterEach(() => vi.unstubAllEnvs());
   it("retains Hide in the attachment share menu on right-click", () => {
     const onHideControl = vi.fn();
     renderToolbar({ onHideControl });
@@ -119,5 +120,44 @@ describe("MessageInputToolbar quick hide", () => {
     ).toContain("Configure heartbeat");
     fireEvent.click(screen.getByRole("button", { name: "Hide" }));
     expect(onHideControl).toHaveBeenCalledWith("nudge");
+  });
+});
+
+describe("Polza chat modes in the add menu", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("restores Full access after Plan and a model-only rerender", () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    const change = vi.fn();
+    const props: Partial<MessageInputToolbarViewProps> = {
+      modeControl: {
+        mode: "bypassPermissions",
+        onModeChange: change,
+        scopeKey: "chat",
+        modes: ["default", "plan", "bypassPermissions"],
+      },
+      modelSelector: { label: "Model A", onOpen: vi.fn() },
+    };
+    const rendered = renderToolbar(props);
+    fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
+    fireEvent.click(
+      screen.getByRole("menuitemcheckbox", { name: /Plan mode/ }),
+    );
+    expect(change).toHaveBeenLastCalledWith("plan");
+    rendered.rerender(
+      <MessageInputToolbarView
+        t={t}
+        visibility={{ ...hiddenVisibility, attachments: true }}
+        attachmentControl={{ canAttach: true, attachmentCount: 0 }}
+        shortcutsControl={shortcutsControl}
+        actionsControl={{}}
+        modeControl={{ ...props.modeControl!, mode: "plan" }}
+        modelSelector={{ label: "Model B", onOpen: vi.fn() }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add to chat" }));
+    const plan = screen.getByRole("menuitemcheckbox", { name: /Plan mode/ });
+    expect(plan.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(plan);
+    expect(change).toHaveBeenLastCalledWith("bypassPermissions");
   });
 });

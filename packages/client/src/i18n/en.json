@@ -5244,5 +5244,13 @@
   "chatExecutionWeekly": "Weekly",
   "chatExecutionActivate": "Activate this chat",
   "chatExecutionGoalStopped": "Goal is configured but the provider stopped. Check the goal status and the latest error in the chat.",
-  "chatExecutionGoalComplete": "The provider confirmed that the goal is complete."
+  "chatExecutionGoalComplete": "The provider confirmed that the goal is complete.",
+  "attachmentGoal": "Goal",
+  "attachmentGoalDescription": "Work toward a verifiable result",
+  "attachmentSchedule": "Schedule",
+  "attachmentScheduleDescription": "Run this chat daily or on a schedule",
+  "attachmentResearchOff": "Turn research off; keep the brief",
+  "attachmentPlan": "Plan mode",
+  "attachmentPlanOn": "Plan before making changes",
+  "attachmentPlanOff": "Return to the previous permission mode"
 }

@@ -124,8 +124,8 @@ import { QuestionAnswerPanel } from "../components/QuestionAnswerPanel";
 import { RecentSessionsDropdown } from "../components/RecentSessionsDropdown";
 import { RestartSessionModal } from "../components/RestartSessionModal";
 import { routerBindingChip } from "../components/RouterPoolSelector";
+import { researchDraft } from "../lib/researchDraft";
 import { PolzaChatExecution } from "../components/PolzaChatExecution";
-import chatExecutionStyles from "../components/PolzaChatExecution.module.css";
 import { SessionHeartbeatModal } from "../components/SessionHeartbeatModal";
 import { SessionMenu } from "../components/SessionMenu";
 import {
@@ -2606,7 +2606,9 @@ function SessionPageContent({
   const [approvalCollapsed, setApprovalCollapsed] = useState(false);
 
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
-  const [showChatExecution, setShowChatExecution] = useState(false);
+  const [showChatExecution, setShowChatExecution] = useState<
+    "goal" | "schedule" | null
+  >(null);
   const [showProjectSettingsModal, setShowProjectSettingsModal] =
     useState(false);
   const [showRecapModal, setShowRecapModal] = useState(false);
@@ -4981,6 +4983,20 @@ function SessionPageContent({
       if (!controls) {
         return;
       }
+      if (
+        import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+        bare === "deep-research" &&
+        command.invocation?.kind === "skill"
+      ) {
+        controls.setDraft(
+          researchDraft(
+            controls.getDraft(),
+            getCanonicalInvocationToken(command),
+            true,
+          ),
+        );
+        return;
+      }
       controls.setDraft(
         appendSlashCommandDraft(
           controls.getDraft(),
@@ -6623,18 +6639,6 @@ function SessionPageContent({
                     />
                   </button>
                 )}
-              {import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-                !loading &&
-                actualSessionId && (
-                  <button
-                    type="button"
-                    className={chatExecutionStyles.trigger}
-                    onClick={() => setShowChatExecution(true)}
-                    aria-label={t("chatExecutionTitle")}
-                  >
-                    ◷ {t("chatExecutionTitle")}
-                  </button>
-                )}
               {!loading && (
                 <SessionMenu
                   sessionId={sessionId}
@@ -6813,6 +6817,7 @@ function SessionPageContent({
             key={actualSessionId}
             projectId={projectId}
             sessionId={actualSessionId}
+            initialMode={showChatExecution}
             goal={currentGoal}
             goalStatus={goalDetails?.goalStatus}
             running={
@@ -6840,7 +6845,7 @@ function SessionPageContent({
               });
               if (accepted === false) throw new Error(t("chatExecutionFailed"));
             }}
-            onClose={() => setShowChatExecution(false)}
+            onClose={() => setShowChatExecution(null)}
           />
         )}
 
@@ -7308,6 +7313,16 @@ function SessionPageContent({
                     <MessageInputToolbar
                       sessionId={actualSessionId}
                       mode={permissionMode}
+                      onGoalClick={
+                        import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                          ? () => setShowChatExecution("goal")
+                          : undefined
+                      }
+                      onScheduleClick={
+                        import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                          ? () => setShowChatExecution("schedule")
+                          : undefined
+                      }
                       onModeChange={setPermissionMode}
                       modeChangesApplyNextTurn={
                         effectiveProvider === "codex" && shouldDeferMessages
@@ -7456,6 +7471,16 @@ function SessionPageContent({
                           : t("sessionPlaceholderQueue")
                   }
                   mode={permissionMode}
+                  onConfigureGoal={
+                    import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                      ? () => setShowChatExecution("goal")
+                      : undefined
+                  }
+                  onConfigureSchedule={
+                    import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                      ? () => setShowChatExecution("schedule")
+                      : undefined
+                  }
                   onModeChange={setPermissionMode}
                   modeChangesApplyNextTurn={
                     effectiveProvider === "codex" && shouldDeferMessages
