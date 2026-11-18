@@ -66,7 +66,7 @@ for name in ("broker.py", "client.py", "proxy_access.py", "telegram_worker.py", 
     (LIB / name).chmod(0o644)
 original_reader = Path("/usr/local/bin/google-doc-read")
 shutil.copy2(original_reader, BACKUP / "google-doc-read.before")
-shutil.copy2(original_reader, LIB / "google-doc-read.py")
+shutil.copy2(SOURCE / "google_doc_reader.py", LIB / "google-doc-read.py")
 runtime = {
     "socket": "/run/polza-access/tools.sock", "policy": str(policy_file), "home": str(home),
     "state": str(state), "actors": {str(manager.pw_uid): "owner", **{str(ACCOUNTS[name].pw_uid): name for name in users}},
