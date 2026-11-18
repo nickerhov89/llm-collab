@@ -1,6 +1,7 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
+import { readPolicy, publicAccess, saveAccess } from "./access.mjs";
 const config = JSON.parse(await readFile(process.env.TEAM_CONFIG, "utf8"));
 const page = await readFile(new URL("./team.html", import.meta.url));
 const owner = config.realms.owner;
@@ -109,14 +110,14 @@ async function login(r, username, password) {
     return null;
   return session;
 }
-function handoff(r, session) {
+function handoff(r, session, next) {
   for (const [id, t] of tickets) if (t.expires < Date.now()) tickets.delete(id);
   if (tickets.size >= 200) throw Error("Too many pending logins");
   const id = token();
   tickets.set(id, {
     host: r.host,
     session,
-    next: r.host === owner.host ? "/" : "/projects",
+    next: next ?? (r.host === owner.host ? "/" : "/projects"),
     expires: Date.now() + 45000,
   });
   return `https://${r.host}/team-entry#${id}`;
@@ -222,6 +223,22 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 200, { success: true, next: stored.next });
     }
     if (host !== owner.host) return reply(res, 404, { error: "Not found" });
+    if (req.method === "GET" && path === "/team/marketing") {
+      if (!config.sharedMarketing)
+        return reply(res, 404, { error: "Not configured" });
+      if (!(await requireOwner(req))) {
+        res.writeHead(302, { location: "/team" });
+        return res.end();
+      }
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy":
+          "default-src 'none'; script-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      });
+      return res.end(
+        `<!doctype html><meta charset="utf-8"><title>Общий маркетинг</title><p id="s">Открываем общий маркетинговый проект…</p><script>fetch('/team/api/shared-marketing/open',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).then(async r=>{if(!r.ok)throw Error();const x=await r.json();location.replace(x.next)}).catch(()=>{document.getElementById('s').textContent='Не удалось открыть проект. Вернитесь на /team и войдите как владелец.'})</script>`,
+      );
+    }
     if (req.method === "GET" && (path === "/team" || path === "/team/")) {
       res.writeHead(200, {
         "content-type": "text/html; charset=utf-8",
@@ -294,6 +311,20 @@ const server = http.createServer(async (req, res) => {
       return reply(res, 403, { error: "Origin required" });
     if (!(await requireOwner(req)))
       return reply(res, 401, { error: "Войдите как владелец" });
+    if (req.method === "POST" && path === "/team/api/shared-marketing/open") {
+      const shared = config.sharedMarketing;
+      const r = shared && realms.get(shared.realm);
+      if (
+        !r ||
+        !/^\/projects\/[A-Za-z0-9_-]+\/sessions\/[A-Za-z0-9-]+$/.test(
+          shared.entryPath ?? "",
+        )
+      )
+        return reply(res, 404, { error: "Shared project not configured" });
+      const session = await login(r, "", r.adminPassword);
+      if (!session) throw Error("Shared project login unavailable");
+      return reply(res, 200, { next: handoff(r, session, shared.entryPath) });
+    }
     if (req.method === "GET" && path === "/team/api/accounts") {
       const accounts = await Promise.all(
         [...realms]
@@ -320,8 +351,121 @@ const server = http.createServer(async (req, res) => {
       );
       return reply(res, 200, { accounts });
     }
+    const accessMatch =
+      /^\/team\/api\/accounts\/(ceo|cfo|cto|marker|dimak-spec)\/(access|projects|integrations)$/.exec(
+        path,
+      );
+    if (accessMatch) {
+      const [, name, action] = accessMatch;
+      const r = realms.get(name);
+      if (!r) return reply(res, 404, { error: "Unknown account" });
+      const session = await admin(r, name);
+      const users = await api(r, "/users", { session });
+      const user = users.body.users?.find((u) => u.username === name);
+      if (users.status !== 200 || !user)
+        return reply(res, 502, {
+          error: "Не удалось прочитать права пользователя",
+        });
+      if (req.method === "GET" && action === "access") {
+        const projects = await api(r, "/projects", { session });
+        if (projects.status !== 200)
+          return reply(res, 502, { error: "Не удалось прочитать проекты" });
+        const grants = {
+          newSessionProjects: user.newSessionProjects ?? [],
+          joinProjects: user.joinProjects ?? [],
+          viewProjects: user.viewProjects ?? [],
+        };
+        const known = new Map(
+          (projects.body.projects ?? []).map((p) => [p.id, p]),
+        );
+        for (const ids of Object.values(grants))
+          for (const id of ids)
+            if (!known.has(id))
+              known.set(id, { id, name: "Сохранённый проект" });
+        const access = await readPolicy(config.accessPolicy);
+        return reply(res, 200, {
+          projects: [...known.values()].map((p) => ({
+            id: p.id,
+            name: p.name,
+            mode: grants.newSessionProjects.includes(p.id)
+              ? "work"
+              : grants.joinProjects.includes(p.id)
+                ? "join"
+                : grants.viewProjects.includes(p.id)
+                  ? "view"
+                  : "none",
+          })),
+          integrations: access ? publicAccess(access.policy, name) : [],
+          integrationRevision: access?.revision,
+        });
+      }
+      if (req.method === "POST" && action === "projects") {
+        const data = await body(req);
+        const projects = await api(r, "/projects", { session });
+        if (projects.status !== 200 || !Array.isArray(data.projects))
+          return reply(res, 400, { error: "Неверный список проектов" });
+        const known = new Set((projects.body.projects ?? []).map((p) => p.id));
+        for (const key of [
+          "newSessionProjects",
+          "joinProjects",
+          "viewProjects",
+        ])
+          for (const id of user[key] ?? []) known.add(id);
+        if (
+          data.projects.length > 1000 ||
+          data.projects.some(
+            (p) =>
+              !p ||
+              !known.has(p.id) ||
+              !["none", "view", "join", "work"].includes(p.mode),
+          ) ||
+          new Set(data.projects.map((p) => p.id)).size !== data.projects.length
+        )
+          return reply(res, 400, { error: "Неизвестный проект или право" });
+        const patch = {
+          viewProjects: data.projects
+            .filter((p) => p.mode !== "none")
+            .map((p) => p.id),
+          joinProjects: data.projects
+            .filter((p) => ["join", "work"].includes(p.mode))
+            .map((p) => p.id),
+          newSessionProjects: data.projects
+            .filter((p) => p.mode === "work")
+            .map((p) => p.id),
+        };
+        const result = await api(r, "/users/" + name, {
+          session,
+          method: "PATCH",
+          data: patch,
+        });
+        if (result.status !== 200)
+          return reply(res, 502, { error: "Проекты не сохранены" });
+        return reply(res, 200, { success: true });
+      }
+      if (req.method === "POST" && action === "integrations") {
+        const data = await body(req);
+        try {
+          const result = await saveAccess(
+            config.accessPolicy,
+            name,
+            data.integrations,
+            data.revision,
+          );
+          if (result.conflict)
+            return reply(res, 409, {
+              error: "Права изменились в другой вкладке. Обновите список.",
+            });
+          return reply(res, 200, result);
+        } catch {
+          return reply(res, 400, {
+            error: "Интеграции не сохранены: проверьте подключение и права",
+          });
+        }
+      }
+      return reply(res, 405, { error: "Method not allowed" });
+    }
     const match =
-      /^\/team\/api\/accounts\/(ceo|cfo|cto|marker)\/(disable|enable|password|open)$/.exec(
+      /^\/team\/api\/accounts\/(ceo|cfo|cto|marker|dimak-spec)\/(disable|enable|password|open)$/.exec(
         path,
       );
     if (req.method === "POST" && match) {

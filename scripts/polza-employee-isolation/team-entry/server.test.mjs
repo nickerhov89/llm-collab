@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import { fork } from "node:child_process";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -12,6 +12,13 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
   const servers = [],
     sessions = new Map();
   let patch;
+  const employee = {
+    username: "marker",
+    disabled: false,
+    newSessionProjects: ["project-marker"],
+    viewProjects: [],
+    joinProjects: [],
+  };
   async function backend(name, host) {
     const server = http.createServer(async (req, res) => {
       assert.equal(req.headers.host, host);
@@ -71,19 +78,23 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
       if (req.url === "/api/users")
         return res.end(
           JSON.stringify({
-            users: [
-              {
-                username: "marker",
-                disabled: false,
-                newSessionProjects: ["project-marker"],
-              },
-            ],
+            users: [employee],
           }),
         );
       if (req.url === "/api/users/marker" && req.method === "PATCH") {
         patch = input;
+        Object.assign(employee, input);
         return res.end('{"success":true}');
       }
+      if (req.url === "/api/projects")
+        return res.end(
+          JSON.stringify({
+            projects: [
+              { id: "project-marker", name: "Маркетинг" },
+              { id: "project-site", name: "Сайт" },
+            ],
+          }),
+        );
       res.writeHead(404);
       res.end("{}");
     });
@@ -96,9 +107,28 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
     markerPort = await backend("marker", "marker.test");
   const folder = await mkdtemp(join(tmpdir(), "polza-team-test-"));
   const file = join(folder, "config.json");
+  const umaskModule = join(folder, "umask.mjs");
+  await writeFile(umaskModule, "process.umask(0o077);\n");
+  const accessPolicy = join(folder, "access.json");
+  await writeFile(
+    accessPolicy,
+    JSON.stringify({
+      version: 1,
+      users: { marker: { docs: "read" } },
+      connections: {
+        docs: { configured: true, note: "Corporate Docs" },
+        gmail: { configured: true, note: "Corporate Gmail" },
+      },
+    }),
+  );
   await writeFile(
     file,
     JSON.stringify({
+      accessPolicy,
+      sharedMarketing: {
+        realm: "marker",
+        entryPath: "/projects/shared-marketing/sessions/shared-session",
+      },
       realms: {
         owner: { host: "team.test", port: ownerPort },
         marker: {
@@ -112,6 +142,7 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
     { mode: 0o600 },
   );
   const child = fork(new URL("./server.mjs", import.meta.url), {
+    execArgv: ["--import", umaskModule],
     env: { ...process.env, TEAM_CONFIG: file, PORT: "0" },
     stdio: ["ignore", "ignore", "inherit", "ipc"],
   });
@@ -237,9 +268,181 @@ test("isolated sign-in handoff, no owner fallback, admin authorization", async (
   r = await call("/team-entry", { body: { ticket: ownerTicket } });
   const ownerCookie = r.headers.getSetCookie()[0].split(";")[0];
   assert.equal((await call("/", { session: ownerCookie })).status, 200);
+  assert.equal((await call("/team/marketing")).status, 302);
+  assert.equal(
+    (await call("/team/marketing", { session: ownerCookie })).status,
+    200,
+  );
+  assert.equal(
+    (
+      await call("/team/api/shared-marketing/open", {
+        body: {},
+        session: staff,
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call("/team/api/shared-marketing/open", {
+        body: {},
+        session: ownerCookie,
+        origin: false,
+      })
+    ).status,
+    403,
+  );
+  const shared = await call("/team/api/shared-marketing/open", {
+    session: ownerCookie,
+    body: { entryPath: "https://untrusted.test/", realm: "owner" },
+  });
+  assert.equal(shared.status, 200);
+  const sharedNext = new URL((await shared.json()).next);
+  assert.equal(sharedNext.hostname, "marker.test");
+  const sharedTicket = sharedNext.hash.slice(1);
+  assert.equal(
+    (await call("/team-entry", { body: { ticket: sharedTicket } })).status,
+    401,
+  );
+  const sharedEntry = await call("/team-entry", {
+    host: "marker.test",
+    body: { ticket: sharedTicket },
+  });
+  assert.equal(sharedEntry.status, 200);
+  assert.equal(
+    (await sharedEntry.json()).next,
+    "/projects/shared-marketing/sessions/shared-session",
+  );
+  assert.equal(
+    (
+      await call("/team-entry", {
+        host: "marker.test",
+        body: { ticket: sharedTicket },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (await call("/", { session: ownerCookie })).status,
+    200,
+    "Shared project entry preserves the owner login",
+  );
   r = await call("/team/api/accounts", { session: ownerCookie });
   assert.equal(r.status, 200);
   assert.equal((await r.json()).accounts[0].username, "marker");
+  const accessPath = "/team/api/accounts/marker/access";
+  assert.equal((await call(accessPath, { session: staff })).status, 401);
+  const beforeAccess = await (
+    await call(accessPath, { session: ownerCookie })
+  ).json();
+  assert.equal(beforeAccess.projects[0].mode, "work");
+  assert.equal(
+    beforeAccess.integrations.find((x) => x.id === "docs").mode,
+    "read",
+  );
+  assert.equal(
+    (
+      await call("/team/api/accounts/marker/projects", {
+        session: ownerCookie,
+        body: { projects: [{ id: "owner-secret-project", mode: "work" }] },
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await call("/team/api/accounts/marker/projects", {
+        session: ownerCookie,
+        body: {
+          projects: [
+            { id: "project-marker", mode: "view" },
+            { id: "project-site", mode: "work" },
+          ],
+        },
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(patch, {
+    viewProjects: ["project-marker", "project-site"],
+    joinProjects: ["project-site"],
+    newSessionProjects: ["project-site"],
+  });
+  const grantPath = "/team/api/accounts/marker/integrations";
+  assert.equal(
+    (
+      await call(grantPath, {
+        session: staff,
+        body: {
+          integrations: { gmail: "write" },
+          revision: beforeAccess.integrationRevision,
+        },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await call(grantPath, {
+        session: ownerCookie,
+        origin: false,
+        body: {
+          integrations: { gmail: "write" },
+          revision: beforeAccess.integrationRevision,
+        },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await call(grantPath, {
+        session: ownerCookie,
+        body: {
+          integrations: { telegram: "write" },
+          revision: beforeAccess.integrationRevision,
+        },
+      })
+    ).status,
+    400,
+  );
+  const concurrent = await Promise.all([
+    call(grantPath, {
+      session: ownerCookie,
+      body: {
+        integrations: { gmail: "read" },
+        revision: beforeAccess.integrationRevision,
+      },
+    }),
+    call(grantPath, {
+      session: ownerCookie,
+      body: {
+        integrations: { gmail: "write" },
+        revision: beforeAccess.integrationRevision,
+      },
+    }),
+  ]);
+  assert.deepEqual(
+    concurrent.map((x) => x.status).sort(),
+    [200, 409],
+    "Only one stale edit may commit",
+  );
+  const afterAccess = await (
+    await call(accessPath, { session: ownerCookie })
+  ).json();
+  assert.equal(
+    (await stat(accessPolicy)).mode & 0o777,
+    0o640,
+    "Broker keeps group read after policy replacement",
+  );
+  assert.equal(
+    afterAccess.integrations.find((x) => x.id === "docs").mode,
+    "none",
+  );
+  assert.equal(
+    afterAccess.projects.find((x) => x.id === "project-marker").mode,
+    "view",
+  );
   assert.equal(
     (
       await call("/team/api/accounts/marker/disable", {

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Медиабраузер · Polza</title>
+    <link rel="stylesheet" href="/media/console.css" />
+    <script type="module" src="/media/console.js"></script>
+  </head>
+  <body>
+    <header><a class="brand" href="/">POLZA<span> / COWORK</span></a><a id="project" href="/">← SEO & PR</a><span id="actor">Проверяем доступ…</span></header>
+    <main>
+      <div class="heading"><div><p class="eyebrow">ПУБЛИКАЦИИ И КАБИНЕТЫ</p><h1>Медиабраузер</h1><p class="muted">Один постоянный браузер на площадку. Открывайте кабинет сами или передавайте работу агенту.</p></div><button type="button" id="refresh" class="secondary">Обновить</button></div>
+      <p id="message" role="status" aria-live="polite" hidden></p>
+      <section aria-label="Площадки" id="sites" class="sites"></section>
+      <section id="viewer" class="panel" hidden>
+        <div class="section-head"><div><h2 id="viewer-title">Кабинет</h2><p id="browser-state" class="muted"></p></div><div class="buttons"><button type="button" id="takeover" class="secondary">Перехватить управление</button><button type="button" id="release" class="secondary">Отдать агенту</button><button type="button" id="close" class="secondary">Закрыть браузер</button></div></div>
+        <form id="navigation" class="row"><label class="sr-only" for="url">Адрес страницы</label><input id="url" type="url" required autocomplete="off" /><button type="submit">Перейти</button></form>
+        <p class="hint">Нажмите на поле внутри экрана. Затем введите текст ниже и нажмите «Ввести». Для перетаскивания зажмите элемент и двигайте мышь — движение передаётся сразу. На телефоне перетаскивайте пальцем.</p>
+        <div class="screen"><button id="screen-control" type="button" aria-label="Управление удалённым браузером"><img id="frame" alt="Экран удалённого браузера: нажмите на нужное поле или кнопку" draggable="false" /></button></div>
+        <form id="typing" class="row"><label class="sr-only" for="text">Текст для выбранного поля</label><input id="text" autocomplete="off" placeholder="Текст для поля в браузере" /><button type="submit">Ввести</button></form>
+        <div class="buttons keys"><label><input id="mask" type="checkbox" /> Скрыть ввод</label><button type="button" data-key="Tab" class="secondary">Tab</button><button type="button" data-key="Enter" class="secondary">Enter</button><button type="button" data-key="Backspace" class="secondary">⌫</button><button type="button" data-key="ControlOrMeta+A" class="secondary">Выделить всё</button><button type="button" id="up" class="secondary">↑ Прокрутка</button><button type="button" id="down" class="secondary">↓ Прокрутка</button><label class="upload-label">После нажатия на загрузку внутри кабинета выберите файл с компьютера (до 15 МБ): <input id="upload" type="file" accept=".png,.jpg,.jpeg,.webp,.gif,.pdf,.docx" /></label></div>
+      </section>
+      <div class="bottom-grid">
+        <section class="panel"><div class="section-head"><h2>Очередь публикаций</h2><span class="badge">С проверкой результата</span></div><p class="hint">Завершённая задача означает, что ожидаемый текст появился на странице. Публикацию и модерацию подтверждает сама площадка.</p><div id="jobs" class="jobs"><p class="muted">Очередь пуста</p></div></section>
+        <section class="panel"><h2>Подключить агента</h2><p class="muted">Агент получает доступ к этим кабинетам через отдельный ключ. Ключ не даёт доступ к остальному API коворка.</p><div class="buttons"><button type="button" id="connect">Подключить / обновить ключ</button><button type="button" id="revoke" class="secondary">Отозвать</button></div><pre id="agent-command">polza-media --actor marker status</pre><p class="hint">Агент читает страницу, составляет шаги заполнения и ставит их в очередь. Для ручного входа откройте кабинет выше. Если вы забираете управление, текущая задача останавливается перед следующим шагом.</p><details><summary>Поставить подготовленный план в очередь</summary><form id="plan-form"><label for="plan">JSON-план агента</label><textarea id="plan" rows="9" spellcheck="false" placeholder='{"site":"workspace","intent":"draft","title":"Новый кейс","idempotencyKey":"case-platform-v1","steps":[…]}'></textarea><button type="submit">Поставить в очередь</button></form></details></section>
+      </div>
+      <footer>Профили сохраняются на VPS. Лимит открытых кабинетов: <span id="browser-limit">1</span>. Неактивный браузер закрывается через 10 минут, авторизация сохраняется.</footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,36 @@
+[Unit]
+Description=Bounded marketing site build as marker
+After=polza-employee-firewall.service
+Requires=polza-employee-firewall.service
+StartLimitIntervalSec=60
+StartLimitBurst=2
+[Service]
+Type=oneshot
+User=pcw-marker
+Group=pcw-marker
+WorkingDirectory=/var/lib/polza-employees/marker/work/polza-site
+Environment=HOME=/var/lib/polza-employees/marker
+Environment=NEXT_TELEMETRY_DISABLED=1
+Environment=NODE_OPTIONS=--max-old-space-size=1536
+Environment=RAYON_NUM_THREADS=2
+Environment=PATH=/opt/polza-employee-runtime/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/sh /usr/local/lib/polza-site-build/runner.sh
+TimeoutStartSec=420
+MemoryMax=2500M
+CPUQuota=150%
+TasksMax=120
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/polza-employees/marker
+PrivateTmp=yes
+TemporaryFileSystem=/tmp:size=512M,mode=1777 /var/tmp:size=64M,mode=1777
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+UMask=0077

@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch explicit marker site-build requests
+[Path]
+PathChanged=/var/lib/polza-employees/marker/.local/state/polza-site-build/request
+Unit=polza-marker-site-build.service
+TriggerLimitIntervalSec=300
+TriggerLimitBurst=2
+[Install]
+WantedBy=multi-user.target
