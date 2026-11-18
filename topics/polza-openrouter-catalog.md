@@ -15,6 +15,34 @@ completion. Catalog membership does not establish account/provider access:
 provider permission errors, including the separately observed Anthropic 403,
 remain ordinary upstream errors. No identity/region/header workaround is added.
 
+The owner gateway supports an optional comma-separated
+`POLZA_OPENROUTER_AUTO_ALLOWED_MODELS` deployment setting. When configured, it
+adds OpenRouter's documented `auto-router` plugin `allowed_models` to Auto
+inference requests only. It does not replace Auto with a fixed model, change
+manual selections, retry rejected work, or modify an explicit per-request
+`auto-router` plugin. Without this setting, request bodies retain the previous
+streaming pass-through. With it, inference JSON is buffered with a 64 MiB limit;
+larger bodies return 413 before any upstream request. HTTP statuses, upstream
+error bodies and request IDs remain unchanged, including provider 403 refusals.
+Configure the owner gateway with the comma-separated environment variable
+`POLZA_OPENROUTER_AUTO_ALLOWED_MODELS`; leave it empty to disable this policy.
+The candidate restriction uses the provider's
+[documented Auto Router settings](https://openrouter.ai/blog/announcements/introducing-the-new-auto-router/).
+
+On 18 November the owner's selected `openrouter/auto` failed with the provider
+Terms Of Service 403. The same existing key accepted harmless Qwen, GLM and
+DeepSeek probes, while an Anthropic probe reproduced the refusal. The owner
+deployment opts Auto into the three tested model IDs, using the provider's
+normal routing controls. This is a mitigation for Auto's candidate selection,
+not evidence that the failed Auto request's exact chosen model is known, nor a
+fix for upstream access to manually selected restricted models. Model catalog
+membership and a successful health check still do not guarantee inference.
+The deployed owner gateway returned a successful Auto Messages reply from
+DeepSeek V3.1. A separate native `claude-gateway` Auto chat completed with the
+expected diagnostic marker through GLM 5.3 and was archived. The original
+conversation was neither replayed nor restarted. Broker/employee configuration
+is outside this owner-gateway mitigation.
+
 The owner OpenRouter service uses maxModels=1000 (the supported per-service
 limit), replacing its prior value 2. This is deployment configuration, not a
 change to the shared provider defaults. Automatic effort probes remain off as

@@ -18,3 +18,15 @@ A separate CSS migration and warn-site audit must reconcile those exact gates;
 do not raise the limits or suppress diagnostics merely to mark the check green.
 
 Found 2026-11-16 while expanding the Polza OpenRouter model catalog and search.
+
+Rechecked 2026-11-18 for the owner Auto candidate-pool mitigation: the same
+CSS ownership gate fails with polza-codex.css at 1590/220 and
+polza-transcript.css at 557/129. The gateway change touches no client CSS.
+Whole-repository non-writing Biome format passes (4245 files), as do exact-file
+gateway lint and the two HTTP integration scenarios (~0.2 s runner wall time).
+The `pnpm` dependency preflight initially refused a noninteractive install;
+checks can run against the existing dependencies with
+`--config.verify-deps-before-run=false`, without replacing shared node_modules.
+The previously recorded full-suite failures/time budget in
+[chat execution validation](polza-chat-execution-validation-20261118.md) remain outside
+this standalone gateway fix; full-suite success is not claimed here.

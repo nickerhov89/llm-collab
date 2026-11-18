@@ -11,8 +11,12 @@ export function createOpenRouterGateway({
   upstreamBase = "https://openrouter.ai/api",
   cacheTtlMs = 300000,
   catalogTimeoutMs = 4000,
+  autoAllowedModels = [],
   now = Date.now,
 } = {}) {
+  const allowedModels = [
+    ...new Set(autoAllowedModels.map((id) => id.trim())),
+  ].filter(Boolean);
   let models = [];
   let refreshedAt = 0;
   let refreshing;
@@ -132,12 +136,62 @@ export function createOpenRouterGateway({
           ? { "anthropic-version": req.headers["anthropic-version"] }
           : {}),
       };
+      let body = req;
+      if (
+        allowedModels.length &&
+        req.method === "POST" &&
+        ["/v1/messages", "/v1/responses", "/v1/chat/completions"].includes(
+          req.url.split("?")[0],
+        )
+      ) {
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 64 * 1024 * 1024) {
+            res.writeHead(413, { "content-type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: { message: "Gateway JSON body exceeds 64 MiB" },
+              }),
+            );
+            return;
+          }
+          chunks.push(chunk);
+        }
+        body = Buffer.concat(chunks);
+        let input;
+        try {
+          input = JSON.parse(body.toString("utf8"));
+          if (!input || typeof input !== "object" || Array.isArray(input))
+            throw new Error("Expected an inference object");
+        } catch {
+          // JSON parser errors can quote private prompt text. Never log them.
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(
+            JSON.stringify({ error: { message: "Invalid inference JSON" } }),
+          );
+          return;
+        }
+        // This is an operator opt-in for Auto only, never an explicit-model
+        // fallback. Preserve narrower or otherwise explicit per-request policy.
+        if (
+          input.model === "openrouter/auto" &&
+          !input.plugins?.some((plugin) => plugin.id === "auto-router")
+        ) {
+          input.plugins = [
+            ...(input.plugins ?? []),
+            { id: "auto-router", allowed_models: allowedModels },
+          ];
+          body = JSON.stringify(input);
+        }
+      }
       const upstream = await fetch(`${upstreamBase}${req.url}`, {
         method: req.method,
         headers,
         ...(req.method === "GET" || req.method === "HEAD"
           ? {}
-          : { body: req, duplex: "half" }),
+          : { body, duplex: "half" }),
         signal: AbortSignal.timeout(300_000),
       });
       // Transport metadata only: never log prompts, request headers or tokens.
@@ -182,7 +236,11 @@ if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  const server = createOpenRouterGateway();
+  const server = createOpenRouterGateway({
+    autoAllowedModels: (
+      process.env.POLZA_OPENROUTER_AUTO_ALLOWED_MODELS ?? ""
+    ).split(","),
+  });
   server.listen(port, host, () =>
     console.log(`OpenRouter gateway listening on ${host}:${port}`),
   );
