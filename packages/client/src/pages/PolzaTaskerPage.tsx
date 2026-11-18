@@ -26,6 +26,7 @@ import { useClientSummarySourceKey } from "../lib/clientSummarySourceKey";
 import { setNewSessionPrefill } from "../lib/newSessionPrefill";
 import { useI18n } from "../i18n";
 import styles from "./PolzaTaskerPage.module.css";
+import { PolzaTaskAutomation } from "../components/PolzaTaskAutomation";
 
 interface Task {
   earnedXp?: number;
@@ -238,17 +239,19 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const score = (item: Task) =>
     taskPriorityScore(item.priority, workProfile, today);
-  const visible = data.tasks.filter((item) =>
-    view === "trash"
-      ? item.deleted
-      : !item.deleted &&
-        (view === "done"
-          ? item.done
-          : !item.done &&
-            (view === "all" ||
-              view === "priority" ||
-              (view === "today" ? item.today : item.group === view))),
-  );
+  const visible = data.tasks
+    .filter((item) =>
+      view === "trash"
+        ? item.deleted
+        : !item.deleted &&
+          (view === "done"
+            ? item.done
+            : !item.done &&
+              (view === "all" ||
+                view === "priority" ||
+                (view === "today" ? item.today : item.group === view))),
+    )
+    .reverse();
   if (view === "priority")
     visible.sort((a, b) => (score(b) ?? -1) - (score(a) ?? -1));
   const profile = data.profile;
@@ -700,6 +703,13 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 >
                   {t("taskerStartCowork")} ↗
                 </button>
+                <PolzaTaskAutomation
+                  key={task.id}
+                  taskId={task.id}
+                  disabled={
+                    loadError || task.deleted === true || phase !== "saved"
+                  }
+                />
                 <label className={styles.option}>
                   <input
                     type="checkbox"

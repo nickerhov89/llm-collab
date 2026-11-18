@@ -2,7 +2,9 @@ import { mkdtemp, rm, readdir, writeFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import http from "node:http";
+import { once } from "node:events";
 import { PRINCIPAL_VARIABLE } from "../../src/auth/principal.js";
 import { createPolzaTaskerRoutes } from "../../src/routes/polza-tasker.js";
 let dir: string;
@@ -110,4 +112,46 @@ it("rejects invalid data without creating storage", async () => {
       await a.request("/api/tasker", { headers: { "test-user": "owner" } })
     ).headers.get("Cache-Control"),
   ).toBe("no-store");
+});
+
+it("automation bridge derives identity from authentication and refuses GET mutations", async () => {
+  const socket = join(dir, "automation.sock");
+  let observed: Record<string, unknown> | undefined;
+  const broker = http.createServer(async (req, res) => {
+    let text = "";
+    for await (const chunk of req) text += chunk;
+    observed = JSON.parse(text);
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ available: true }));
+  });
+  broker.listen(socket);
+  await once(broker, "listening");
+  vi.stubEnv("POLZA_TASK_AUTOMATION_SOCKET", socket);
+  vi.stubEnv("POLZA_TASK_AUTOMATION_TOKEN", "synthetic-test-capability");
+  try {
+    const a = app();
+    expect((await a.request("/api/tasker/automation")).status).toBe(401);
+    expect(
+      (
+        await a.request("/api/tasker/automation?operation=run", {
+          headers: { "test-user": "alice" },
+        })
+      ).status,
+    ).toBe(405);
+    const response = await a.request("/api/tasker/automation", {
+      method: "POST",
+      headers: { "test-user": "alice", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        operation: "get",
+        taskId: "one",
+        principal: "superuser",
+        account: "owner",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(observed?.principal).toBe("alice");
+  } finally {
+    vi.unstubAllEnvs();
+    await new Promise<void>((resolve) => broker.close(() => resolve()));
+  }
 });

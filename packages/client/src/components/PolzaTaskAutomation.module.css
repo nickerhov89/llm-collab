@@ -1,0 +1,119 @@
+.panel {
+  margin: 18px 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color, #dadbe0);
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+}
+.panel h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.panel label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.panel input,
+.panel select,
+.panel textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font: inherit;
+  color: var(--text-primary, #23252c);
+  background: var(--bg-primary, white);
+  border: 1px solid var(--border-color, #dadbe0);
+  border-radius: 7px;
+  padding: 8px;
+}
+.panel textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+.panel button {
+  padding: 8px 10px;
+  min-height: 38px;
+  font: inherit;
+  border: 1px solid var(--border-color, #dadbe0);
+  border-radius: 7px;
+  background: var(--bg-primary, white);
+  color: var(--text-primary, #23252c);
+  cursor: pointer;
+}
+.panel button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.panel :is(input, select, textarea, button, summary):focus-visible {
+  outline: 2px solid var(--accent-color, #5572db);
+  outline-offset: 2px;
+}
+.help {
+  color: var(--text-secondary, #666b78);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+}
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.wide {
+  grid-column: 1 / -1;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.summary {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary, #666b78);
+  overflow-wrap: anywhere;
+}
+.error {
+  color: var(--color-error, #b4313c);
+  overflow-wrap: anywhere;
+}
+.history summary {
+  cursor: pointer;
+  padding: 8px 0;
+}
+.history article {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--border-color, #dadbe0);
+  padding: 12px 0;
+}
+.history article > div:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 5px;
+  font-size: 12px;
+}
+.preview,
+.result {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  font: inherit;
+}
+.result {
+  max-height: 500px;
+  overflow-y: auto;
+}
+@media (width <= 600px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+  .panel button {
+    min-height: 44px;
+  }
+}

@@ -5,6 +5,8 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { PRINCIPAL_VARIABLE, type Principal } from "../auth/principal.js";
 
+import { createTaskerAutomationRoutes } from "./polza-tasker-automation.js";
+
 const MAX_BYTES = 5_000_000;
 interface TaskerState {
   revision: number;
@@ -169,5 +171,6 @@ export function createPolzaTaskerRoutes(dataDir: string) {
       if (writes.get(accountKey) === tail) writes.delete(accountKey);
     }
   });
+  app.route("/automation", createTaskerAutomationRoutes());
   return app;
 }
