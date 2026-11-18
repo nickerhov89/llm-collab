@@ -133,3 +133,13 @@ Reviewed captures: `.artifacts/tasker-reorder-20261118/desktop.png` and
 client typecheck and changed TypeScript Biome checks passed. The global CSS
 architecture check still reports the existing PolzaProjectActions.css and
 frozen polza-codex.css/polza-transcript.css debt; no baselines were raised.
+
+Task details use a compact form: a labeled area field, bordered context editor,
+adjacent Today/Completed controls, a full-width Cowork launch action and a
+separate deletion/reward footer. Priority settings are collapsed by default and
+open in Prioritize; choosing a different task resets this disclosure. On phones,
+opening a task hides the workspace header/sidebar and shows Back to tasks first.
+The editor remains scrollable and keeps the existing immediate typing/deferred
+save behavior. Reviewed desktop/phone captures (1000×600, 375×812) are under
+`.artifacts/tasker-panel-20261118/`; disclosure and sequential context typing were
+checked with 40 isolated tasks. Existing global CSS/console debt is unchanged.

@@ -704,32 +704,26 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                     if (event.key === "Enter") event.currentTarget.blur();
                   }}
                 />
-                <input
-                  className={styles.groupInput}
-                  aria-label={t("taskerEditArea")}
-                  placeholder={t("taskerEditArea")}
-                  value={task.group}
-                  maxLength={100}
-                  disabled={loadError || task.deleted}
-                  onChange={(event) =>
-                    patch(task.id, { group: event.target.value }, true)
-                  }
-                />
-                {view === "priority" && (
-                  <PolzaTaskPriority
-                    value={task.priority}
-                    profile={workProfile}
-                    disabled={loadError || task.deleted === true}
-                    onChange={(priority, delayed) =>
-                      patch(task.id, { priority }, delayed)
+                <label className={styles.areaLabel}>
+                  <span>{t("taskerEditArea")}</span>
+                  <input
+                    className={styles.groupInput}
+                    aria-label={t("taskerEditArea")}
+                    value={task.group}
+                    maxLength={100}
+                    disabled={loadError || task.deleted}
+                    onChange={(event) =>
+                      patch(task.id, { group: event.target.value }, true)
                     }
                   />
-                )}
+                </label>
                 <label className={styles.noteLabel} htmlFor="tasker-note">
                   {t("taskerContext")}
                 </label>
                 <textarea
                   id="tasker-note"
+                  className={styles.noteInput}
+                  rows={4}
                   maxLength={50000}
                   value={task.note}
                   disabled={loadError || task.deleted}
@@ -738,6 +732,45 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                     patch(task.id, { note: event.target.value }, true)
                   }
                 />
+                <div className={styles.options}>
+                  <label className={styles.option}>
+                    <input
+                      type="checkbox"
+                      checked={task.today}
+                      disabled={loadError || task.deleted}
+                      onChange={(event) =>
+                        patch(task.id, { today: event.target.checked })
+                      }
+                    />
+                    {t("taskerPlanToday")}
+                  </label>
+                  <label className={styles.option}>
+                    <input
+                      type="checkbox"
+                      checked={task.done}
+                      disabled={loadError || task.deleted}
+                      onChange={(event) =>
+                        patch(task.id, { done: event.target.checked })
+                      }
+                    />
+                    {t("taskerCompleted")}
+                  </label>
+                </div>
+                <details
+                  key={task.id}
+                  className={styles.priorityDetails}
+                  open={view === "priority" ? true : undefined}
+                >
+                  <summary>{t("taskerPriorityTitle")}</summary>
+                  <PolzaTaskPriority
+                    value={task.priority}
+                    profile={workProfile}
+                    disabled={loadError || task.deleted === true}
+                    onChange={(priority, delayed) =>
+                      patch(task.id, { priority }, delayed)
+                    }
+                  />
+                </details>
                 <button
                   className={styles.start}
                   disabled={task.deleted}
@@ -759,51 +792,23 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                     loadError || task.deleted === true || phase !== "saved"
                   }
                 />
-                <label className={styles.option}>
-                  <input
-                    type="checkbox"
-                    checked={task.today}
-                    disabled={loadError || task.deleted}
-                    onChange={(event) =>
-                      patch(task.id, { today: event.target.checked })
-                    }
-                  />
-                  {t("taskerPlanToday")}
-                </label>
-                <label className={styles.option}>
-                  <input
-                    type="checkbox"
-                    checked={task.done}
-                    disabled={loadError || task.deleted}
-                    onChange={(event) =>
-                      patch(task.id, { done: event.target.checked })
-                    }
-                  />
-                  {t("taskerCompleted")}
-                </label>
-                <button
-                  className={styles.deleteTask}
-                  type="button"
-                  disabled={loadError}
-                  onClick={() => setDeleted(task.id, !task.deleted)}
-                >
-                  {t(task.deleted ? "taskerRestoreTask" : "taskerDeleteTask")}
-                </button>
-                {view !== "priority" && (
-                  <PolzaTaskPriority
-                    value={task.priority}
-                    profile={workProfile}
-                    disabled={loadError || task.deleted === true}
-                    onChange={(priority, delayed) =>
-                      patch(task.id, { priority }, delayed)
-                    }
-                  />
-                )}
-                <p className={styles.reward}>
-                  {t(
-                    task.earnedXp ? "taskerAlreadyRewarded" : "taskerEarnHint",
-                  )}
-                </p>
+                <footer className={styles.detailFooter}>
+                  <button
+                    className={styles.deleteTask}
+                    type="button"
+                    disabled={loadError}
+                    onClick={() => setDeleted(task.id, !task.deleted)}
+                  >
+                    {t(task.deleted ? "taskerRestoreTask" : "taskerDeleteTask")}
+                  </button>
+                  <p className={styles.reward}>
+                    {t(
+                      task.earnedXp
+                        ? "taskerAlreadyRewarded"
+                        : "taskerEarnHint",
+                    )}
+                  </p>
+                </footer>
               </>
             ) : (
               <div className={styles.detailEmpty}>{t("taskerSelectTask")}</div>
