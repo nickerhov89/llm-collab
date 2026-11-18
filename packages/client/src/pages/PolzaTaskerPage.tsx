@@ -1,3 +1,14 @@
+import {
+  TaskerProgress,
+  type TaskerCelebration,
+} from "../components/TaskerProgress";
+import {
+  TASK_XP,
+  withCompletion,
+  parseBadges,
+  taskerProgress,
+  type BadgeId,
+} from "../lib/taskerProgress";
 import { usePolzaTaskerStorage } from "../hooks/usePolzaTaskerStorage";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -17,6 +28,8 @@ import { useI18n } from "../i18n";
 import styles from "./PolzaTaskerPage.module.css";
 
 interface Task {
+  earnedXp?: number;
+  completedAt?: string;
   deleted?: boolean;
   priority?: TaskPriority;
   id: string;
@@ -38,6 +51,7 @@ interface TaskerData {
   version: 1;
   tasks: Task[];
   profile?: Profile;
+  badges?: BadgeId[];
 }
 const empty: TaskerData = { version: 1, tasks: [] };
 function parseData(raw: string): TaskerData {
@@ -71,6 +85,11 @@ function parseData(raw: string): TaskerData {
       priority: parseTaskPriority(task.priority),
       done: task.done === true,
       today: task.today === true,
+      ...(task.earnedXp === TASK_XP &&
+      typeof task.completedAt === "string" &&
+      Number.isFinite(Date.parse(task.completedAt))
+        ? { earnedXp: TASK_XP, completedAt: task.completedAt }
+        : {}),
     };
   });
   const profile = value.profile;
@@ -82,7 +101,12 @@ function parseData(raw: string): TaskerData {
         Number.isFinite(profile[key]) &&
         profile[key] >= 0,
     );
-  return { version: 1, tasks, ...(validProfile ? { profile } : {}) };
+  return {
+    version: 1,
+    tasks,
+    badges: parseBadges(value.badges),
+    ...(validProfile ? { profile } : {}),
+  };
 }
 
 export function PolzaTaskerPage() {
@@ -112,6 +136,14 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
   );
   const [selected, setSelected] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
+  const [titleDraft, setTitleDraft] = useState("");
+  const titleInput = useRef<HTMLInputElement>(null);
+  const [celebration, setCelebration] = useState<TaskerCelebration | null>(
+    null,
+  );
+  useEffect(() => {
+    if (selected) titleInput.current?.focus();
+  }, [selected]);
   const file = useRef<HTMLInputElement>(null);
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -146,15 +178,32 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
     else persist(next);
   }
   function patch(id: string, values: Partial<Task>, delayed = false) {
-    update(
-      {
-        ...data,
-        tasks: dataRef.current.tasks.map((task) =>
-          task.id === id ? { ...task, ...values } : task,
-        ),
-      },
-      delayed,
+    if (loadError) return;
+    const before = dataRef.current;
+    const item = before.tasks.find((task) => task.id === id);
+    if (!item || item.deleted) return;
+    const earned = values.done === true && !item.done && !item.earnedXp;
+    const tasks = before.tasks.map((task) =>
+      task.id === id
+        ? {
+            ...(values.done !== undefined
+              ? withCompletion(task, values.done, new Date().toISOString())
+              : task),
+            ...values,
+          }
+        : task,
     );
+    const progress = taskerProgress(tasks);
+    const previousBadges = parseBadges(before.badges);
+    const badges = [...new Set([...previousBadges, ...progress.badges])];
+    update({ ...before, tasks, badges }, delayed);
+    if (earned)
+      setCelebration({
+        id: Date.now(),
+        level: progress.level,
+        leveled: progress.level > taskerProgress(before.tasks).level,
+        badges: badges.filter((id) => !previousBadges.includes(id)),
+      });
   }
   function setDeleted(id: string, deleted: boolean) {
     if (loadError) return;
@@ -213,6 +262,12 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
         ...data,
         tasks: [...data.tasks, ...added],
         profile: incoming.profile ?? data.profile,
+        badges: [
+          ...new Set([
+            ...parseBadges(data.badges),
+            ...parseBadges(incoming.badges),
+          ]),
+        ],
       };
       if (!persist(next)) return;
       dataRef.current = next;
@@ -328,8 +383,14 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
           </select>
         </nav>
         <div className={styles.bottom}>
+          <TaskerProgress
+            progress={taskerProgress(data.tasks)}
+            unlocked={parseBadges(data.badges)}
+            celebration={celebration}
+          />
           {profile && (
-            <>
+            <details>
+              <summary>{t("taskerHabiticaSnapshot")}</summary>
               <div className={styles.character}>
                 <span>{profile.level}</span>
                 <div>
@@ -348,7 +409,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 {profile.hp} / {profile.maxHp} HP · {profile.gold}{" "}
                 {t("taskerGold")}
               </p>
-            </>
+            </details>
           )}
           <p>{t("taskerServerStorage")}</p>
           <div className={styles.fileActions}>
@@ -460,6 +521,7 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 update({ ...data, tasks: [...data.tasks, item] });
                 setNewTitle("");
                 setSelected(item.id);
+                setTitleDraft(item.title);
               }}
             >
               <span aria-hidden="true">＋</span>
@@ -489,7 +551,11 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 <button
                   className={styles.taskButton}
                   type="button"
-                  onClick={() => setSelected(item.id)}
+                  onClick={() => {
+                    setSelected(item.id);
+                    setTitleDraft(item.title);
+                    titleInput.current?.focus();
+                  }}
                 >
                   <span>
                     {item.title}
@@ -567,8 +633,36 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                   ← {t("taskerBackToTasks")}
                 </button>
                 <div className={styles.detailCaption}>{t("taskerTask")}</div>
-                <h2>{task.title}</h2>
-                <p className={styles.group}>{task.group}</p>
+                <input
+                  ref={titleInput}
+                  className={styles.titleInput}
+                  aria-label={t("taskerEditTitle")}
+                  value={titleDraft}
+                  maxLength={2000}
+                  disabled={loadError || task.deleted}
+                  onChange={(event) => {
+                    setTitleDraft(event.target.value);
+                    if (event.target.value.trim())
+                      patch(task.id, { title: event.target.value }, true);
+                  }}
+                  onBlur={() => {
+                    if (!titleDraft.trim()) setTitleDraft(task.title);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+                <input
+                  className={styles.groupInput}
+                  aria-label={t("taskerEditArea")}
+                  placeholder={t("taskerEditArea")}
+                  value={task.group}
+                  maxLength={100}
+                  disabled={loadError || task.deleted}
+                  onChange={(event) =>
+                    patch(task.id, { group: event.target.value }, true)
+                  }
+                />
                 {view === "priority" && (
                   <PolzaTaskPriority
                     value={task.priority}
@@ -646,7 +740,11 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                     }
                   />
                 )}
-                <p className={styles.reward}>{t("taskerRewardNotice")}</p>
+                <p className={styles.reward}>
+                  {t(
+                    task.earnedXp ? "taskerAlreadyRewarded" : "taskerEarnHint",
+                  )}
+                </p>
               </>
             ) : (
               <div className={styles.detailEmpty}>{t("taskerSelectTask")}</div>

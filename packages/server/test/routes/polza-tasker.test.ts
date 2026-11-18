@@ -30,7 +30,16 @@ function app() {
 }
 const data = {
   version: 1,
-  tasks: [{ id: "one", title: "Private task", done: false }],
+  tasks: [
+    {
+      id: "one",
+      title: "Private task",
+      done: false,
+      earnedXp: 25,
+      completedAt: "2026-11-18T12:00:00Z",
+    },
+  ],
+  badges: ["first"],
 };
 function put(
   a: Hono,
@@ -44,7 +53,7 @@ function put(
     body: JSON.stringify({ revision, accountKey, data }),
   });
 }
-it("persists private account data across route recreation and separates principals", async () => {
+it("persists private tasks and completion rewards across route recreation and separates principals", async () => {
   const a = app();
   expect((await a.request("/api/tasker")).status).toBe(401);
   expect((await put(a, "alice")).status).toBe(200);

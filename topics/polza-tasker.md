@@ -40,8 +40,13 @@ immediately and defer storage writes; pending writes flush on unmount/pagehide t
 
 Start in Cowork prefills the existing new-session composer with the task title
 and note. The user still chooses/reviews the project and submits the message.
-Neither starting a chat nor checking a task awards simulated XP. An optional
-imported Habitica profile is a static snapshot, clearly labeled as such.
+Starting a Cowork chat does not award XP. Tasker has its own completion ledger:
+the first incomplete-to-complete transition awards 25 XP and records a timestamp
+on that task. Reopening, checking again, moving to Trash and restoring do not
+award more XP or erase the first reward. Previously completed/imported tasks
+without this ledger are not credited automatically. JSON export/import preserves
+completion markers and unlocked badge IDs; duplicate task IDs are still skipped.
+An imported Habitica profile is a separate, collapsed static snapshot.
 
 At phone widths, the area list becomes a select control. Selecting a task
 opens its detail view in place of the list, with an explicit Back to tasks
@@ -53,3 +58,18 @@ rounded selection surfaces and primary action styling.
 
 Business KPI assessments and the Prioritize view are described in
 [Polza work profiles](polza-work-profiles.md).
+
+Clicking a task selects its details and focuses the editable title. Title, area
+and notes acknowledge typing immediately and use the same debounced account save.
+A blank title is held only in the editor; leaving it restores the last nonblank
+title instead of submitting invalid task data. Trash remains read-only.
+
+Levels use cumulative thresholds 50 * level * (level - 1): level 2 starts at
+100 XP, level 3 at 300 XP. The next level requires 100 * current level XP.
+Completion shows a short +25 XP celebration; crossing a threshold shows a level-up
+burst. Reduced-motion preference removes movement. The progress button opens a
+keyboard-accessible collection of 24 badges with visible requirements and earned
+states: eight completion milestones, three daily-volume milestones, five daily
+streaks, early/night/weekend work, three/five areas, five Today tasks, and levels
+5/10. Earned badges remain unlocked. Calendar achievements use browser local time.
+The progress and badge collection are available at desktop and phone widths.
