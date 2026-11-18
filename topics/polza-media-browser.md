@@ -29,6 +29,15 @@ isolation requirement before admitting untrusted actors.
 
 Project-scoped MCP polza-media-browser is the primary interface: status, open,
 snapshot, login, submit_job, job_status, resume and close. CLI remains a fallback.
+In the UID-isolated deployment, use `polza_integrations` with `media.*` or
+`/usr/local/bin/polza-media`. This CLI delegates to the existing UID broker,
+does not read bearer files and refuses `--actor`; current user grants remain
+authoritative. It supports status, open, snapshot, login, job, job-status,
+resume and cancel. Older project MCP workers can retain the legacy marker
+capability and return `agent_access_denied` even while the caller's UID
+connector works. Use the UID CLI fallback in those active chats; do not change
+roles or rotate website cookies to repair that error. On 18 November the
+owner and marker UID calls succeeded and the ungranted CFO call was refused.
 The plan covers 18 channels: 17 browser profiles and the separate T-Business
 Telegram bot. Editorial email routes use the corporate Gmail MCP. Catalog
 membership does not assert registration, correct credentials or live login.

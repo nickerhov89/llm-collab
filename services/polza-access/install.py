@@ -61,7 +61,7 @@ policy_file.write_text(json.dumps({"version": 1, "users": users, "connections": 
 os.chown(policy_file, team.pw_uid, manager.pw_gid)
 policy_file.chmod(0o640)
 LIB.mkdir(mode=0o755, exist_ok=True)
-for name in ("broker.py", "client.py", "proxy_access.py", "telegram_worker.py", "telegram_client.py", "image_access.py", "image_client.py"):
+for name in ("broker.py", "client.py", "proxy_access.py", "telegram_worker.py", "telegram_client.py", "image_access.py", "image_client.py", "media_cli.py"):
     shutil.copy2(SOURCE / name, LIB / name)
     (LIB / name).chmod(0o644)
 original_reader = Path("/usr/local/bin/google-doc-read")
@@ -82,6 +82,8 @@ os.chown(runtime_file, manager.pw_uid, manager.pw_gid)
 runtime_file.chmod(0o600)
 Path("/usr/local/bin/polza-integration").write_text('#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/polza-access/client.py "$@"\n')
 Path("/usr/local/bin/polza-integration").chmod(0o755)
+Path("/usr/local/bin/polza-media").write_text('#!/bin/sh\nexec /usr/bin/python3 /usr/local/lib/polza-access/media_cli.py "$@"\n')
+Path("/usr/local/bin/polza-media").chmod(0o755)
 unit = f"""[Unit]
 Description=Polza UID-authenticated integration broker
 After=network-online.target polza-team.service
