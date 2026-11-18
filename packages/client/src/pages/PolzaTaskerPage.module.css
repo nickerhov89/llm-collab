@@ -169,7 +169,10 @@
 .add input {
   background: transparent;
   border: 0;
-  padding: 4px 0;
+  padding: 8px 12px;
+  min-height: 42px;
+  box-sizing: border-box;
+  border-radius: 8px;
   min-width: 0;
   width: 100%;
   color: var(--text-primary);
