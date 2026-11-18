@@ -694,7 +694,8 @@
   padding: 0 0 12px;
   margin: 0;
 }
-.priorityDetails > section > h4 {
+.priorityDetails > section > h4,
+.priorityDetails > section > header > h3 {
   display: none;
 }
 

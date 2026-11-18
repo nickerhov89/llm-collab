@@ -136,7 +136,8 @@ frozen polza-codex.css/polza-transcript.css debt; no baselines were raised.
 
 Task details use a compact form: a labeled area field, bordered context editor,
 adjacent Today/Completed controls, a full-width Cowork launch action and a
-separate deletion/reward footer. Priority settings are collapsed by default and
+separate deletion/reward footer. Automation settings are also collapsed, keeping the launch action visible.
+Priority settings are collapsed by default and
 open in Prioritize; choosing a different task resets this disclosure. On phones,
 opening a task hides the workspace header/sidebar and shows Back to tasks first.
 The editor remains scrollable and keeps the existing immediate typing/deferred

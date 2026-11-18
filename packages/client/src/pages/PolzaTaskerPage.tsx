@@ -785,13 +785,19 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 >
                   {t("taskerStartCowork")} ↗
                 </button>
-                <PolzaTaskAutomation
-                  key={task.id}
-                  taskId={task.id}
-                  disabled={
-                    loadError || task.deleted === true || phase !== "saved"
-                  }
-                />
+                <details
+                  key={`automation-${task.id}`}
+                  className={styles.priorityDetails}
+                >
+                  <summary>{t("automationTitle")}</summary>
+                  <PolzaTaskAutomation
+                    key={task.id}
+                    taskId={task.id}
+                    disabled={
+                      loadError || task.deleted === true || phase !== "saved"
+                    }
+                  />
+                </details>
                 <footer className={styles.detailFooter}>
                   <button
                     className={styles.deleteTask}
