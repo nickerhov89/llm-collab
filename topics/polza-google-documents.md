@@ -71,4 +71,9 @@ scopes. Files stay private in that account's Drive. This scope covers files
 created or explicitly selected for this application; an arbitrary older file
 does not become writable merely because its URL can be read. Enabling writes
 does not grant sharing/permission-management or deletion tools. Current owner
-and marker write grants were enabled; other employee grants were preserved.
+and marker write grants were initially enabled. The owner subsequently
+requested this capability for every current account: owner, ceo, cfo, cto,
+marker and dimak-spec now have docs write grants. Each employee's UID made a
+successful range write to the diagnostic spreadsheet after that change;
+earlier owner creation/edit checks remain applicable. Future accounts do not
+inherit write permission automatically. Other integrations remain unchanged.
