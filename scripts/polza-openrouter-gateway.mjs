@@ -1,9 +1,14 @@
 import http from "node:http";
 import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import {
+  acceptsLegacyExec,
+  legacyExecResponseTransform,
+} from "./polza-openrouter-stream.mjs";
 
 const host = "127.0.0.1";
 const port = Number(process.env.OPENROUTER_GATEWAY_PORT ?? "3451");
@@ -36,16 +41,110 @@ function hasImageInput(input) {
   return false;
 }
 
+/** Translate native replay-only records without granting historical tools. */
+function normalizeNativeResponseHistory(input) {
+  if (!Array.isArray(input.input)) return false;
+  const hasHistoricalTools = input.input.some(
+    (item) => item?.type === "additional_tools",
+  );
+  const names = [];
+  const collect = (tools, prefix = "") => {
+    for (const tool of tools) {
+      if (tool.type === "namespace" && Array.isArray(tool.tools))
+        collect(tool.tools, `${prefix}${tool.name}.`);
+      else if (typeof tool.name === "string")
+        names.push(`${prefix}${tool.name}`);
+    }
+  };
+  if (Array.isArray(input.tools)) collect(input.tools);
+  let changed = false;
+  input.input = input.input.map((item) => {
+    if (
+      item?.type === "reasoning" &&
+      Array.isArray(item.content) &&
+      item.content.length > 0 &&
+      item.content.every((block) => block?.type === "reasoning_text")
+    ) {
+      changed = true;
+      const { content, ...rest } = item;
+      return {
+        ...rest,
+        summary: [
+          ...(item.summary ?? []),
+          ...content.map((block) => ({
+            type: "summary_text",
+            text: block.text ?? "",
+          })),
+        ],
+      };
+    }
+    if (item?.type === "additional_tools") {
+      changed = true;
+      return {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text:
+              "Historical tool declarations for interpreting earlier calls. These are context only; executable tools are supplied separately for this turn.\n" +
+              JSON.stringify(item),
+          },
+        ],
+      };
+    }
+    if (
+      (item?.type === "message" || item?.role) &&
+      Array.isArray(item?.content) &&
+      item.content.some((block) => block?.type === "reasoning_text")
+    ) {
+      changed = true;
+      return {
+        ...item,
+        content: item.content.map((block) =>
+          block?.type === "reasoning_text"
+            ? {
+                type: item.role === "assistant" ? "output_text" : "input_text",
+                text: block.text ?? "",
+              }
+            : block,
+        ),
+      };
+    }
+    return item;
+  });
+  if (hasHistoricalTools && Array.isArray(input.tools) && input.tools.length) {
+    if (names.length)
+      input.input.push({
+        type: "message",
+        role: "developer",
+        content: [
+          {
+            type: "input_text",
+            text: `Current executable tool names (use their declared wire types): ${names.join(", ")}. Historical tool declarations and earlier calls are context only. Use only the current request's tool definitions and their exact names, argument schemas and wire types. A historical tool name absent from this list is unavailable; do not call it or repeat an unsupported call. These declarations grant no additional permissions.`,
+          },
+        ],
+      });
+  }
+  return changed;
+}
+
 export function createOpenRouterGateway({
   upstreamBase = "https://openrouter.ai/api",
   cacheTtlMs = 300000,
   catalogTimeoutMs = 4000,
   autoAllowedModels = [],
   autoImageAllowedModels = [],
+  defaultMaxOutputTokens = 0,
   getCatalogToken,
   refreshIntervalMs = 0,
   now = Date.now,
 } = {}) {
+  if (
+    !Number.isSafeInteger(defaultMaxOutputTokens) ||
+    defaultMaxOutputTokens < 0
+  )
+    throw new Error("Invalid default output-token limit");
   const allowedModels = [
     ...new Set(autoAllowedModels.map((id) => id.trim())),
   ].filter(Boolean);
@@ -227,8 +326,11 @@ export function createOpenRouterGateway({
           : {}),
       };
       let body = req;
+      let legacyExec = false;
       if (
-        (allowedModels.length || imageAllowedModels.length) &&
+        (allowedModels.length ||
+          imageAllowedModels.length ||
+          req.url.split("?")[0] === "/v1/responses") &&
         req.method === "POST" &&
         ["/v1/messages", "/v1/responses", "/v1/chat/completions"].includes(
           req.url.split("?")[0],
@@ -263,9 +365,23 @@ export function createOpenRouterGateway({
           );
           return;
         }
+        legacyExec =
+          req.url.split("?")[0] === "/v1/responses" && acceptsLegacyExec(input);
+        let changed =
+          req.url.split("?")[0] === "/v1/responses" &&
+          normalizeNativeResponseHistory(input);
+        if (
+          req.url.split("?")[0] === "/v1/responses" &&
+          defaultMaxOutputTokens > 0 &&
+          input.max_output_tokens === undefined
+        ) {
+          input.max_output_tokens = defaultMaxOutputTokens;
+          changed = true;
+        }
         // This is an operator opt-in for Auto only, never an explicit-model
         // fallback. Preserve narrower or otherwise explicit per-request policy.
         if (
+          (allowedModels.length || imageAllowedModels.length) &&
           input.model === "openrouter/auto" &&
           !input.plugins?.some((plugin) => plugin.id === "auto-router")
         ) {
@@ -289,8 +405,9 @@ export function createOpenRouterGateway({
             ...(input.plugins ?? []),
             { id: "auto-router", allowed_models: pool },
           ];
-          body = JSON.stringify(input);
+          changed = true;
         }
+        if (changed) body = JSON.stringify(input);
       }
       const upstream = await fetch(`${upstreamBase}${req.url}`, {
         method: req.method,
@@ -313,16 +430,32 @@ export function createOpenRouterGateway({
         if (value) responseHeaders[name] = value;
       }
       res.writeHead(upstream.status, responseHeaders);
-      if (upstream.body) Readable.fromWeb(upstream.body).pipe(res);
-      else res.end();
+      if (upstream.body) {
+        const contentType = upstream.headers.get("content-type") ?? "";
+        if (
+          legacyExec &&
+          upstream.ok &&
+          (contentType.includes("text/event-stream") ||
+            contentType.includes("application/json"))
+        )
+          await pipeline(
+            Readable.fromWeb(upstream.body),
+            legacyExecResponseTransform(
+              contentType.includes("text/event-stream"),
+            ),
+            res,
+          );
+        else await pipeline(Readable.fromWeb(upstream.body), res);
+      } else res.end();
     } catch (error) {
-      if (!res.headersSent)
+      if (!res.headersSent) {
         res.writeHead(502, { "content-type": "application/json" });
-      res.end(
-        JSON.stringify({
-          error: { message: "OpenRouter gateway request failed" },
-        }),
-      );
+        res.end(
+          JSON.stringify({
+            error: { message: "OpenRouter gateway request failed" },
+          }),
+        );
+      } else res.destroy();
       console.error(
         "upstream request failed:",
         error instanceof Error ? error.message : String(error),
@@ -354,6 +487,9 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const server = createOpenRouterGateway({
+    defaultMaxOutputTokens: Number(
+      process.env.POLZA_OPENROUTER_DEFAULT_MAX_OUTPUT_TOKENS ?? "8192",
+    ),
     autoImageAllowedModels: (
       process.env.POLZA_OPENROUTER_AUTO_IMAGE_ALLOWED_MODELS ?? ""
     ).split(","),

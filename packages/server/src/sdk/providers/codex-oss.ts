@@ -50,6 +50,7 @@ import { probeServiceEffort } from "../../services/GatewayEffortProbe.js";
 import { findCodexCliPath } from "../cli-detection.js";
 import { MessageQueue } from "../messageQueue.js";
 import type { SDKMessage } from "../types.js";
+import { prepareCodexGatewayCatalog } from "./codex-gateway-catalog.js";
 import { stripYaControlPlaneCredentials } from "./env-filter.js";
 import type {
   AgentProvider,
@@ -756,18 +757,42 @@ export class CodexOSSProvider implements AgentProvider {
       queue.push(options.initialMessage);
     }
 
-    const sessionIterator = this.runSession(
-      options,
-      gatewayRoute,
-      queue,
-      abortController.signal,
-      pidRef,
-    );
+    const provider = this;
     const iterator = (async function* () {
+      let catalog:
+        | Awaited<ReturnType<typeof prepareCodexGatewayCatalog>>
+        | undefined;
       try {
-        yield* sessionIterator;
+        const service = gatewayRoute?.serviceId
+          ? provider.serviceById(gatewayRoute.serviceId)
+          : undefined;
+        if (gatewayRoute && service && provider.isPolzaRouter(service)) {
+          const effort =
+            provider.modelEfforts.get(
+              qualifiedGatewayModelId(service.id, gatewayRoute.modelId),
+            ) ?? provider.serviceModelEffort(service, gatewayRoute.modelId);
+          catalog = await prepareCodexGatewayCatalog(
+            service.url,
+            gatewayRoute.modelId,
+            effort,
+            undefined,
+            abortController.signal,
+          );
+        }
+        yield* provider.runSession(
+          options,
+          gatewayRoute,
+          queue,
+          abortController.signal,
+          pidRef,
+          catalog?.path,
+        );
       } finally {
-        await installationLease.release();
+        try {
+          await catalog?.dispose();
+        } finally {
+          await installationLease.release();
+        }
       }
     })();
 
@@ -817,6 +842,7 @@ export class CodexOSSProvider implements AgentProvider {
     queue: MessageQueue,
     signal: AbortSignal,
     pidRef: { value?: number },
+    modelCatalogPath?: string,
   ): AsyncIterableIterator<SDKMessage> {
     const codexPath = await this.findCodexPath();
     if (!codexPath) {
@@ -912,6 +938,12 @@ export class CodexOSSProvider implements AgentProvider {
             userPrompt,
             nativeProvider,
           );
+
+      if (modelCatalogPath)
+        args.unshift(
+          "-c",
+          `model_catalog_json=${tomlString(modelCatalogPath)}`,
+        );
 
       // Spawn codex process
       let codexProcess: ChildProcess;

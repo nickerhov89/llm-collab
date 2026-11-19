@@ -345,3 +345,219 @@ test("routes Auto images in history and tool results only through the vision poo
   );
   assert.equal(received.length, count);
 });
+
+test("translates native replay records without rewriting live tools, calls or opaque records", async (t) => {
+  let received;
+  const upstream = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const c of req) body += c;
+    received = JSON.parse(body);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const gateway = createOpenRouterGateway({
+    upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
+  });
+  gateway.listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  t.after(async () => {
+    await new Promise((r) => gateway.close(r));
+    await new Promise((r) => upstream.close(r));
+  });
+  const declarations = {
+    type: "additional_tools",
+    id: "old-tools",
+    role: "developer",
+    tools: [
+      {
+        type: "namespace",
+        name: "historical",
+        tools: [{ type: "custom", name: "exec" }],
+      },
+    ],
+  };
+  const input = {
+    model: "qwen/fixture",
+    tools: [{ type: "function", name: "current" }],
+    input: [
+      declarations,
+      {
+        role: "user",
+        content: [
+          { type: "reasoning_text", text: "Public historical summary" },
+          { type: "input_image", image_url: "data:fixture" },
+        ],
+      },
+      {
+        type: "custom_tool_call",
+        call_id: "one",
+        name: "exec",
+        input: "synthetic",
+      },
+      {
+        type: "custom_tool_call_output",
+        call_id: "one",
+        output: "synthetic result",
+      },
+      { type: "compaction", encrypted_content: "opaque-fixture" },
+      {
+        type: "reasoning",
+        id: "reasoning-fixture",
+        encrypted_content: "opaque-reasoning",
+        summary: [{ type: "summary_text", text: "Existing summary" }],
+        content: [
+          { type: "reasoning_text", text: "Preserved public reasoning" },
+        ],
+      },
+      {
+        type: "function_call",
+        call_id: "current-call",
+        name: "current",
+        arguments: "{}",
+      },
+      { type: "function_call_output", call_id: "current-call", output: "OK" },
+    ],
+  };
+  const response = await fetch(
+    `http://127.0.0.1:${gateway.address().port}/v1/responses`,
+    {
+      method: "POST",
+      headers: { authorization: "Bearer fixture" },
+      body: JSON.stringify(input),
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(received.tools, input.tools);
+  assert.equal(received.input[0].type, "message");
+  assert.equal(received.input[0].role, "assistant");
+  assert.ok(
+    received.input[0].content[0].text.includes(JSON.stringify(declarations)),
+  );
+  assert.deepEqual(received.input[1].content, [
+    { type: "input_text", text: "Public historical summary" },
+    input.input[1].content[1],
+  ]);
+  assert.deepEqual(received.input.slice(2, 4), input.input.slice(2, 4));
+  assert.deepEqual(received.input[4], input.input[4]);
+  assert.deepEqual(received.input[5], {
+    type: "reasoning",
+    id: "reasoning-fixture",
+    encrypted_content: "opaque-reasoning",
+    summary: [
+      { type: "summary_text", text: "Existing summary" },
+      { type: "summary_text", text: "Preserved public reasoning" },
+    ],
+  });
+  assert.deepEqual(input.input[0], declarations);
+  assert.deepEqual(received.input.slice(6, 8), input.input.slice(6, 8));
+  assert.equal(received.input.at(-1).role, "developer");
+  assert.match(received.input.at(-1).content[0].text, /names.*current/);
+  assert.doesNotMatch(
+    received.input.at(-1).content[0].text,
+    /historical\.exec/,
+  );
+});
+
+test("upstream stream failure terminates only that response and keeps gateway alive", async (t) => {
+  const upstream = http.createServer((_req, res) => {
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    res.write('data: {"type":"response.created"}\n\n');
+    setTimeout(() => res.destroy(), 25);
+  });
+  await new Promise((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const gateway = createOpenRouterGateway({
+    upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
+  });
+  await new Promise((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+  t.after(() => {
+    gateway.closeAllConnections();
+    gateway.close();
+    upstream.closeAllConnections();
+    upstream.close();
+  });
+  const base = `http://127.0.0.1:${gateway.address().port}`;
+  const response = await fetch(base + "/v1/responses", {
+    method: "POST",
+    headers: { authorization: "Bearer fixture" },
+    body: JSON.stringify({ model: "fixture", input: [] }),
+  });
+  await assert.rejects(response.text());
+  assert.equal((await (await fetch(base + "/health")).json()).ok, true);
+});
+
+test("HTTP bridge applies the legacy shell alias only to opted-in Responses history", async (t) => {
+  const item = {
+    id: "fc_alias",
+    call_id: "call_alias",
+    type: "function_call",
+    name: "exec",
+    arguments: '{"cmd":"printf OK"}',
+  };
+  const received = [];
+  const upstream = http.createServer(async (req, res) => {
+    let raw = "";
+    for await (const chunk of req) raw += chunk;
+    received.push(JSON.parse(raw));
+    res.writeHead(200, { "content-type": "text/event-stream" });
+    for (const e of [
+      { type: "response.output_item.added", item: { ...item, arguments: "" } },
+      { type: "response.output_item.done", item },
+      { type: "response.completed", response: { output: [item] } },
+    ])
+      res.write("data: " + JSON.stringify(e) + "\n\n");
+    res.end();
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const gateway = createOpenRouterGateway({
+    upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
+    defaultMaxOutputTokens: 8192,
+  });
+  await new Promise((r) => gateway.listen(0, "127.0.0.1", r));
+  t.after(() => {
+    gateway.closeAllConnections();
+    gateway.close();
+    upstream.closeAllConnections();
+    upstream.close();
+  });
+  const tools = [
+    {
+      type: "function",
+      name: "exec_command",
+      parameters: {
+        type: "object",
+        properties: { cmd: { type: "string" } },
+        required: ["cmd"],
+      },
+    },
+  ];
+  for (const legacy of [true, false]) {
+    const r = await fetch(
+      `http://127.0.0.1:${gateway.address().port}/v1/responses`,
+      {
+        method: "POST",
+        headers: { authorization: "Bearer fixture" },
+        body: JSON.stringify({
+          model: "fixture",
+          ...(legacy ? {} : { max_output_tokens: 777 }),
+          tools,
+          input: legacy ? [{ type: "additional_tools", tools: [] }] : [],
+        }),
+      },
+    );
+    const wire = await r.text();
+    const last = JSON.parse(
+      wire
+        .trim()
+        .split("\n")
+        .findLast((l) => l.startsWith("data: "))
+        .slice(6),
+    );
+    assert.equal(received.at(-1).max_output_tokens, legacy ? 8192 : 777);
+    assert.equal(
+      last.response.output[0].name,
+      legacy ? "exec_command" : "exec",
+    );
+  }
+});
