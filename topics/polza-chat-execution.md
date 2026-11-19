@@ -1,20 +1,22 @@
 # Polza chat execution modes
 
-In the Polza deployment, the composer **+** menu offers **Goal** and
-**Schedule**, each opening its own tab in Chat mode. The settings apply to that existing conversation; creating a Tasker card is not
-required. Modes start disabled. Opening settings or selecting a mode does not
-submit a turn. Manual work uses the normal composer.
+In the Polza deployment, **Goal** in the composer **+** menu prepares `/goal `
+directly in the message composer, preserving the existing draft and focusing
+the input. Selecting it again does not duplicate the command prefix. It opens
+no modal and submits nothing; the user writes/reviews the objective and sends
+it explicitly. **Schedule** opens the existing scheduling dialog. Both apply
+to the existing conversation; creating a Tasker card is not required.
 
 ## Goal
 
 Goal uses the provider's existing native `/goal` control and reported goal
-state. The user supplies an objective and completion criteria, then selects
-**Set goal and start**. This sends one native goal command; it does not also
+state. The user supplies an objective and completion criteria after `/goal`
+and sends the message. This sends one native goal command; it does not also
 send the objective as an ordinary message. Native providers start/continue
 their own goal work. A fast provider-confirmed completion is accepted even if
 it occurs before the confirmation read.
 
-The dialog reports the authoritative objective/status. It never infers goal
+The header flag reports the authoritative objective/status. It never infers goal
 completion from an assistant's prose or from the number of accepted outputs.
 Pause, resume and clear use the existing provider controls. An idle/cold chat
 can be activated without submitting work before checking Goal support. A

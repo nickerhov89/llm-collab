@@ -1094,6 +1094,13 @@ function SessionPageContent({
     [],
   );
   const draftControlsRef = useRef<DraftControls | null>(null);
+  const prepareGoalInComposer = useCallback(() => {
+    const controls = draftControlsRef.current;
+    if (!controls) return;
+    const draft = controls.getDraft();
+    controls.setDraft(`/goal ${draft.replace(/^\/goal(?:\s+|$)/i, "")}`);
+    controls.focus?.();
+  }, []);
   const earlyComposerTypingRef = useRef<EarlyTypingHandoff | null>(null);
   const earlyComposerTypingKeyRef = useRef<string | null>(null);
   // undefined: nothing waiting. null: focus only. string: prefill to apply.
@@ -2606,9 +2613,9 @@ function SessionPageContent({
   const [approvalCollapsed, setApprovalCollapsed] = useState(false);
 
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
-  const [showChatExecution, setShowChatExecution] = useState<
-    "goal" | "schedule" | null
-  >(null);
+  const [showChatExecution, setShowChatExecution] = useState<"schedule" | null>(
+    null,
+  );
   const [showProjectSettingsModal, setShowProjectSettingsModal] =
     useState(false);
   const [showRecapModal, setShowRecapModal] = useState(false);
@@ -7315,7 +7322,7 @@ function SessionPageContent({
                       mode={permissionMode}
                       onGoalClick={
                         import.meta.env.VITE_POLZA_ADMIN_UI === "true"
-                          ? () => setShowChatExecution("goal")
+                          ? prepareGoalInComposer
                           : undefined
                       }
                       onScheduleClick={
@@ -7473,7 +7480,7 @@ function SessionPageContent({
                   mode={permissionMode}
                   onConfigureGoal={
                     import.meta.env.VITE_POLZA_ADMIN_UI === "true"
-                      ? () => setShowChatExecution("goal")
+                      ? prepareGoalInComposer
                       : undefined
                   }
                   onConfigureSchedule={
