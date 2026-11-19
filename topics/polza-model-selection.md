@@ -101,3 +101,19 @@ behavior are unchanged. Other model warnings remain visible. Error records
 are never matched, and a warning containing additional text is retained.
 Vanilla YA presentation stays unchanged. Existing notices in a loaded history
 receive the same treatment as new streamed notices after the client reloads.
+
+## Confirmed gateway selection and Auto state
+
+In the branded chat picker and composer, a confirmed gateway model is the
+source of truth across reloads and browsers. A concrete model (including Grok)
+shows its own name and selected row and is not replaced by browser-local Auto
+on the next continuation. The exact `openrouter/auto` alias, including a
+service-qualified ID, shows Auto. Native-provider Auto still uses its saved
+per-chat policy because that policy can select concrete native models.
+
+Manual model changes through either picker clear the local Auto preference
+only after the server accepts the change. Changing thinking alone preserves
+the routing preference. Choosing Auto on a gateway applies the catalog's Auto
+model to the same session before closing. A failed switch leaves the picker
+open, reports the error and retains the previous selection. Missing Auto in
+the catalog is an error, not a successful preference-only switch.

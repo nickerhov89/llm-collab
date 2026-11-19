@@ -30,6 +30,24 @@ it("defaults every new/current chat to auto and keeps explicit manual choices is
   expect(isPolzaAutoModel("chat")).toBe(true);
 });
 
+it("uses the shared gateway selection over stale browser Auto preferences", () => {
+  for (const provider of ["codex-oss", "claude-gateway"]) {
+    expect(isPolzaAutoModel("chat", provider, "x-ai/grok-4")).toBe(false);
+    setPolzaAutoModel("chat", true);
+    expect(isPolzaAutoModel("chat", provider, "service::x-ai/grok-4")).toBe(
+      false,
+    );
+    localStorage.clear(); // reload on another device without the manual flag
+    expect(isPolzaAutoModel("chat", provider, "x-ai/grok-4")).toBe(false);
+    setPolzaAutoModel("chat", false);
+    expect(isPolzaAutoModel("chat", provider, "service::openrouter/auto")).toBe(
+      true,
+    );
+  }
+  localStorage.clear();
+  expect(isPolzaAutoModel("chat", "claude", "haiku")).toBe(true);
+});
+
 it("keeps gateway transitions within the native transcript family", () => {
   expect(polzaGatewayProvider("claude")).toBe("claude-gateway");
   expect(polzaGatewayProvider("codex")).toBe("codex-oss");

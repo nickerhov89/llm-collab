@@ -167,6 +167,95 @@ describe("ModelSwitchModal", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("reflects saved Grok without a browser flag and really applies Auto before closing", async () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    mockGetProcessModels.mockResolvedValue({
+      models: [
+        { id: "x-ai/grok-4", name: "Grok" },
+        { id: "openrouter/auto", name: "Router Auto" },
+      ],
+    });
+    mockGetProcessInfo.mockResolvedValue({
+      process: {
+        model: "x-ai/grok-4",
+        provider: "codex-oss",
+        effort: "high",
+      },
+    });
+    const onClose = vi.fn();
+    const onModelChanged = vi.fn();
+    mockSetProcessConfig.mockRejectedValueOnce(new Error("Session is busy"));
+    render(
+      <ModelSwitchModal
+        sessionId="session-1"
+        processId="process-1"
+        currentModel="openrouter/auto"
+        sessionProvider="codex-oss"
+        onModelChanged={onModelChanged}
+        onClose={onClose}
+      />,
+    );
+    const grok = await screen.findByRole("button", { name: "Grok" });
+    await waitFor(() => expect(grok.getAttribute("aria-current")).toBe("true"));
+    const auto = screen.getByRole("button", { name: "Авто" });
+    expect(auto.getAttribute("aria-current")).toBeNull();
+    fireEvent.click(auto);
+    await screen.findByText("Session is busy");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onModelChanged).not.toHaveBeenCalled();
+    expect(grok.getAttribute("aria-current")).toBe("true");
+    const receipt = {
+      success: true,
+      processId: "process-1",
+      model: "openrouter/auto",
+    };
+    mockSetProcessConfig.mockResolvedValueOnce(receipt);
+    fireEvent.click(auto);
+    await waitFor(() => expect(onModelChanged).toHaveBeenCalledWith(receipt));
+    expect(mockSetProcessConfig).toHaveBeenLastCalledWith(
+      "process-1",
+      expect.objectContaining({ model: "openrouter/auto" }),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("turns off routing after an accepted manual choice in the full settings tab", async () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    mockGetProcessModels.mockResolvedValue({
+      models: [
+        { id: "latest", name: "Latest" },
+        { id: "other", name: "Other" },
+      ],
+    });
+    const onClose = vi.fn();
+    render(
+      <ModelSwitchModal
+        sessionId="session-1"
+        processId="process-1"
+        initialTab="info"
+        infoPane={<div>Session details</div>}
+        onModelChanged={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    Object.defineProperty(
+      document.querySelector(".modal-content"),
+      "scrollTo",
+      { value: vi.fn() },
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "newSessionModelTitle" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Other/ }));
+    fireEvent.click(
+      (
+        await screen.findAllByRole("button", { name: /modelSwitchSaveAll/ })
+      )[0]!,
+    );
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(localStorage.getItem("polza-model-routing:session-1")).toBe(
+      "manual",
+    );
+  });
+
   it("resets the shared modal scroller when switching tabs", () => {
     render(
       <ModelSwitchModal

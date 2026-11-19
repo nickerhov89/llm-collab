@@ -36,14 +36,30 @@ export function polzaRoutingContext(messages: Message[]): string {
 }
 const listeners = new Set<() => void>();
 const key = (scope: string) => `polza-model-routing:${scope}`;
-export function isPolzaAutoModel(scope: string): boolean {
+export function isPolzaGatewayAuto(model?: string): boolean {
+  return model === "openrouter/auto" || !!model?.endsWith("::openrouter/auto");
+}
+export function isPolzaAutoModel(
+  scope: string,
+  provider?: string | null,
+  model?: string,
+): boolean {
+  // A confirmed gateway model is shared across tabs/devices; browser defaults
+  // must neither disguise a manual choice nor replace it on the next message.
+  if ((provider === "codex-oss" || provider === "claude-gateway") && model) {
+    return isPolzaGatewayAuto(model);
+  }
   return localStorage.getItem(key(scope)) !== "manual";
 }
 export function setPolzaAutoModel(scope: string, enabled: boolean): void {
   localStorage.setItem(key(scope), enabled ? "auto" : "manual");
   for (const listener of listeners) listener();
 }
-export function usePolzaAutoModel(scope: string) {
+export function usePolzaAutoModel(
+  scope: string,
+  provider?: string | null,
+  model?: string,
+) {
   const enabled = useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
@@ -53,7 +69,7 @@ export function usePolzaAutoModel(scope: string) {
         window.removeEventListener("storage", listener);
       };
     },
-    () => isPolzaAutoModel(scope),
+    () => isPolzaAutoModel(scope, provider, model),
     () => true,
   );
   return [

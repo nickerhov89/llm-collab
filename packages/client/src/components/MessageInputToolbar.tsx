@@ -3574,7 +3574,11 @@ export function MessageInputToolbar({
     null,
   );
   const [speechCaptureActive, setSpeechCaptureActive] = useState(false);
-  const [autoModel] = usePolzaAutoModel(sessionId ?? "new");
+  const [autoModel] = usePolzaAutoModel(
+    sessionId ?? "new",
+    thinkingProvider,
+    thinkingModel,
+  );
   const lastNonOffThinkingModeRef =
     useRef<Exclude<ThinkingMode, "off">>("auto");
   const toolbarRef = useRef<HTMLDivElement | null>(null);

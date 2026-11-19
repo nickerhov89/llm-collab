@@ -45,7 +45,11 @@ import {
   startsAdditionalModelGroup,
   withVisibleModelSelection,
 } from "../lib/modelCatalog";
-import { polzaGatewayProvider, usePolzaAutoModel } from "../lib/polzaAutoModel";
+import {
+  polzaGatewayProvider,
+  usePolzaAutoModel,
+  isPolzaGatewayAuto,
+} from "../lib/polzaAutoModel";
 import { polzaModelLabel } from "../lib/polzaModelLabel";
 import {
   isStandardServiceTier,
@@ -138,7 +142,6 @@ export function ModelSwitchModal({
   onClose,
 }: ModelSwitchModalProps) {
   const { t } = useI18n();
-  const [autoModel, setAutoModel] = usePolzaAutoModel(sessionId);
   const { setThinkingMode, setEffortLevel } = useModelSettings();
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelQuery, setModelQuery] = useState("");
@@ -162,6 +165,11 @@ export function ModelSwitchModal({
     useState<EffortLevel>("high");
   const [currentModelId, setCurrentModelId] = useState<string | undefined>(
     currentModel,
+  );
+  const [autoModel, setAutoModel] = usePolzaAutoModel(
+    sessionId,
+    provider ?? sessionProvider,
+    currentModelId,
   );
   const [thinkingMode, setThinkingModeState] = useState<ThinkingMode>("off");
   const [effortLevel, setEffortLevelState] = useState<EffortLevel>("high");
@@ -384,6 +392,12 @@ export function ModelSwitchModal({
         thinking,
         showThinking: getShowThinkingSetting(),
       });
+      if (
+        import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
+        selectedModel !== currentModelId
+      ) {
+        setAutoModel(isPolzaGatewayAuto(selectedModel));
+      }
       setThinkingMode(effectiveThinkingMode);
       setEffortLevel(effectiveEffortLevel);
       onModelChanged(result);
@@ -558,7 +572,7 @@ export function ModelSwitchModal({
       });
       setThinkingMode(nextMode);
       setEffortLevel(nextEffort);
-      setAutoModel(false);
+      setAutoModel(isPolzaGatewayAuto(model.id));
       onModelChanged(result);
       onClose();
     } catch (err) {
@@ -616,6 +630,12 @@ export function ModelSwitchModal({
           aria-current={autoModel ? "true" : undefined}
           disabled={switching}
           onClick={() => {
+            if (provider === "codex-oss" || provider === "claude-gateway") {
+              const auto = models.find((model) => isPolzaGatewayAuto(model.id));
+              if (auto) void selectQuickModel(auto);
+              else setError(t("modelSwitchLoadFailed"));
+              return;
+            }
             setAutoModel(true);
             onClose();
           }}

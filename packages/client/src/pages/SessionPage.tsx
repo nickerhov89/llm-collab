@@ -2900,7 +2900,13 @@ function SessionPageContent({
       let autoModel: string | undefined;
       if (
         import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
-        isPolzaAutoModel(actualSessionId) &&
+        isPolzaAutoModel(
+          actualSessionId,
+          effectiveProvider,
+          effectiveModelConfig?.requestedModel ??
+            effectiveModelConfig?.model ??
+            effectiveModel,
+        ) &&
         !localControl &&
         !preserveComposer &&
         !outgoingText.startsWith("/") &&
@@ -6846,7 +6852,7 @@ function SessionPageContent({
           <ModelSwitchModal
             processId={status.owner === "self" ? status.processId : undefined}
             sessionId={actualSessionId}
-            currentModel={session?.model}
+            currentModel={liveBadgeModel}
             sessionProvider={effectiveProvider}
             onModelChanged={handleModelChanged}
             onSwitchProvider={
