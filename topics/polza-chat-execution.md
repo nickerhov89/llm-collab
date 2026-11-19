@@ -26,7 +26,13 @@ finish. Pausing future goal work does not promise to abort an active turn.
 
 Goal work continues with the tab closed under the native provider's lifecycle,
 permissions and account limits. Human input, blocked work and usage/budget
-limits can stop it. Model errors remain visible in the chat. An instruction
+limits can stop it. Model errors remain visible in the chat. When Claude emits its native warning
+that repeated Stop hooks forced a turn to end, the objective remains visible
+with `blocked` status. This is neither success nor an active worker. Resume
+explicitly reissues the native objective and waits for confirmation; an empty
+read does not revive it. The cap is not raised and no failed turn is replayed.
+Only the provider's system warning can cause this transition, not quoted user
+or assistant text. An instruction
 forbidding all tools also forbids the goal-completion tool; objectives must
 allow the native control tools. Reopening/resuming after a service interruption
 uses the native chat lifecycle rather than replaying a guessed submission.
@@ -117,3 +123,11 @@ A newly mounted composer already in Plan has no previous choice and falls back
 to Ask for approval. Native next-turn/pending mode semantics remain visible.
 The add menu retains at least 44px touch targets and scrolls when necessary;
 its mode descriptions and icons occupy separate, consistently aligned columns.
+
+Native hook-cap regression verification (2026-11-19): 22 focused Claude Goal
+checks cover exhaustion, explicit resume, spoofed assistant text and seeding a
+paused goal after older objectives. Server TypeScript and focused Biome checks
+pass. The production Claude Code 2.1.319 informational warning was reproduced
+from the affected session's real transition rows, without model execution.
+The existing blocked flag/control is reused; no new polling loop, higher hook
+cap or automatic replay is added. Goal completion still requires provider proof.

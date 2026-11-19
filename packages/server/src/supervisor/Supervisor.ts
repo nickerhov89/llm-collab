@@ -1654,8 +1654,12 @@ export class Supervisor {
     const goal = readGoalDetails(
       this.sessionMetadataService?.getGoalCommand(resumeSessionId),
     );
-    if (goal?.goalStatus !== "paused" || !goal.goalObjective) return null;
-    return { objective: goal.goalObjective, status: "paused" };
+    if (
+      (goal?.goalStatus !== "paused" && goal?.goalStatus !== "blocked") ||
+      !goal.goalObjective
+    )
+      return null;
+    return { objective: goal.goalObjective, status: goal.goalStatus };
   }
 
   private async settleProviderStart<T>(

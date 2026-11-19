@@ -39,7 +39,7 @@ const PENDING_WINDOW_MS = 60_000;
 /** How long a dispatched goal command waits for its transcript confirmation. */
 const CONFIRMATION_TIMEOUT_MS = 6000;
 
-export type ClaudeGoalStatus = "active" | "paused";
+export type ClaudeGoalStatus = "active" | "paused" | "blocked";
 
 export interface ClaudeGoalSnapshot {
   objective: string | null;
@@ -79,6 +79,8 @@ interface ClaudeGoalRow {
   condition: string;
   /** True while the Stop hook is installed; false once it is gone. */
   installed: boolean;
+  /** Native hook repetition cap ended the turn without satisfying the goal. */
+  blocked?: true;
 }
 
 /**
@@ -88,12 +90,31 @@ interface ClaudeGoalRow {
  * (judged impossible) both mean Claude removed it.
  */
 function parseClaudeGoalTranscriptLine(line: string): ClaudeGoalRow | null {
-  if (!line.includes('"goal_status"')) return null;
+  if (
+    !line.includes('"goal_status"') &&
+    !line.includes("A hook blocked the turn from ending")
+  )
+    return null;
   let entry: unknown;
   try {
     entry = JSON.parse(line);
   } catch {
     return null;
+  }
+  const warning = entry as {
+    type?: unknown;
+    subtype?: unknown;
+    content?: unknown;
+  };
+  if (
+    warning.type === "system" &&
+    warning.subtype === "informational" &&
+    typeof warning.content === "string" &&
+    /^A hook blocked the turn from ending \d+ consecutive times [—-] overriding and ending turn\./.test(
+      warning.content,
+    )
+  ) {
+    return { condition: "", installed: false, blocked: true };
   }
   const attachment = (
     entry as {
@@ -190,8 +211,8 @@ class GoalTranscriptTail {
 /**
  * Tracks one Claude session's goal. Every visible transition comes from a
  * transcript row, so a refused `/goal` (untrusted workspace, restricted hooks)
- * never produces an optimistic flag. The one YA-owned state is `paused`: YA
- * asked Claude to clear a hook it intends to reinstall.
+ * never produces an optimistic flag. YA retains paused objectives and reports
+ * native hook-cap interruptions as blocked; neither means completion.
  */
 export class ClaudeGoalTracker {
   readonly #tail = new GoalTranscriptTail();
@@ -214,12 +235,16 @@ export class ClaudeGoalTracker {
     this.#cwd = cwd;
     if (resolveTranscriptPath)
       this.#resolveTranscriptPath = resolveTranscriptPath;
-    // Only a paused goal is restored: Claude reinstalls an active goal's Stop
-    // hook on resume, and the transcript reports that authoritatively.
-    if (restored?.status === "paused" && restored.objective) {
+    // Restore non-running objectives; active state still requires a provider
+    // observation. A blocked native hook may remain installed, but is idle.
+    if (
+      (restored?.status === "paused" || restored?.status === "blocked") &&
+      restored.objective
+    ) {
       this.#objective = restored.objective;
-      this.#status = "paused";
-      this.#pauseObjective = restored.objective;
+      this.#status = restored.status;
+      this.#pauseObjective =
+        restored.status === "paused" ? restored.objective : null;
     }
   }
 
@@ -295,24 +320,33 @@ export class ClaudeGoalTracker {
 
   async #refreshOnce(): Promise<boolean> {
     const rows = await this.#tail.read();
-    const last = rows.at(-1);
-    if (!last) return false;
+    if (!rows.length) return false;
     this.#pendingUntil = 0;
     const before = this.#stateKey();
-    if (last.installed) {
-      this.#objective = last.condition;
+    const tail = rows.at(-1)!;
+    const row = tail.blocked
+      ? rows
+          .slice()
+          .reverse()
+          .find((entry) => !entry.blocked)
+      : tail;
+    // Preserve last-transition semantics when seeding a restored paused goal;
+    // older objectives must not erase its pending pause bookkeeping.
+    if (row?.installed) {
+      this.#objective = row.condition;
       this.#status = "active";
-      // Claude keeps appending not-yet-met rows for the goal it still holds,
-      // and one can land between YA's pause request and the clear YA sent.
-      // Only a hook carrying some other objective means the pause is stale.
-      if (this.#pauseObjective !== last.condition) this.#pauseObjective = null;
-    } else if (this.#pauseObjective === last.condition) {
-      this.#objective = last.condition;
+      if (this.#pauseObjective !== row.condition) this.#pauseObjective = null;
+    } else if (row && this.#pauseObjective === row.condition) {
+      this.#objective = row.condition;
       this.#status = "paused";
-    } else {
+    } else if (row) {
       this.#objective = null;
       this.#status = null;
       this.#pauseObjective = null;
+    }
+    // The native hook remains installed, but its worker explicitly stopped.
+    if (tail.blocked && this.#objective && this.#status === "active") {
+      this.#status = "blocked";
     }
     return this.#stateKey() !== before;
   }
@@ -332,7 +366,11 @@ export interface ClaudeGoalCommandDeps {
 }
 
 function goalStatusLabel(status: ClaudeGoalStatus | null): string {
-  return status === "paused" ? "Goal paused" : "Goal active";
+  return status === "blocked"
+    ? "Goal blocked: Claude stopped repeated hook continuations; inspect progress before resuming"
+    : status === "paused"
+      ? "Goal paused"
+      : "Goal active";
 }
 
 /**
@@ -428,8 +466,11 @@ export async function runClaudeGoalCommand(
   }
 
   if (control.kind === "resume") {
-    if (current.status !== "paused" || !current.objective) {
-      return { handled: true, error: "No paused goal to resume" };
+    if (
+      (current.status !== "paused" && current.status !== "blocked") ||
+      !current.objective
+    ) {
+      return { handled: true, error: "No paused or blocked goal to resume" };
     }
     const objective = current.objective;
     tracker.expectTransition();
@@ -535,7 +576,7 @@ export function withClaudeGoalDetails(
         ...(snapshot.status === "active"
           ? [{ value: "pause", description: "Pause the current goal" }]
           : []),
-        ...(snapshot.status === "paused"
+        ...(snapshot.status === "paused" || snapshot.status === "blocked"
           ? [{ value: "resume", description: "Resume the current goal" }]
           : []),
         ...(command.argumentCompletions ?? []),

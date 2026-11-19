@@ -72,6 +72,83 @@ describe("ClaudeGoalTracker", () => {
     tracker.attachSession(SESSION_ID);
   });
 
+  it("blocks an exhausted native hook, retains its objective and requires a fresh transition", async () => {
+    const cap =
+      JSON.stringify({
+        type: "system",
+        subtype: "informational",
+        content:
+          "A hook blocked the turn from ending 9 consecutive times — overriding and ending turn. For Stop/SubagentStop hooks, check stop_hook_active.",
+      }) + "\n";
+    await append(goalRow("write the articles", "set") + cap);
+    await tracker.refresh();
+    expect(tracker.snapshot).toEqual({
+      objective: "write the articles",
+      status: "blocked",
+    });
+    expect(await tracker.refresh()).toBe(false);
+    const [command] = withClaudeGoalDetails(
+      [{ name: "goal", description: "" }],
+      tracker.snapshot,
+    );
+    expect(command?.providerDetails?.claude?.goalStatus).toBe("blocked");
+    expect(
+      command?.argumentCompletions?.some((c) => c.value === "resume"),
+    ).toBe(true);
+    const resumed = await runClaudeGoalCommand("resume", {
+      tracker,
+      send: () => {
+        contents += goalRow("write the articles", "set");
+      },
+      wait: async () => {
+        await writeFile(transcript, contents);
+      },
+      confirmationTimeoutMs: 500,
+    });
+    expect(resumed.output?.details).toEqual([
+      "write the articles",
+      "Goal resumed",
+    ]);
+    await append(goalRow("write the articles", "met"));
+    await tracker.refresh();
+    expect(tracker.snapshot).toEqual({ objective: null, status: null });
+  });
+
+  it("does not interpret assistant quotations of a hook warning as a provider block", async () => {
+    await append(
+      goalRow("ship", "set") +
+        JSON.stringify({
+          type: "assistant",
+          subtype: "informational",
+          content:
+            "A hook blocked the turn from ending 9 consecutive times — overriding and ending turn.",
+        }) +
+        "\n",
+    );
+    await tracker.refresh();
+    expect(tracker.snapshot.status).toBe("active");
+  });
+
+  it("restores a pause after older unrelated goal transitions in the seed", async () => {
+    await append(
+      goalRow("older", "set") +
+        goalRow("older", "met") +
+        goalRow("paused goal", "set") +
+        goalRow("paused goal", "cleared"),
+    );
+    const restored = new ClaudeGoalTracker(
+      "/unused",
+      { objective: "paused goal", status: "paused" },
+      () => transcript,
+    );
+    restored.attachSession(SESSION_ID);
+    await restored.refresh();
+    expect(restored.snapshot).toEqual({
+      objective: "paused goal",
+      status: "paused",
+    });
+  });
+
   it("reports the goal Claude installed, and its replacement", async () => {
     await append(goalRow("ship the fix", "set"));
     expect(await tracker.refresh()).toBe(true);
@@ -290,7 +367,9 @@ describe("runClaudeGoalCommand", () => {
 
   it("refuses controls that have no goal to act on", async () => {
     expect((await run("pause")).error).toBe("No active goal to pause");
-    expect((await run("resume")).error).toBe("No paused goal to resume");
+    expect((await run("resume")).error).toBe(
+      "No paused or blocked goal to resume",
+    );
     expect((await run("clear")).output?.details).toEqual(["No goal to clear"]);
     expect(sent).toEqual([]);
   });
