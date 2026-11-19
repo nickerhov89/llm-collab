@@ -43,3 +43,12 @@ the actual OAuth identities and provider discovery without sending mail.
 References: [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
 [Gmail profile](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users/getProfile),
 [Gmail send](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send).
+
+## Google Docs connection health (19 November 2026)
+
+The separate `polza-integration` Docs connector uses corporate `drive.file`
+OAuth for native writes and authorized-file reads. `docs.check` reports OAuth
+and browser-session status separately; an expired browser session does not
+imply native writing is unavailable. A write grant is still required, and
+OAuth file access remains limited to app-created or explicitly authorized
+files. The connector contract lives in `services/polza-access/README.md`.

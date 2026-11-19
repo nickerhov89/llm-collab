@@ -41,6 +41,43 @@ def identifier(value):
     return value
 
 
+def verified_token(config):
+    credentials = json.loads(Path(config['googleWriteCredentials']).read_text())
+    if credentials.get('account') != 'info@polzaagency.com':
+        raise ValueError('Unexpected corporate Google account')
+    token = api('https://oauth2.googleapis.com/token', form={
+        'client_id': credentials['client_id'], 'client_secret': credentials['client_secret'],
+        'refresh_token': credentials['refresh_token'], 'grant_type': 'refresh_token'})['access_token']
+    who = api('https://openidconnect.googleapis.com/v1/userinfo', token)
+    if who.get('email') != 'info@polzaagency.com' or who.get('email_verified') is not True:
+        raise ValueError('Google identity mismatch')
+    return token
+
+
+def read_native(config, url):
+    from google_doc_reader import export_url, GoogleRedirect, LIMIT
+    validated = export_url(url)
+    match = re.search(r'/(document|spreadsheets)/d/([A-Za-z0-9_-]+)', validated)
+    if not match:
+        raise ValueError('Expected a Google Docs or Sheets link')
+    mime = 'text/csv' if match[1] == 'spreadsheets' else 'text/plain'
+    if match[1] == 'spreadsheets' and 'gid' in urllib.parse.parse_qs(urllib.parse.urlsplit(validated).query):
+        # Drive CSV export selects the first worksheet; do not silently return
+        # that sheet when the caller explicitly selected another one.
+        raise urllib.error.HTTPError(validated, 403, 'Use worksheet-aware browser export', {}, None)
+    token = verified_token(config)
+    endpoint = 'https://www.googleapis.com/drive/v3/files/' + match[2] + '/export?'
+    request = urllib.request.Request(endpoint + urllib.parse.urlencode({'mimeType': mime}),
+                                     headers={'Authorization': 'Bearer ' + token})
+    with urllib.request.build_opener(GoogleRedirect()).open(request, timeout=10) as response:
+        if response.headers.get_content_type() != mime:
+            raise ValueError('Google returned an unexpected document format')
+        body = response.read(LIMIT + 1)
+    if len(body) > LIMIT:
+        raise ValueError('Document exceeds the 5 MiB text limit')
+    return body.decode('utf-8-sig')
+
+
 def write_call(config, actor, tool, args):
     if tool not in OPERATIONS:
         raise ValueError('Unsupported Google write operation')
@@ -82,15 +119,7 @@ def write_call(config, actor, tool, args):
     if sum(1 for _ in root.glob('*.json')) >= 5000:
         raise ValueError('Google receipt limit reached; ask the owner to archive receipts')
     # Refresh and verify identity before creating a pending write receipt.
-    credentials = json.loads(Path(config['googleWriteCredentials']).read_text())
-    if credentials.get('account') != 'info@polzaagency.com':
-        raise ValueError('Unexpected corporate Google account')
-    token = api('https://oauth2.googleapis.com/token', form={
-        'client_id': credentials['client_id'], 'client_secret': credentials['client_secret'],
-        'refresh_token': credentials['refresh_token'], 'grant_type': 'refresh_token'})['access_token']
-    who = api('https://openidconnect.googleapis.com/v1/userinfo', token)
-    if who.get('email') != 'info@polzaagency.com' or who.get('email_verified') is not True:
-        raise ValueError('Google identity mismatch')
+    token = verified_token(config)
     receipt = {'request_hash': digest, 'status': 'needs_review', 'operation': tool}
     def save():
         tmp = path.with_suffix('.next')

@@ -242,3 +242,25 @@ configuration; do not rerun it as an installer. Current deployment updates must
 preserve private configuration and apply reviewed module/registry updates.
 The canonical Portal module and its boundary tests now live alongside the other
 connectors in this directory, matching the installed VPS library.
+
+## Google connection health and native reads
+
+`docs.check` distinguishes `oauth_connected`, `browser_session_connected` and
+`native_write_available` for the current principal. Expired browser cookies do
+not imply revoked OAuth or disable native Docs/Sheets writes. Write readiness
+requires the existing write grant; checking health never grants it. If both
+connections fail, the explicit error is `google_reauthorization_required`.
+
+`docs.read` tries corporate OAuth first for documents created by or explicitly
+authorized for this `drive.file` app, with verified account identity, fixed
+Google API destinations and the existing 5 MiB limit. A 403/404 may use the
+separately scoped browser reader; OAuth does not grant arbitrary file access.
+A selected Sheets worksheet keeps its worksheet-aware browser path rather than
+silently exporting another sheet. Tokens stay in the manager-owned broker.
+
+An already-running legacy media MCP worker retains its loaded code. Refresh
+that MCP connection (or gracefully replace an idle provider process and resume
+the same native chat); restarting the browser service or updating credentials
+alone does not replace a loaded MCP client. Use the current UID-authenticated
+CLI/MCP bridge. Do not reenable the retired shared marker principal or restore
+old bearer authority to work around `agent_access_denied`.

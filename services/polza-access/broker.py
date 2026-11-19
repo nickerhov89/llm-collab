@@ -25,6 +25,7 @@ from image_access import image_call
 from cowork_access import cowork_call, CoworkError
 from portal_access import portal_call
 from google_write import write_call as google_write_call, OPERATIONS as GOOGLE_WRITES
+from google_write import verified_token as google_token, read_native as google_read
 
 LIMIT = 512 * 1024
 OUTPUT_LIMIT = 8 * 1024 * 1024
@@ -206,9 +207,43 @@ class Broker:
         if tool.startswith("docs."):
             if tool in GOOGLE_WRITES:
                 return google_write_call(self.config, actor, tool, arguments)
+            if tool == "docs.check":
+                oauth = False
+                try:
+                    google_token(self.config)
+                    oauth = True
+                except (OSError, ValueError, KeyError):
+                    pass
+                try:
+                    check = subprocess.run(["/usr/bin/python3", self.config["docsReader"], "--check"],
+                        capture_output=True, timeout=8,
+                        env={"HOME": self.config["home"], "PATH": "/usr/bin:/bin"})
+                    browser = check.returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    browser = False
+                if not oauth and not browser:
+                    raise ConnectorError("google_reauthorization_required", "Corporate Google OAuth and browser session require reconnection")
+                write_granted = True
+                try:
+                    self.allowed(actor, "docs.create")
+                except Denied:
+                    write_granted = False
+                return {"account": "info@polzaagency.com", "authenticated": True,
+                    "oauth_connected": oauth, "browser_session_connected": browser,
+                    "native_write_available": oauth and write_granted,
+                    "oauth_file_scope": "files created by or explicitly authorized for the app",
+                    "note": "Expired browser cookies do not disable native OAuth writes. Use docs.create/docs.update for native Google Docs."}
             value = "--check" if tool == "docs.check" else arguments.get("url")
             if not isinstance(value, str) or len(value) > 2000:
                 raise ValueError("Expected a Google Docs URL")
+            if self.config.get("googleWriteCredentials"):
+                try:
+                    return {"text": google_read(self.config, value), "transport": "oauth"}
+                except urllib.error.HTTPError as error:
+                    if error.code not in (403, 404):
+                        raise ConnectorError("google_read_failed", "Google refused the read; check OAuth or retry a read later") from None
+                    # drive.file does not authorize arbitrary existing files.
+                    # The separately scoped browser session may still read them.
             result = subprocess.run(["/usr/bin/python3", self.config["docsReader"], value],
                                     capture_output=True, timeout=35, env={"HOME": self.config["home"], "PATH": "/usr/bin:/bin"})
             if result.returncode:
