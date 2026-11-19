@@ -20,17 +20,37 @@ async function operatorToken() {
   return token;
 }
 
+/** Inspect message content only, including images nested in tool results/history. */
+function hasImageInput(input) {
+  const pending = [input.messages, input.input];
+  while (pending.length) {
+    const value = pending.pop();
+    if (Array.isArray(value)) {
+      for (const item of value) pending.push(item);
+    } else if (value && typeof value === "object") {
+      if (["image", "image_url", "input_image"].includes(value.type))
+        return true;
+      pending.push(value.content, value.output);
+    }
+  }
+  return false;
+}
+
 export function createOpenRouterGateway({
   upstreamBase = "https://openrouter.ai/api",
   cacheTtlMs = 300000,
   catalogTimeoutMs = 4000,
   autoAllowedModels = [],
+  autoImageAllowedModels = [],
   getCatalogToken,
   refreshIntervalMs = 0,
   now = Date.now,
 } = {}) {
   const allowedModels = [
     ...new Set(autoAllowedModels.map((id) => id.trim())),
+  ].filter(Boolean);
+  const imageAllowedModels = [
+    ...new Set(autoImageAllowedModels.map((id) => id.trim())),
   ].filter(Boolean);
   let models = [];
   let refreshedAt = 0;
@@ -208,7 +228,7 @@ export function createOpenRouterGateway({
       };
       let body = req;
       if (
-        allowedModels.length &&
+        (allowedModels.length || imageAllowedModels.length) &&
         req.method === "POST" &&
         ["/v1/messages", "/v1/responses", "/v1/chat/completions"].includes(
           req.url.split("?")[0],
@@ -249,9 +269,25 @@ export function createOpenRouterGateway({
           input.model === "openrouter/auto" &&
           !input.plugins?.some((plugin) => plugin.id === "auto-router")
         ) {
+          const pool = hasImageInput(input)
+            ? imageAllowedModels
+            : allowedModels;
+          if (!pool.length) {
+            res.writeHead(422, { "content-type": "application/json" });
+            res.end(
+              JSON.stringify({
+                error: {
+                  type: "invalid_request_error",
+                  message:
+                    "Auto has no configured models supporting this input. Select an image-capable model or configure the image Auto pool.",
+                },
+              }),
+            );
+            return;
+          }
           input.plugins = [
             ...(input.plugins ?? []),
-            { id: "auto-router", allowed_models: allowedModels },
+            { id: "auto-router", allowed_models: pool },
           ];
           body = JSON.stringify(input);
         }
@@ -318,6 +354,9 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const server = createOpenRouterGateway({
+    autoImageAllowedModels: (
+      process.env.POLZA_OPENROUTER_AUTO_IMAGE_ALLOWED_MODELS ?? ""
+    ).split(","),
     getCatalogToken: operatorToken,
     refreshIntervalMs: 15 * 60 * 1000,
     autoAllowedModels: (

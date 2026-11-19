@@ -157,3 +157,20 @@ in Europe/Moscow, with four scheduled attempts per local day. It runs the CLI
 and reports the actual receipt; it must not change other chats' model choices
 or run model-by-model paid probes. Pause or edit it through that chat's Schedule
 controls. Catalog status does not prove future scheduled dispatch completed.
+
+## Auto with images in conversation history
+
+The configured cheap text Auto pool is not an image capability fallback. The
+local gateway uses `POLZA_OPENROUTER_AUTO_IMAGE_ALLOWED_MODELS` for Auto requests
+containing actual image content. Inspection includes older conversation turns,
+images in tool-result content, Chat Completions image_url blocks and Responses
+input_image blocks; a new text-only continuation of an image-bearing history
+still needs a vision-capable route. Text-only requests keep the existing cheap
+pool. This does not edit history, remove attachments or switch the chat ID.
+
+Explicit model requests and an explicit auto-router plugin policy pass through
+unchanged. When an operator-constrained Auto request has no matching configured
+pool, return an explicit 422 instead of sending it to known-incompatible text
+models. The pool configuration contains model IDs only, not credentials. This
+repair neither hides upstream failures nor makes a text-only manual model able
+to process an image.

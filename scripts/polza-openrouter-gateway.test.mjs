@@ -237,3 +237,111 @@ test("refreshes the account catalog without readers and exposes failures without
   const retained = await (await fetch(origin + "/v1/models")).json();
   assert.deepEqual(retained.data, good.data);
 });
+
+test("routes Auto images in history and tool results only through the vision pool", async (t) => {
+  const received = [];
+  const upstream = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    received.push(JSON.parse(body));
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const start = async (vision) => {
+    const gateway = createOpenRouterGateway({
+      upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
+      autoAllowedModels: ["fixture/text"],
+      autoImageAllowedModels: vision,
+    });
+    gateway.listen(0, "127.0.0.1");
+    await once(gateway, "listening");
+    t.after(() => new Promise((resolve) => gateway.close(resolve)));
+    return `http://127.0.0.1:${gateway.address().port}`;
+  };
+  t.after(() => upstream.close());
+  const enabled = await start(["fixture/vision"]);
+  const disabled = await start([]);
+  const send = async (origin, input) =>
+    fetch(origin + "/v1/messages", {
+      method: "POST",
+      headers: { authorization: "Bearer fixture" },
+      body: JSON.stringify(input),
+    });
+  const cases = [
+    {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", data: "fixture" } },
+          ],
+        },
+        { role: "user", content: "Continue" },
+      ],
+    },
+    {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "tool_result", content: [{ type: "image", source: {} }] },
+          ],
+        },
+      ],
+    },
+    {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "image_url", image_url: { url: "data:fixture" } }],
+        },
+      ],
+    },
+    {
+      input: [
+        {
+          role: "user",
+          content: [{ type: "input_image", image_url: "data:fixture" }],
+        },
+      ],
+    },
+  ];
+  for (const content of cases) {
+    const input = { model: "openrouter/auto", ...content };
+    assert.equal((await send(enabled, input)).status, 200);
+    assert.deepEqual(received.at(-1), {
+      ...input,
+      plugins: [{ id: "auto-router", allowed_models: ["fixture/vision"] }],
+    });
+  }
+  assert.equal(
+    (
+      await send(enabled, {
+        model: "openrouter/auto",
+        messages: [{ role: "user", content: "Text only" }],
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(received.at(-1).plugins, [
+    { id: "auto-router", allowed_models: ["fixture/text"] },
+  ]);
+  const manual = { model: "fixture/manual", ...cases[0] };
+  assert.equal((await send(enabled, manual)).status, 200);
+  assert.deepEqual(received.at(-1), manual);
+  const override = {
+    model: "openrouter/auto",
+    ...cases[0],
+    plugins: [{ id: "auto-router", allowed_models: ["custom/*"] }],
+  };
+  assert.equal((await send(enabled, override)).status, 200);
+  assert.deepEqual(received.at(-1), override);
+  const count = received.length;
+  assert.equal(
+    (await send(disabled, { model: "openrouter/auto", ...cases[0] })).status,
+    422,
+  );
+  assert.equal(received.length, count);
+});
