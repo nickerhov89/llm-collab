@@ -255,7 +255,10 @@ export function ModelSwitchModal({
 
         const process = processRes.process;
         const resolvedModel =
-          process?.model ?? currentModel ?? modelsRes.models[0]?.id;
+          (polzaQuickMenu ? process?.requestedModel : undefined) ??
+          process?.model ??
+          currentModel ??
+          modelsRes.models[0]?.id;
         const processProvider = process?.provider ?? null;
         const resolvedEffort = normalizeEffortLevel(
           process?.effort,
@@ -301,7 +304,7 @@ export function ModelSwitchModal({
     return () => {
       cancelled = true;
     };
-  }, [currentModel, processId, sessionId, sessionProvider, t]);
+  }, [currentModel, processId, sessionId, sessionProvider, polzaQuickMenu, t]);
 
   const selectedModelInfo = useMemo(
     () => models.find((model) => model.id === selectedModel) ?? null,

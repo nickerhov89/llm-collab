@@ -52,3 +52,10 @@ built from the verified auto-notices stage, preserving deployment-local file
 drop behavior, and retain older hashed assets. No user service was restarted. All three dedicated QA chats were archived
 through the supported API; only aborted QA input waits were awakened during
 cleanup. User chats and active work were not changed.
+
+The requested-ID follow-up reuses the existing contextRequestedModel contract
+and prioritizes process.requestedModel in the quick picker. The regression
+feeds a stale reported Auto model alongside requested Grok; saved-selection
+checks must follow the requested ID. Vanilla displayed-model behavior stays
+unchanged. Final frontend stage/rollback directories use
+`grok-selection-alias` instead of `grok-selection`.

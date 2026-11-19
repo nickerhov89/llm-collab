@@ -6852,7 +6852,11 @@ function SessionPageContent({
           <ModelSwitchModal
             processId={status.owner === "self" ? status.processId : undefined}
             sessionId={actualSessionId}
-            currentModel={liveBadgeModel}
+            currentModel={
+              import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+                ? (effectiveModelConfig?.requestedModel ?? liveBadgeModel)
+                : liveBadgeModel
+            }
             sessionProvider={effectiveProvider}
             onModelChanged={handleModelChanged}
             onSwitchProvider={

@@ -177,7 +177,8 @@ describe("ModelSwitchModal", () => {
     });
     mockGetProcessInfo.mockResolvedValue({
       process: {
-        model: "x-ai/grok-4",
+        model: "openrouter/auto",
+        requestedModel: "x-ai/grok-4",
         provider: "codex-oss",
         effort: "high",
       },

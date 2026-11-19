@@ -3574,10 +3574,14 @@ export function MessageInputToolbar({
     null,
   );
   const [speechCaptureActive, setSpeechCaptureActive] = useState(false);
+  const selectedRoutingModel =
+    import.meta.env.VITE_POLZA_ADMIN_UI === "true"
+      ? (contextRequestedModel ?? thinkingModel)
+      : thinkingModel;
   const [autoModel] = usePolzaAutoModel(
     sessionId ?? "new",
     thinkingProvider,
-    thinkingModel,
+    selectedRoutingModel,
   );
   const lastNonOffThinkingModeRef =
     useRef<Exclude<ThinkingMode, "off">>("auto");
@@ -4291,8 +4295,8 @@ export function MessageInputToolbar({
               label:
                 import.meta.env.VITE_POLZA_ADMIN_UI === "true" && autoModel
                   ? "Авто"
-                  : thinkingModel
-                    ? displayModelId(thinkingModel)
+                  : selectedRoutingModel
+                    ? displayModelId(selectedRoutingModel)
                     : t("newSessionModelTitle" as never),
               onOpen: onOpenModelSelector,
               disabled: !thinkingModel,

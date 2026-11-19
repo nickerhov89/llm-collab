@@ -122,3 +122,8 @@ CodexOSS shutdown cancels an idle input wait without adding a synthetic user
 turn. A same-session restart still requires verified termination before the
 replacement process starts. Aborting an idle gateway releases its iterator and
 runtime lease; it must not wait for another user message to complete shutdown.
+
+The branded picker and composer prefer the requested model ID over the last
+served model when both are available. An Auto inference reporting a concrete
+upstream model must not silently turn Auto off; an explicit requested Grok
+must not be disguised by stale reported metadata.
