@@ -194,6 +194,25 @@ type CodexItem =
   | CodexTodoList
   | CodexErrorItem;
 
+/** Wake an idle input wait on abort so verified same-chat restarts can finish. */
+async function* messagesUntilAborted(queue: MessageQueue, signal: AbortSignal) {
+  const iterator = queue[Symbol.asyncIterator]();
+  const stop = () => {
+    void iterator.return?.();
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  try {
+    while (!signal.aborted) {
+      const next = await iterator.next();
+      if (next.done || signal.aborted) return;
+      yield next.value;
+    }
+  } finally {
+    signal.removeEventListener("abort", stop);
+    await iterator.return?.();
+  }
+}
+
 /**
  * CodexOSS Provider - spawns Codex CLI with --oss for local models.
  */
@@ -844,7 +863,7 @@ export class CodexOSSProvider implements AgentProvider {
       } as SDKMessage;
     }
 
-    const messageGen = queue;
+    const messageGen = messagesUntilAborted(queue, signal);
     let isFirstNewMessage = !options.resumeSessionId;
     for await (const message of messageGen) {
       if (signal.aborted) break;

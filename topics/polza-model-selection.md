@@ -117,3 +117,8 @@ the routing preference. Choosing Auto on a gateway applies the catalog's Auto
 model to the same session before closing. A failed switch leaves the picker
 open, reports the error and retains the previous selection. Missing Auto in
 the catalog is an error, not a successful preference-only switch.
+
+CodexOSS shutdown cancels an idle input wait without adding a synthetic user
+turn. A same-session restart still requires verified termination before the
+replacement process starts. Aborting an idle gateway releases its iterator and
+runtime lease; it must not wait for another user message to complete shutdown.

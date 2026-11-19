@@ -103,3 +103,30 @@ it("accepts the next turn when the CLI closes while the result consumer is pause
     vi.restoreAllMocks();
   }
 });
+
+it("finishes an idle gateway iterator on abort without injecting another user turn", async () => {
+  const queue = new MessageQueue();
+  const controller = new AbortController();
+  const provider = new CodexOSSProvider();
+  const internal = provider as unknown as {
+    runSession(
+      options: StartSessionOptions,
+      route: null,
+      queue: MessageQueue,
+      signal: AbortSignal,
+      pid: object,
+    ): AsyncIterableIterator<SDKMessage>;
+  };
+  const iterator = internal.runSession(
+    { cwd: "/fixture", resumeSessionId: "saved-thread" } as StartSessionOptions,
+    null,
+    queue,
+    controller.signal,
+    {},
+  );
+  expect((await iterator.next()).value.subtype).toBe("init");
+  const waiting = iterator.next();
+  controller.abort();
+  expect(await waiting).toEqual({ done: true, value: undefined });
+  expect(queue.drain()).toEqual([]);
+});

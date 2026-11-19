@@ -29,10 +29,11 @@ cancels only that iterator wait and removes its listener on completion; it
 does not weaken verified-stop or fork/handoff rules. 24 provider lifecycle
 and endpoint tests and server TypeScript pass. The source patch is prepared
 in /home/manager/work/polza-codex-ui, but is NOT active in the owner/staff
-server processes or their installed dist modules. Runtime activation/build
+server processes. Installed owner/staff dist modules are staged after an
+isolated TypeScript transpile and node syntax check. Runtime restart
 must be coordinated after the active owner video-to-articles task drains;
-restarting it now would interrupt the user's work. Source backup:
-/root/grok-selection-backend-before-20261119/codex-oss.ts.
+restarting it now would interrupt the user's work. Source and prior installed adapter backups:
+/root/grok-selection-backend-before-20261119/.
 Do not report the live switching timeout as fixed before activating/retesting.
 
 Full lint retains existing PolzaProjectActions.css and the global CSS ceilings
@@ -48,4 +49,6 @@ Supervisor.ts edits were preserved and are outside these commits.
 Frontend rollback: client-dist.grok-selection-before-20261119 in each runtime;
 source backup /root/cowork-grok-selection-before-20261119. Both clients were
 built from the verified auto-notices stage, preserving deployment-local file
-drop behavior, and retain older hashed assets. No user service was restarted.
+drop behavior, and retain older hashed assets. No user service was restarted. All three dedicated QA chats were archived
+through the supported API; only aborted QA input waits were awakened during
+cleanup. User chats and active work were not changed.
