@@ -72,3 +72,22 @@ Deployment note: the packaged runtime rewrites the shared-library import to
 `../../../bundled/@yep-anywhere/shared/dist/index.js`. A raw `transpileModule`
 output must preserve that packaging rewrite. Verify an actual module import under
 the service UID before restarting an idle backend.
+
+## Exhausted provider capacity
+
+The deployed gateway enables demand-driven bounded cooldowns, with no background
+retry loop. HTTP 429 observes Retry-After (or 30 seconds) per credential/model;
+HTTP 402 opens a 30-second account circuit for that credential, including other
+models. Only hashed credential scopes remain in memory, with 256 entries maximum.
+SSE quota failures inside HTTP 200 also open the circuit without changing bytes.
+After expiry the next explicit request probes the route normally. A quota response
+never automatically replays a partially executed turn or switches a pinned model.
+
+Polza service configuration sets Claude's retry watchdog to 0 and max retries to 2.
+The SDK then returns its real terminal rate-limit error after the initial attempt
+and two retries. Other installations retain their existing defaults; explicit
+operator settings remain authoritative. Codex and CodexOSS 402/429 failures,
+including native snake_case metadata, use the existing terminal rate_limit status.
+Messages/history remain durable in the same chat. No fallback can manufacture
+capacity when every authorized provider/account is exhausted; account funding, a
+quota reset, or selection of another available provider is still necessary.

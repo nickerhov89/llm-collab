@@ -130,3 +130,23 @@ it("finishes an idle gateway iterator on abort without injecting another user tu
   expect(await waiting).toEqual({ done: true, value: undefined });
   expect(queue.drain()).toEqual([]);
 });
+
+it.each([
+  ["unexpected status 402 Payment Required: insufficient credits", 402],
+  ["exceeded retry limit, last status: 429 Too Many Requests", 429],
+])("publishes terminal CLI quota metadata for %s", (message, status) => {
+  const provider = new CodexOSSProvider() as unknown as {
+    convertEventToSDKMessages(event: unknown, sessionId: string): SDKMessage[];
+  };
+  expect(
+    provider.convertEventToSDKMessages(
+      { type: "turn.failed", error: { message } },
+      "same-chat",
+    )[0],
+  ).toMatchObject({
+    type: "error",
+    session_id: "same-chat",
+    codexWillRetry: false,
+    codexErrorInfo: { httpConnectionFailed: { httpStatusCode: status } },
+  });
+});

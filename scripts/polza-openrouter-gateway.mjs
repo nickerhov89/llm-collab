@@ -10,6 +10,12 @@ import {
   legacyExecResponseTransform,
 } from "./polza-openrouter-stream.mjs";
 
+import {
+  createLimitCooldowns,
+  observeLimitEvents,
+  sendLimitResponse,
+} from "./polza-openrouter-limits.mjs";
+
 const host = "127.0.0.1";
 const port = Number(process.env.OPENROUTER_GATEWAY_PORT ?? "3451");
 async function operatorToken() {
@@ -136,6 +142,7 @@ export function createOpenRouterGateway({
   autoAllowedModels = [],
   autoImageAllowedModels = [],
   defaultMaxOutputTokens = 0,
+  limitCooldowns = false,
   getCatalogToken,
   refreshIntervalMs = 0,
   now = Date.now,
@@ -145,6 +152,7 @@ export function createOpenRouterGateway({
     defaultMaxOutputTokens < 0
   )
     throw new Error("Invalid default output-token limit");
+  const cooldowns = createLimitCooldowns(now);
   const allowedModels = [
     ...new Set(autoAllowedModels.map((id) => id.trim())),
   ].filter(Boolean);
@@ -327,10 +335,12 @@ export function createOpenRouterGateway({
       };
       let body = req;
       let legacyExec = false;
+      let requestedModel;
       if (
         (allowedModels.length ||
           imageAllowedModels.length ||
-          req.url.split("?")[0] === "/v1/responses") &&
+          req.url.split("?")[0] === "/v1/responses" ||
+          limitCooldowns) &&
         req.method === "POST" &&
         ["/v1/messages", "/v1/responses", "/v1/chat/completions"].includes(
           req.url.split("?")[0],
@@ -364,6 +374,17 @@ export function createOpenRouterGateway({
             JSON.stringify({ error: { message: "Invalid inference JSON" } }),
           );
           return;
+        }
+        requestedModel =
+          typeof input.model === "string"
+            ? input.model.slice(0, 300)
+            : undefined;
+        if (limitCooldowns && requestedModel) {
+          const blocked = cooldowns.get(token, requestedModel);
+          if (blocked) {
+            sendLimitResponse(res, blocked);
+            return;
+          }
         }
         legacyExec =
           req.url.split("?")[0] === "/v1/responses" && acceptsLegacyExec(input);
@@ -417,6 +438,21 @@ export function createOpenRouterGateway({
           : { body, duplex: "half" }),
         signal: AbortSignal.timeout(300_000),
       });
+      if (
+        limitCooldowns &&
+        requestedModel &&
+        [402, 429].includes(upstream.status)
+      ) {
+        const blocked = cooldowns.note(
+          token,
+          requestedModel,
+          upstream.status,
+          upstream.headers.get("retry-after"),
+        );
+        await upstream.body?.cancel();
+        sendLimitResponse(res, blocked);
+        return;
+      }
       // Transport metadata only: never log prompts, request headers or tokens.
       console.info(
         "OpenRouter response",
@@ -432,6 +468,15 @@ export function createOpenRouterGateway({
       res.writeHead(upstream.status, responseHeaders);
       if (upstream.body) {
         const contentType = upstream.headers.get("content-type") ?? "";
+        const source = Readable.fromWeb(upstream.body);
+        const observer =
+          limitCooldowns &&
+          requestedModel &&
+          contentType.includes("text/event-stream")
+            ? observeLimitEvents((status) =>
+                cooldowns.note(token, requestedModel, status),
+              )
+            : null;
         if (
           legacyExec &&
           upstream.ok &&
@@ -439,13 +484,15 @@ export function createOpenRouterGateway({
             contentType.includes("application/json"))
         )
           await pipeline(
-            Readable.fromWeb(upstream.body),
+            source,
+            ...(observer ? [observer] : []),
             legacyExecResponseTransform(
               contentType.includes("text/event-stream"),
             ),
             res,
           );
-        else await pipeline(Readable.fromWeb(upstream.body), res);
+        else if (observer) await pipeline(source, observer, res);
+        else await pipeline(source, res);
       } else res.end();
     } catch (error) {
       if (!res.headersSent) {
@@ -487,6 +534,7 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const server = createOpenRouterGateway({
+    limitCooldowns: true,
     defaultMaxOutputTokens: Number(
       process.env.POLZA_OPENROUTER_DEFAULT_MAX_OUTPUT_TOKENS ?? "8192",
     ),

@@ -365,6 +365,39 @@ describe("Process", () => {
       },
     );
 
+    it.each([
+      ["codex", { httpConnectionFailed: { httpStatusCode: 402 } }],
+      ["codex-oss", { http_connection_failed: { http_status_code: 402 } }],
+      ["codex-oss", { httpConnectionFailed: { httpStatusCode: 429 } }],
+    ] as const)(
+      "exposes exhausted %s HTTP capacity as a terminal rate limit",
+      async (provider, info) => {
+        const controller = createControllableIterator();
+        const process = new Process(controller.iterator, {
+          projectPath: "/test",
+          projectId: "proj-1" as UrlProjectId,
+          sessionId: "sess-1",
+          provider,
+          idleTimeoutMs: 100,
+        });
+        controller.push({
+          type: "error",
+          session_id: "sess-1",
+          error: "Capacity exhausted",
+          codexWillRetry: false,
+          codexErrorInfo: info,
+        });
+        await waitFor(() =>
+          expect(process.getInfo().providerRuntimeStatus).toMatchObject({
+            kind: "terminal",
+            provider,
+            reason: "rate_limit",
+          }),
+        );
+        controller.finish();
+      },
+    );
+
     it("records automatic Codex retries until provider progress resumes", async () => {
       const controller = createControllableIterator();
       const process = new Process(controller.iterator, {

@@ -49,6 +49,20 @@ describe("filterEnvForChildProcess", () => {
     expect(env.CLAUDE_CODE_RETRY_WATCHDOG).toBe("1");
   });
 
+  it("bounds Polza quota retries without overriding explicit operator settings", () => {
+    const bounded = filterEnvForChildProcess({
+      POLZA_BOUNDED_PROVIDER_RETRIES: "1",
+    });
+    expect(bounded.CLAUDE_CODE_RETRY_WATCHDOG).toBe("0");
+    expect(bounded.CLAUDE_CODE_MAX_RETRIES).toBe("2");
+    const explicit = filterEnvForChildProcess({
+      POLZA_BOUNDED_PROVIDER_RETRIES: "1",
+      CLAUDE_CODE_MAX_RETRIES: "1",
+      CLAUDE_CODE_RETRY_WATCHDOG: "0",
+    });
+    expect(explicit.CLAUDE_CODE_MAX_RETRIES).toBe("1");
+  });
+
   it("preserves an explicit transient retry watchdog choice", () => {
     const env = filterEnvForChildProcess({
       CLAUDE_CODE_RETRY_WATCHDOG: "0",

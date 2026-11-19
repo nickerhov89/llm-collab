@@ -1301,6 +1301,22 @@ export class CodexOSSProvider implements AgentProvider {
             type: "error",
             session_id: sessionId,
             error: event.error.message,
+            codexWillRetry: false,
+            ...(/(?:status:?|HTTP|API Error:)\s*(402|429)\b/i.test(
+              event.error.message,
+            )
+              ? {
+                  codexErrorInfo: {
+                    httpConnectionFailed: {
+                      httpStatusCode: Number(
+                        event.error.message.match(
+                          /(?:status:?|HTTP|API Error:)\s*(402|429)\b/i,
+                        )?.[1],
+                      ),
+                    },
+                  },
+                }
+              : {}),
           } as SDKMessage,
         ];
 

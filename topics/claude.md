@@ -104,7 +104,11 @@ shell-startup and test-hermeticity rules for the local `BASH_ENV` bridge.
   429/529 responses persistent with exponential backoff capped at five
   minutes; `CLAUDE_CODE_MAX_RETRIES=2147483647` is an effectively unbounded
   attempt budget for other failures Claude classifies as retryable. Explicit
-  operator values override both defaults. Stop/abort remains the cancellation
+  operator values override both defaults. Polza deployments may set
+  `POLZA_BOUNDED_PROVIDER_RETRIES=1` to default to watchdog `0` and two retries
+  instead; explicit per-variable settings still win. This returns exhausted
+  capacity to the existing terminal-status path instead of waiting indefinitely.
+  Stop/abort remains the cancellation
   path, and YA must not append a synthetic resend turn after an API failure
   because that can reuse a synthetic `previous_message_id`. See
   [claude-api-failures-and-retries](claude-api-failures-and-retries.md).

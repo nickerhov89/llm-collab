@@ -481,7 +481,8 @@ function readCodexHttpStatus(codexErrorInfo: unknown): number | undefined {
   )) {
     if (value && typeof value === "object") {
       const status = readPositiveInteger(
-        (value as Record<string, unknown>).httpStatusCode,
+        (value as Record<string, unknown>).httpStatusCode ??
+          (value as Record<string, unknown>).http_status_code,
       );
       if (status !== undefined) {
         return status;
@@ -640,6 +641,9 @@ function buildClaudeGatewayCompactionQuotaStatus(
 function normalizeCodexTerminalReason(
   codexErrorInfo: unknown,
 ): ProviderRuntimeReason {
+  const status = readCodexHttpStatus(codexErrorInfo);
+  if (status === 402 || status === 429) return "rate_limit";
+  if (status === 503 || status === 529) return "overloaded";
   switch (codexErrorInfo) {
     case "serverOverloaded":
       return "overloaded";
@@ -679,7 +683,7 @@ function buildCodexRetryStatus(
   receivedAt: Date,
 ): ProviderRuntimeRetryStatus | null {
   if (
-    provider !== "codex" ||
+    (provider !== "codex" && provider !== "codex-oss") ||
     message.type !== "error" ||
     message.codexWillRetry !== true
   ) {
@@ -732,7 +736,7 @@ function buildCodexTerminalStatus(
   receivedAt: Date,
 ): ProviderRuntimeTerminalStatus | null {
   if (
-    provider !== "codex" ||
+    (provider !== "codex" && provider !== "codex-oss") ||
     message.type !== "error" ||
     message.codexWillRetry !== false
   ) {
