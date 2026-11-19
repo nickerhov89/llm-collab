@@ -7,7 +7,7 @@ import { useRemoteBasePath } from "../hooks/useRemoteBasePath";
 import styles from "./PolzaTaskAutomation.module.css";
 
 type Mode = "once" | "schedule" | "goal";
-interface Config {
+export interface Config {
   mode: Mode;
   projectId: string;
   sessionId: string;

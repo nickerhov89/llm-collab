@@ -4,7 +4,7 @@ In the Polza deployment, **Goal** in the composer **+** menu prepares `/goal `
 directly in the message composer, preserving the existing draft and focusing
 the input. Selecting it again does not duplicate the command prefix. It opens
 no modal and submits nothing; the user writes/reviews the objective and sends
-it explicitly. **Schedule** opens the existing scheduling dialog. Both apply
+it explicitly. **Schedule** opens a compact editor inside the existing message composer, never a modal. Both apply
 to the existing conversation; creating a Tasker card is not required.
 
 ## Goal
@@ -33,15 +33,33 @@ uses the native chat lifecycle rather than replaying a guessed submission.
 
 ## Schedule
 
-The user sets a prompt for each occurrence, daily/weekday/selected-weekday wall
-time or an hourly/custom-minute interval, an IANA timezone and a daily attempt
-cap (1–24). Interval bounds are 1 minute–7 days. Weekly days default to Monday.
-Saving persists a paused configuration; **Enable** explicitly activates it.
-**Run now** is a separate manual occurrence. Next run, enabled/paused status,
-errors and run history appear in the dialog. Invalid times/zones are rejected.
-Edits retain the revision from the start of editing; concurrent saves fail
-rather than silently overwrite settings. Status refresh does not replace a
-dirty input draft.
+The ordinary composer holds the prompt for each occurrence. A compact row below
+it summarizes recurrence and time; expanding that row reveals daily, weekday,
+selected-weekday, hourly/custom-minute interval, local time and IANA timezone
+controls. A calendar preview uses the scheduler's exact DST calculation and
+shows the first occurrence before confirmation. New schedules default to
+weekdays at 09:00 in the browser's timezone, with a daily attempt cap of 24.
+Existing caps are preserved. Interval bounds remain 1 minute–7 days.
+
+**Schedule** saves the configuration paused, confirms that native Goal is
+paused when necessary, and enables recurrence in one explicit user action.
+It never submits a run-now message. If any step fails, the prompt and editor
+remain available and the error is visible; an enable failure leaves the saved
+configuration paused. A retry uses that saved revision. Concurrent edits fail
+rather than silently overwrite settings. The composer draft is cleared only on
+successful activation, and only if no newer text has been typed during saving.
+Double clicks do not duplicate writes. Attachments must be removed before
+scheduling; they are not silently discarded or lost. Enter uses scheduling
+while the inline editor is open, rather than ordinary chat delivery.
+
+A header badge displays recurrence/time and paused state. Clicking it opens
+the inline editor and exposes next-run information, pause/resume and removal.
+Removal clears recurrence using the existing paused one-time configuration,
+preserving occurrence receipts; it does not erase the chat or its history.
+Active-run configuration restrictions remain enforced by the backend. Cancelling
+editing preserves the composer draft. Selecting Goal exits schedule editing.
+A failed settings load blocks saving and offers an explicit refresh. Refreshing
+server status never replaces an open configuration or prompt draft.
 
 An enabled schedule runs on the server with the browser closed, submits to the
 same native Project Queue and returns results to the same conversation. The
@@ -60,9 +78,9 @@ is not automatically replayed after retries or restart.
 
 Pause cancels this schedule's queued entries and stops future occurrences; an
 active turn may finish. Archive or loss of chat/project/account access prevents
-future work. Manual mode pauses both the schedule and active native Goal.
-Starting Goal pauses the chat schedule; enabling/running a schedule pauses an
-active native Goal. Dispatch also rejects an active Goal if changed elsewhere.
+future work. Cancelling the inline editor does not pause an existing schedule.
+Enabling a schedule pauses an active native Goal. Dispatch also rejects an
+active Goal if changed elsewhere.
 
 Settings and private result files use the existing account-scoped scheduler,
 not project files. The backend resolves the actor and the service revalidates

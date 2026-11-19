@@ -182,3 +182,55 @@ describe("MessageInput bang command draft", () => {
     expect(storedDraftText()).toBe("next message");
   });
 });
+
+describe("MessageInput inline scheduled delivery", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+  afterEach(cleanup);
+  it("keeps failures and newer typing, and never sends the schedule as an ordinary message", async () => {
+    let resolve!: (accepted: boolean) => void;
+    const submit = vi.fn(
+      () =>
+        new Promise<boolean>((r) => {
+          resolve = r;
+        }),
+    );
+    const onSend = vi.fn();
+    render(
+      <I18nProvider>
+        <MessageInput
+          onSend={onSend}
+          draftKey="schedule-draft-test"
+          placeholder="Scheduled brief"
+          supportsPermissionMode={false}
+          supportsThinkingToggle={false}
+          composerAction={{
+            submit,
+            render: (_text, send) => (
+              <button type="button" onClick={send}>
+                Schedule test
+              </button>
+            ),
+          }}
+        />
+      </I18nProvider>,
+    );
+    const field = screen.getByPlaceholderText(
+      "Scheduled brief",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(field, { target: { value: "Original brief" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await act(async () => {
+      resolve(false);
+    });
+    expect(field.value).toBe("Original brief");
+    fireEvent.click(screen.getByRole("button", { name: "Schedule test" }));
+    fireEvent.change(field, { target: { value: "Newer draft while saving" } });
+    await act(async () => {
+      resolve(true);
+    });
+    expect(field.value).toBe("Newer draft while saving");
+    expect(onSend).not.toHaveBeenCalled();
+  });
+});

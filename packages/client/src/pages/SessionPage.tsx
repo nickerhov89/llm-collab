@@ -125,7 +125,11 @@ import { RecentSessionsDropdown } from "../components/RecentSessionsDropdown";
 import { RestartSessionModal } from "../components/RestartSessionModal";
 import { routerBindingChip } from "../components/RouterPoolSelector";
 import { researchDraft } from "../lib/researchDraft";
-import { PolzaChatExecution } from "../components/PolzaChatExecution";
+import {
+  ChatScheduleBadge,
+  ChatScheduleEditor,
+  usePolzaChatSchedule,
+} from "../components/PolzaChatSchedule";
 import { SessionHeartbeatModal } from "../components/SessionHeartbeatModal";
 import { SessionMenu } from "../components/SessionMenu";
 import {
@@ -1094,13 +1098,6 @@ function SessionPageContent({
     [],
   );
   const draftControlsRef = useRef<DraftControls | null>(null);
-  const prepareGoalInComposer = useCallback(() => {
-    const controls = draftControlsRef.current;
-    if (!controls) return;
-    const draft = controls.getDraft();
-    controls.setDraft(`/goal ${draft.replace(/^\/goal(?:\s+|$)/i, "")}`);
-    controls.focus?.();
-  }, []);
   const earlyComposerTypingRef = useRef<EarlyTypingHandoff | null>(null);
   const earlyComposerTypingKeyRef = useRef<string | null>(null);
   // undefined: nothing waiting. null: focus only. string: prefill to apply.
@@ -2613,9 +2610,6 @@ function SessionPageContent({
   const [approvalCollapsed, setApprovalCollapsed] = useState(false);
 
   const [showHeartbeatModal, setShowHeartbeatModal] = useState(false);
-  const [showChatExecution, setShowChatExecution] = useState<"schedule" | null>(
-    null,
-  );
   const [showProjectSettingsModal, setShowProjectSettingsModal] =
     useState(false);
   const [showRecapModal, setShowRecapModal] = useState(false);
@@ -3204,6 +3198,33 @@ function SessionPageContent({
   };
   const handleSendRef = useRef(handleSend);
   handleSendRef.current = handleSend;
+  const chatSchedule = usePolzaChatSchedule({
+    projectId,
+    sessionId: actualSessionId,
+    enabled:
+      import.meta.env.VITE_POLZA_ADMIN_UI === "true" && !isDomLingerParked,
+    getDraft: () => draftControlsRef.current?.getDraft() ?? "",
+    setDraft: (text) => {
+      draftControlsRef.current?.setDraft(text);
+      draftControlsRef.current?.focus?.();
+    },
+    onGoalCommand: async (command) => {
+      const accepted = await handleSendRef.current(command, undefined, {
+        preserveComposer: true,
+        localControl: true,
+      });
+      if (accepted === false) throw Error(t("chatExecutionFailed"));
+    },
+  });
+  const prepareGoalInComposer = useCallback(() => {
+    if (chatSchedule.busy || chatSchedule.loading) return;
+    chatSchedule.close();
+    const controls = draftControlsRef.current;
+    if (!controls) return;
+    const draft = controls.getDraft();
+    controls.setDraft(`/goal ${draft.replace(/^\/goal(?:\s+|$)/i, "")}`);
+    controls.focus?.();
+  }, [chatSchedule]);
   const handleSessionViewerCommentSend = useCallback(
     (text: string) =>
       handleSendRef.current(text, undefined, { preserveComposer: true }),
@@ -6474,6 +6495,7 @@ function SessionPageContent({
                           </button>
                         );
                       })()}
+                    <ChatScheduleBadge schedule={chatSchedule} />
                     {currentGoal && (
                       <GoalFlag
                         objective={currentGoal}
@@ -6816,43 +6838,6 @@ function SessionPageContent({
             canFork={longContextEffortWarning.canFork}
             busy={longContextEffortWarning.busy}
             onChoose={(choice) => void chooseLongContextEffortWarning(choice)}
-          />
-        )}
-
-        {showChatExecution && (
-          <PolzaChatExecution
-            key={actualSessionId}
-            projectId={projectId}
-            sessionId={actualSessionId}
-            initialMode={showChatExecution}
-            goal={currentGoal}
-            goalStatus={goalDetails?.goalStatus}
-            running={
-              processState === "in-turn" || processState === "waiting-input"
-            }
-            onActivateGoal={async () => {
-              const result = await api.reactivateSession(
-                projectId,
-                actualSessionId,
-              );
-              setStatus({
-                owner: "self",
-                processId: result.processId,
-                permissionMode: result.permissionMode,
-                appliedPermissionMode: result.appliedPermissionMode,
-                modeVersion: result.modeVersion,
-                recapAfterSeconds: result.recapAfterSeconds,
-              });
-              reconnectStream();
-            }}
-            onGoalCommand={async (command) => {
-              const accepted = await handleSend(command, undefined, {
-                preserveComposer: true,
-                localControl: true,
-              });
-              if (accepted === false) throw new Error(t("chatExecutionFailed"));
-            }}
-            onClose={() => setShowChatExecution(null)}
           />
         )}
 
@@ -7327,7 +7312,7 @@ function SessionPageContent({
                       }
                       onScheduleClick={
                         import.meta.env.VITE_POLZA_ADMIN_UI === "true"
-                          ? () => setShowChatExecution("schedule")
+                          ? () => void chatSchedule.edit()
                           : undefined
                       }
                       onModeChange={setPermissionMode}
@@ -7483,9 +7468,23 @@ function SessionPageContent({
                       ? prepareGoalInComposer
                       : undefined
                   }
+                  composerAction={
+                    chatSchedule.open
+                      ? {
+                          submit: chatSchedule.submit,
+                          render: (text, submit) => (
+                            <ChatScheduleEditor
+                              schedule={chatSchedule}
+                              prompt={text}
+                              onSubmit={submit}
+                            />
+                          ),
+                        }
+                      : undefined
+                  }
                   onConfigureSchedule={
                     import.meta.env.VITE_POLZA_ADMIN_UI === "true"
-                      ? () => setShowChatExecution("schedule")
+                      ? () => void chatSchedule.edit()
                       : undefined
                   }
                   onModeChange={setPermissionMode}

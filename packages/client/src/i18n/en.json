@@ -5255,5 +5255,16 @@
   "attachmentResearchOff": "Turn research off; keep the brief",
   "attachmentPlan": "Plan mode",
   "attachmentPlanOn": "Plan before making changes",
-  "attachmentPlanOff": "Return to the previous permission mode"
+  "attachmentPlanOff": "Return to the previous permission mode",
+  "schedulePromptRequired": "Write what this chat should do (up to 6,000 characters).",
+  "scheduleTextOnly": "Schedules use text. Remove attachments before scheduling.",
+  "scheduleEveryMinutes": "Every {count} min",
+  "scheduleEdit": "Edit chat schedule",
+  "scheduleEditor": "Chat schedule",
+  "scheduleSubmit": "Schedule",
+  "scheduleSaving": "Scheduling…",
+  "scheduleClose": "Cancel schedule editing",
+  "scheduleRemove": "Remove schedule",
+  "scheduleFirstRun": "First run",
+  "scheduleInvalid": "Choose a valid time, timezone and at least one weekday."
 }

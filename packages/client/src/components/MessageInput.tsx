@@ -42,6 +42,7 @@ import {
 import {
   type ClipboardEvent,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -254,6 +255,11 @@ function getComposerViewportHeight(): number {
 interface Props {
   onConfigureGoal?: () => void;
   onConfigureSchedule?: () => void;
+  /** Explicit inline workflow owns delivery while open; ordinary chat stays unchanged. */
+  composerAction?: {
+    render: (text: string, submit: () => void) => ReactNode;
+    submit: (text: string, hasAttachments: boolean) => Promise<boolean>;
+  };
   onVoiceControl?: (control: VoiceInputButtonRef | null) => void;
   onSend: (text: string, metadata?: MessageSubmissionMetadata) => void;
   questionAside?: {
@@ -463,6 +469,7 @@ function bangCompletionQueryKey(draft: string): string | null {
 export function MessageInput({
   onConfigureGoal,
   onConfigureSchedule,
+  composerAction,
   onVoiceControl,
   onSend,
   questionAside,
@@ -1685,6 +1692,19 @@ export function MessageInput({
         return;
       }
 
+      if (composerAction) {
+        const snapshot = override ?? controls.getDraft();
+        const accepted = await composerAction.submit(
+          snapshot,
+          attachments.length > 0 || uploadProgress.length > 0,
+        );
+        if (accepted && controls.getDraft() === snapshot) {
+          controls.clearInput();
+          controls.confirmInputClear();
+          resetCompositionMetadata();
+        }
+        return;
+      }
       const rawText = override ?? controls.getDraft();
       if (
         !actionOverride &&
@@ -1791,6 +1811,8 @@ export function MessageInput({
       }
     },
     [
+      composerAction,
+      uploadProgress.length,
       disabled,
       controls,
       onSend,
@@ -1821,6 +1843,10 @@ export function MessageInput({
     ) => {
       const override =
         typeof messageOverride === "string" ? messageOverride : undefined;
+      if (composerAction) {
+        void handleSubmit(override);
+        return;
+      }
       const queueHandler =
         onQueue ??
         (effectivePrimaryActionKind === "queue" ? onSend : undefined);
@@ -1890,6 +1916,8 @@ export function MessageInput({
       }
     },
     [
+      composerAction,
+      handleSubmit,
       disabled,
       controls,
       onQueue,
@@ -1923,6 +1951,10 @@ export function MessageInput({
       focusAfterSubmit = true,
       speechTriggered = false,
     ) => {
+      if (composerAction) {
+        void handleSubmit(messageOverride);
+        return;
+      }
       if (!submit) return;
       const finalText = (messageOverride ?? controls.getDraft()).trimEnd();
 
@@ -1966,6 +1998,8 @@ export function MessageInput({
       }
     },
     [
+      composerAction,
+      handleSubmit,
       attachments.length,
       buildSubmissionMetadata,
       controls,
@@ -3810,7 +3844,8 @@ export function MessageInput({
       !forkSummaryMode
         ? openImmediateNewSessionOptions
         : undefined,
-    hidePrimaryDeliveryActions: newSessionOptionsMode !== null,
+    hidePrimaryDeliveryActions:
+      newSessionOptionsMode !== null || Boolean(composerAction),
     onQueue: onQueue ? handleQueuePointerDelivery : undefined,
     onTopicShift:
       onQueue &&
@@ -3863,7 +3898,7 @@ export function MessageInput({
     disabled,
   };
   const showMobileKeyboardCompact =
-    !polzaMobileQueueOnly && mobileKeyboardOpen && canSubmit;
+    !composerAction && !polzaMobileQueueOnly && mobileKeyboardOpen && canSubmit;
 
   const composer = (
     <div
@@ -4771,6 +4806,10 @@ export function MessageInput({
           </div>
         )}
 
+        {!collapsed &&
+          composerAction?.render(text, () => {
+            void handleSubmit();
+          })}
         {!collapsed && !showMobileKeyboardCompact && (
           <MessageInputToolbar {...toolbarProps} />
         )}

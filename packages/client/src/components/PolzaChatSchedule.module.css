@@ -1,0 +1,194 @@
+.editor {
+  margin: 0.25rem 0.75rem 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.row > svg {
+  flex: none;
+  color: var(--text-secondary);
+}
+.editor button,
+.editor input,
+.editor select {
+  font: inherit;
+}
+.when,
+.close,
+.existing button,
+.badge {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 0;
+  cursor: pointer;
+}
+.when {
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0.25rem;
+}
+.zone {
+  color: var(--text-secondary);
+  margin-inline-start: 0.5rem;
+  font-size: 0.85em;
+}
+.submit {
+  flex: none;
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+  background: var(--text-primary);
+  color: var(--bg-surface);
+  cursor: pointer;
+}
+.close {
+  flex: none;
+  min-height: 40px;
+  min-width: 36px;
+  font-size: 1.4em !important;
+}
+.editor button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
+.options label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.options input,
+.options select {
+  min-height: 40px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+.timezone,
+.days {
+  grid-column: 1 / -1;
+}
+.days {
+  border: 0;
+  padding: 0;
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+.days label {
+  flex-direction: row;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 0.4rem;
+}
+.days input {
+  width: auto;
+  min-height: auto;
+}
+.existing {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+.existing span {
+  flex: 1 1 200px;
+}
+.existing button {
+  min-height: 36px;
+  padding: 0.25rem;
+}
+.reason {
+  color: var(--text-secondary);
+  margin: 0.25rem 0;
+}
+.error {
+  color: var(--error-color);
+  margin: 0.5rem 0;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 220px;
+  min-height: 32px;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+}
+.badge svg {
+  flex: none;
+}
+.badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.badge[data-paused="true"] {
+  opacity: 0.65;
+}
+@media (width <= 600px) {
+  .editor {
+    margin-inline: 0.5rem;
+  }
+  .row {
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  .when {
+    flex-basis: calc(100% - 30px);
+  }
+  .zone {
+    display: block;
+    margin-inline-start: 0;
+    overflow-wrap: anywhere;
+  }
+  .submit {
+    flex: 1;
+    min-height: 44px;
+  }
+  .close {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .options {
+    grid-template-columns: 1fr;
+  }
+  .existing button {
+    min-height: 44px;
+  }
+  .badge {
+    max-width: 150px;
+    min-height: 44px;
+  }
+}
+
+.preview {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  margin: 0.25rem 0;
+}
