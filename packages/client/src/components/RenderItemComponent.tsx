@@ -1,3 +1,4 @@
+import { isPolzaAutoModelNotice } from "../lib/polzaModelNotices";
 import {
   type CSSProperties,
   memo,
@@ -1471,7 +1472,8 @@ export const RenderItemComponent = memo(function RenderItemComponent({
     toolDeclaresCommentary(item);
   if (
     polzaQuietTranscript &&
-    (item.type === "thinking" ||
+    (isPolzaAutoModelNotice(item) ||
+      item.type === "thinking" ||
       item.type === "conversation_activity" ||
       (item.type === "system" &&
         (item.subtype === "tool_output" ||

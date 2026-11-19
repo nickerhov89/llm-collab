@@ -87,3 +87,17 @@ launcher. It did not implement a compatible in-place gateway transition.
 The adjacent native Claude model-control gap remains separately tracked.
 
 Official configuration references: [built-in proxy URL](https://learn.chatgpt.com/docs/config-file/config-advanced), [per-run API-key authentication and resume](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+
+## Routine Auto notices in the Polza transcript
+
+The branded quiet transcript omits only two standalone native **warning**
+records: resuming a history with `openrouter/auto` instead of its previous
+model, and the fallback-metadata notice for that exact Auto alias. This is a
+presentation choice for an intentional router selection, not a repair of the
+native model catalog. Native history, raw diagnostic records and provider
+behavior are unchanged. Other model warnings remain visible. Error records
+(including authentication, rate limits, context failures and network failures)
+are never matched, and a warning containing additional text is retained.
+Vanilla YA presentation stays unchanged. Existing notices in a loaded history
+receive the same treatment as new streamed notices after the client reloads.
