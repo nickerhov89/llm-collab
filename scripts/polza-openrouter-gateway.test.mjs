@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { once } from "node:events";
+import { EventEmitter, once } from "node:events";
 import { createOpenRouterGateway } from "./polza-openrouter-gateway.mjs";
 
 test("serves live agent catalog, deduplicates reads and retains last good catalog", async (t) => {
@@ -164,4 +164,76 @@ test("opt-in Auto pool preserves explicit choices and provider refusals", async 
   assert.equal(invalid.status, 400);
   assert.equal((await invalid.json()).error.message, "Invalid inference JSON");
   assert.equal(received.length, beforeInvalid);
+});
+
+test("refreshes the account catalog without readers and exposes failures without losing good models", {
+  timeout: 3000,
+}, async (t) => {
+  const events = new EventEmitter();
+  let calls = 0;
+  let fail = false;
+  const upstream = http.createServer((req, res) => {
+    assert.equal(req.url, "/v1/models/user");
+    assert.equal(req.headers.authorization, "Bearer fixture-catalog-key");
+    calls++;
+    res.writeHead(fail ? 503 : 200, { "content-type": "application/json" });
+    res.end(
+      JSON.stringify({
+        data: [
+          {
+            id: "fixture/available",
+            architecture: {
+              input_modalities: ["text"],
+              output_modalities: ["text"],
+            },
+            supported_parameters: ["tools"],
+          },
+        ],
+      }),
+    );
+    events.emit("read", calls);
+  });
+  upstream.listen(0, "127.0.0.1");
+  await once(upstream, "listening");
+  const gateway = createOpenRouterGateway({
+    upstreamBase: `http://127.0.0.1:${upstream.address().port}`,
+    getCatalogToken: async () => "fixture-catalog-key",
+    refreshIntervalMs: 25,
+  });
+  t.after(async () => {
+    await new Promise((resolve) => gateway.close(resolve));
+    await new Promise((resolve) => upstream.close(resolve));
+  });
+  const firstRead = once(events, "read");
+  gateway.listen(0, "127.0.0.1");
+  await once(gateway, "listening");
+  await firstRead;
+  const secondRead = once(events, "read");
+  await secondRead; // No gateway GET or browser open caused either read.
+  const origin = `http://127.0.0.1:${gateway.address().port}`;
+  const unauth = await fetch(origin + "/catalog/refresh", { method: "POST" });
+  assert.equal(unauth.status, 401);
+  const refreshed = await fetch(origin + "/catalog/refresh", {
+    method: "POST",
+    headers: { authorization: "Bearer dummy" },
+  });
+  const good = await refreshed.json();
+  assert.equal(good.catalog.source, "account");
+  assert.equal(good.catalog.state, "ready");
+  assert.deepEqual(
+    good.data.find((m) => m.id === "fixture/available").input_modalities,
+    ["text"],
+  );
+  assert.equal(JSON.stringify(good).includes("fixture-catalog-key"), false);
+  fail = true;
+  const bad = await fetch(origin + "/catalog/refresh", {
+    method: "POST",
+    headers: { authorization: "Bearer dummy" },
+  });
+  assert.equal(bad.status, 503);
+  const status = await (await fetch(origin + "/health")).json();
+  assert.equal(status.catalog.state, "stale");
+  assert.equal(status.catalog.lastError, "Catalog HTTP 503");
+  const retained = await (await fetch(origin + "/v1/models")).json();
+  assert.deepEqual(retained.data, good.data);
 });

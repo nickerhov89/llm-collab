@@ -127,3 +127,33 @@ The branded picker and composer prefer the requested model ID over the last
 served model when both are available. An Auto inference reporting a concrete
 upstream model must not silently turn Auto off; an explicit requested Grok
 must not be disguised by stale reported metadata.
+
+## Account catalog maintenance
+
+The deployment gateway refreshes the account-filtered OpenRouter catalog at
+startup and every 15 minutes, independent of open browsers or active chats.
+The ordinary five-minute stale-read refresh remains available. Concurrent
+refreshes share one request. Filtering retains text-output models advertising
+tool support and excludes batch variants, with Auto first. Input modalities
+are retained as metadata; appearing in this catalog is not a guarantee that a
+model can accept images, every input size or every upstream request shape.
+
+Only the trusted gateway reads the existing operator key for `/v1/models/user`;
+credentials are absent from browser responses, maintenance output and chats.
+Uncredentialed library fixtures retain their public-catalog behavior. Failed,
+malformed or empty refreshes retain the last good in-memory catalog and expose
+stale/unavailable status; they do not fall back to a public account-unfiltered
+catalog. An authenticated local `/catalog/refresh` performs an immediate check.
+`/health` includes safe catalog status and the last success/attempt timestamps.
+
+One global gateway interval owns this work and is released when its server
+closes. It does not create per-session polls or inference requests. The
+maintenance CLI `scripts/polza-model-catalog-check.mjs` additionally saves a
+private successful-ID snapshot and reports counts plus additions/removals.
+Failure preserves that snapshot and returns a nonzero exit code.
+
+The owner maintenance chat uses the existing Cowork scheduler, every six hours
+in Europe/Moscow, with four scheduled attempts per local day. It runs the CLI
+and reports the actual receipt; it must not change other chats' model choices
+or run model-by-model paid probes. Pause or edit it through that chat's Schedule
+controls. Catalog status does not prove future scheduled dispatch completed.

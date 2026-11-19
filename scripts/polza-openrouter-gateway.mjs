@@ -7,11 +7,26 @@ import { pathToFileURL } from "node:url";
 
 const host = "127.0.0.1";
 const port = Number(process.env.OPENROUTER_GATEWAY_PORT ?? "3451");
+async function operatorToken() {
+  const token = (
+    await readFile(
+      process.env.POLZA_OPENROUTER_KEY_FILE ??
+        join(homedir(), ".config/polza/openrouter-cowork.key"),
+      "utf8",
+    )
+  ).trim();
+  if (!token || token === "dummy")
+    throw new Error("Missing gateway credential");
+  return token;
+}
+
 export function createOpenRouterGateway({
   upstreamBase = "https://openrouter.ai/api",
   cacheTtlMs = 300000,
   catalogTimeoutMs = 4000,
   autoAllowedModels = [],
+  getCatalogToken,
+  refreshIntervalMs = 0,
   now = Date.now,
 } = {}) {
   const allowedModels = [
@@ -20,13 +35,34 @@ export function createOpenRouterGateway({
   let models = [];
   let refreshedAt = 0;
   let refreshing;
+  let attemptedAt = null;
+  let lastError = null;
+  let refreshTimer;
+  const catalogStatus = () => ({
+    state: models.length ? (lastError ? "stale" : "ready") : "unavailable",
+    count: models.length,
+    refreshedAt: models.length ? refreshedAt : null,
+    attemptedAt,
+    lastError,
+    source: getCatalogToken ? "account" : "public",
+    refreshIntervalMs,
+    refreshing: !!refreshing,
+  });
   async function refreshModels() {
     if (refreshing) return refreshing;
     refreshing = (async () => {
-      const upstream = await fetch(`${upstreamBase}/v1/models`, {
-        signal: AbortSignal.timeout(catalogTimeoutMs),
-      });
-      if (!upstream.ok) throw new Error("Model catalog unavailable");
+      attemptedAt = now();
+      const token = await getCatalogToken?.();
+      if (getCatalogToken && !token)
+        throw new Error("Missing catalog credential");
+      const upstream = await fetch(
+        `${upstreamBase}/v1/models${token ? "/user" : ""}`,
+        {
+          ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
+          signal: AbortSignal.timeout(catalogTimeoutMs),
+        },
+      );
+      if (!upstream.ok) throw new Error(`Catalog HTTP ${upstream.status}`);
       const data = (await upstream.json()).data;
       if (!Array.isArray(data)) throw new Error("Invalid model catalog");
       const seen = new Set();
@@ -51,6 +87,13 @@ export function createOpenRouterGateway({
           name: row.name || row.id,
           object: "model",
           owned_by: row.id.split("/")[0],
+          ...(Array.isArray(row.architecture?.input_modalities)
+            ? {
+                input_modalities: row.architecture.input_modalities.filter(
+                  (v) => typeof v === "string",
+                ),
+              }
+            : {}),
           ...(Number.isFinite(row.context_length) && row.context_length > 0
             ? { max_model_len: row.context_length }
             : {}),
@@ -74,16 +117,49 @@ export function createOpenRouterGateway({
         );
       models = next;
       refreshedAt = now();
+      lastError = null;
       return models;
-    })().finally(() => {
-      refreshing = undefined;
-    });
+    })()
+      .catch((error) => {
+        // Never expose errors containing credentials, URLs or request contents.
+        lastError = /^Catalog HTTP \d{3}$/.test(error?.message ?? "")
+          ? error.message
+          : "Catalog refresh failed";
+        throw error;
+      })
+      .finally(() => {
+        refreshing = undefined;
+      });
     return refreshing;
   }
   const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/health") {
       res.writeHead(200, { "content-type": "application/json" });
-      res.end('{"ok":true}');
+      res.end(JSON.stringify({ ok: true, catalog: catalogStatus() }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/catalog/refresh") {
+      if (req.headers.authorization !== "Bearer dummy") {
+        res.writeHead(401);
+        res.end();
+        return;
+      }
+      try {
+        await refreshModels();
+        res.writeHead(200, {
+          "content-type": "application/json",
+          "cache-control": "no-store",
+        });
+        res.end(JSON.stringify({ catalog: catalogStatus(), data: models }));
+      } catch {
+        res.writeHead(503, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error: "Catalog refresh failed",
+            catalog: catalogStatus(),
+          }),
+        );
+      }
       return;
     }
     if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
@@ -118,13 +194,7 @@ export function createOpenRouterGateway({
       // operator's existing OpenRouter credential here, never in browser state.
       const token =
         req.headers.authorization === "Bearer dummy"
-          ? (
-              await readFile(
-                process.env.POLZA_OPENROUTER_KEY_FILE ??
-                  join(homedir(), ".config/polza/openrouter-cowork.key"),
-                "utf8",
-              )
-            ).trim()
+          ? await operatorToken()
           : req.headers.authorization.slice(7);
       if (!token || token === "dummy")
         throw new Error("Missing gateway credential");
@@ -230,6 +300,17 @@ export function createOpenRouterGateway({
       "HTTP/1.1 426 Upgrade Required\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
     );
   });
+  if (refreshIntervalMs > 0) {
+    server.once("listening", () => {
+      const refresh = () => {
+        void refreshModels().catch(() => {});
+      };
+      refresh();
+      refreshTimer = setInterval(refresh, refreshIntervalMs);
+      refreshTimer.unref();
+    });
+    server.once("close", () => clearInterval(refreshTimer));
+  }
   return server;
 }
 if (
@@ -237,6 +318,8 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const server = createOpenRouterGateway({
+    getCatalogToken: operatorToken,
+    refreshIntervalMs: 15 * 60 * 1000,
     autoAllowedModels: (
       process.env.POLZA_OPENROUTER_AUTO_ALLOWED_MODELS ?? ""
     ).split(","),
