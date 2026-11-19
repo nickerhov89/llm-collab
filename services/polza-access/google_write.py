@@ -1,4 +1,9 @@
 """Native Docs/Sheets writes with scoped OAuth and durable no-replay receipts."""
+import base64
+import binascii
+import io
+import zipfile
+import uuid
 import hashlib
 import json
 import os
@@ -33,6 +38,57 @@ def api(url, token=None, body=None, form=None):
     except urllib.error.HTTPError as error:
         # Never relay token responses or user content into logs/receipts.
         raise ValueError('Google API refused the operation (HTTP %s)' % error.code) from None
+
+
+DOCX_LIMIT = 8 * 1024 * 1024
+
+
+def docx_bytes(encoded):
+    if not isinstance(encoded, str) or len(encoded) > (DOCX_LIMIT + 2) // 3 * 4:
+        raise ValueError('DOCX exceeds the 8 MiB file limit')
+    try:
+        blob = base64.b64decode(encoded, validate=True)
+        if not 1 <= len(blob) <= DOCX_LIMIT:
+            raise ValueError('DOCX exceeds the 8 MiB file limit')
+        with zipfile.ZipFile(io.BytesIO(blob)) as package:
+            entries = package.infolist()
+            names = {item.filename for item in entries}
+            if (len(entries) > 512 or len(names) != len(entries) or
+                    not {'[Content_Types].xml', '_rels/.rels', 'word/document.xml'} <= names or
+                    sum(item.file_size for item in entries) > 64 * 1024 * 1024 or
+                    any(item.flag_bits & 1 or item.filename.startswith('/') or
+                        '..' in item.filename.split('/') or
+                        'vbaProject' in item.filename for item in entries)):
+                raise ValueError('Expected a bounded macro-free DOCX package')
+    except (binascii.Error, zipfile.BadZipFile):
+        raise ValueError('Expected a valid base64 DOCX package') from None
+    return blob
+
+
+def import_docx(token, title, blob):
+    # Convert an uploaded DOCX to a new native, private Google Doc. No image URLs
+    # or sharing/permissions operation, and never replace an existing document.
+    boundary = 'polza-' + uuid.uuid4().hex
+    metadata = json.dumps({'name': title, 'mimeType': 'application/vnd.google-apps.document'}).encode()
+    payload = (('--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n').encode() +
+               metadata + ('\r\n--' + boundary + '\r\nContent-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document\r\n\r\n').encode() +
+               blob + ('\r\n--' + boundary + '--\r\n').encode())
+    req = urllib.request.Request('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,mimeType,webViewLink',
+        data=payload, headers={'Authorization': 'Bearer ' + token,
+                              'Content-Type': 'multipart/related; boundary=' + boundary})
+    # Uploads must not redirect an authenticated multipart body to another host.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            raise ValueError('Unexpected Google upload redirect')
+    try:
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=25) as response:
+            body = response.read(1024 * 1024 + 1)
+            if len(body) > 1024 * 1024:
+                raise ValueError('Google upload response exceeds limit')
+            result = json.loads(body)
+    except urllib.error.HTTPError as error:
+        raise ValueError('Google upload refused (HTTP %s); inspect the pending receipt' % error.code) from None
+    return result
 
 
 def identifier(value):
@@ -87,6 +143,11 @@ def write_call(config, actor, tool, args):
     title = args.get('title', '')
     if tool in ('docs.create', 'docs.create_sheet') and (not isinstance(title, str) or not 1 <= len(title) <= 300):
         raise ValueError('Expected a title of 1–300 characters')
+    docx = None
+    if tool == 'docs.create' and 'docx_base64' in args:
+        if 'text' in args:
+            raise ValueError('Choose text or docx_base64, not both')
+        docx = docx_bytes(args['docx_base64'])
     if tool == 'docs.create' and not isinstance(args.get('text', ''), str):
         raise ValueError('Document text must be a string')
     if tool == 'docs.create_sheet':
@@ -133,10 +194,13 @@ def write_call(config, actor, tool, args):
     # A failed/uncertain write is never repeated automatically, including an
     # interrupted create whose upstream resource ID has not been received.
     if tool == 'docs.create':
-        doc = api('https://docs.googleapis.com/v1/documents', token, {'title': title})
-        resource = identifier(doc['documentId'])
+        doc = import_docx(token, title, docx) if docx is not None else api(
+            'https://docs.googleapis.com/v1/documents', token, {'title': title})
+        resource = identifier(doc['id'] if docx is not None else doc['documentId'])
         receipt.update(document_id=resource, url='https://docs.google.com/document/d/' + resource + '/edit')
         save()
+        if docx is not None and doc.get('mimeType') != 'application/vnd.google-apps.document':
+            raise ValueError('Google did not confirm native document conversion; inspect the receipt')
         if args.get('text'):
             api('https://docs.googleapis.com/v1/documents/' + resource + ':batchUpdate', token,
                 {'requests': [{'insertText': {'location': {'index': 1}, 'text': args['text']}}]})
@@ -162,7 +226,12 @@ def write_call(config, actor, tool, args):
         body = {'requests': args['requests']}
         if args.get('write_control'):
             body['writeControl'] = args['write_control']
-        api('https://docs.googleapis.com/v1/documents/' + args['document_id'] + ':batchUpdate', token, body)
+        updated = api('https://docs.googleapis.com/v1/documents/' + args['document_id'] + ':batchUpdate', token, body)
+        # addDocumentTab returns the new tab ID here. Preserve it in the receipt
+        # so a retry can inspect IDs without repeating a mutating request.
+        receipt['replies'] = updated.get('replies', [])
+        if updated.get('writeControl'):
+            receipt['write_control'] = updated['writeControl']
     elif tool == 'docs.write_sheet':
         api('https://sheets.googleapis.com/v4/spreadsheets/' + args['document_id'] + '/values:batchUpdate', token,
             {'valueInputOption': args.get('value_input_option', 'RAW'), 'data': args['data']})

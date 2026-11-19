@@ -264,3 +264,35 @@ the same native chat); restarting the browser service or updating credentials
 alone does not replace a loaded MCP client. Use the current UID-authenticated
 CLI/MCP bridge. Do not reenable the retired shared marker principal or restore
 old bearer authority to work around `agent_access_denied`.
+
+
+## Native rich documents and tab receipts (19 November 2026)
+
+`docs.update` returns Google's `replies` and `write_control`, preserving them in
+its actor-scoped idempotency receipt. `addDocumentTab` replies include the new
+`tabProperties.tabId`; use that ID in subsequent requests. An idempotent retry
+returns the same reply rather than creating another tab.
+
+`polza-docx FILE.docx TITLE IDEMPOTENCY_KEY` imports a local DOCX with embedded
+images as a **new native Google Doc**, under the invoking UID's existing
+`docs.create` write grant and the existing corporate `drive.file` OAuth scope.
+It makes no sharing/permission request, exposes no image through a public URL,
+and never overwrites an existing document. The API variant is `docs.create`
+with `title`, `docx_base64`, `idempotency_key` (mutually exclusive with `text`).
+The file limit is 8 MiB; DOCX ZIP entries and expanded size are bounded, and
+macro/encrypted/path-traversal packages are refused. The helper reads the file
+as the caller, never as the credential-owning broker.
+
+Only a known UID with a current Docs write grant may supply a larger request,
+and only this DOCX create shape can exceed the normal 512 KiB input limit
+(maximum 12 MiB wire payload). All other connector requests retain their limit.
+Four worker slots and one admitted call per actor remain unchanged. No file
+path from this request is opened by the broker. Payloads are not audited or
+saved in receipts: only hashes and the resulting document ID/URL are retained.
+A failed or interrupted import keeps a needs_review receipt, and is never
+replayed automatically. Inspect the existing Google result before recovery.
+
+Google conversion reference:
+https://developers.google.com/workspace/drive/api/guides/manage-uploads
+Tab response reference:
+https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/response

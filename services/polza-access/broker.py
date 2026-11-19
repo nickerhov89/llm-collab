@@ -28,6 +28,7 @@ from google_write import write_call as google_write_call, OPERATIONS as GOOGLE_W
 from google_write import verified_token as google_token, read_native as google_read
 
 LIMIT = 512 * 1024
+DOCX_REQUEST_LIMIT = 12 * 1024 * 1024
 OUTPUT_LIMIT = 8 * 1024 * 1024
 READ_TOOLS = {
     "portal.status", "portal.projects", "portal.project",
@@ -384,10 +385,22 @@ class Handler(socketserver.StreamRequestHandler):
         self.request.settimeout(45)
         try:
             _, uid, _ = struct.unpack("3i", self.request.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
-            line = self.rfile.readline(LIMIT + 1)
-            if len(line) > LIMIT:
+            actor = self.server.broker.actor(uid)
+            limit = LIMIT
+            try:
+                self.server.broker.allowed(actor, "docs.create")
+                limit = DOCX_REQUEST_LIMIT
+            except Denied:
+                pass
+            line = self.rfile.readline(limit + 1)
+            if len(line) > limit:
                 raise ValueError("Request exceeds limit")
-            result = self.server.broker.handle(uid, json.loads(line))
+            request = json.loads(line)
+            if len(line) > LIMIT and not (request.get("tool") == "docs.create" and
+                    isinstance(request.get("arguments"), dict) and
+                    "docx_base64" in request["arguments"]):
+                raise ValueError("Request exceeds limit")
+            result = self.server.broker.handle(uid, request)
             answer = {"ok": True, "result": result}
         except Denied as error:
             answer = {"ok": False, "code": "access_denied", "error": str(error)}
