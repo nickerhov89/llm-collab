@@ -49,6 +49,12 @@ export interface ForkOrdinalClaim {
 }
 
 export interface SessionMetadata {
+  /** Explicit per-chat opt-in, retained independently of browser lifetime. */
+  quotaFailoverEnabled?: boolean;
+  /** Server-stamped sender of the delivered turn; null denotes the owner. */
+  quotaFailoverActor?: string | null;
+  quotaFailoverActorKnown?: boolean;
+  quotaFailoverTurnId?: string;
   routerBinding?: {
     poolId?: string;
     poolName?: string;
@@ -1208,6 +1214,10 @@ export class SessionMetadataService {
     sessionId: string,
     updates: {
       routerBinding?: SessionMetadata["routerBinding"];
+      quotaFailoverEnabled?: boolean;
+      quotaFailoverActor?: string | null;
+      quotaFailoverActorKnown?: boolean;
+      quotaFailoverTurnId?: string;
       title?: string;
       archived?: boolean;
       starred?: boolean;
@@ -1233,6 +1243,14 @@ export class SessionMetadataService {
     this.updateSessionMetadata(sessionId, (metadata) => {
       const result = { ...metadata };
       if (updates.routerBinding) result.routerBinding = updates.routerBinding;
+      if (updates.quotaFailoverTurnId !== undefined)
+        result.quotaFailoverTurnId = updates.quotaFailoverTurnId;
+      if (updates.quotaFailoverActorKnown !== undefined)
+        result.quotaFailoverActorKnown = updates.quotaFailoverActorKnown;
+      if (updates.quotaFailoverActor !== undefined)
+        result.quotaFailoverActor = updates.quotaFailoverActor;
+      if (updates.quotaFailoverEnabled !== undefined)
+        result.quotaFailoverEnabled = updates.quotaFailoverEnabled;
 
       // Handle title
       if (updates.title !== undefined) {
@@ -1361,6 +1379,14 @@ export class SessionMetadataService {
 
     // Remove undefined values and check if entry should be deleted
     const cleaned: SessionMetadata = {};
+    if (updated.quotaFailoverTurnId !== undefined)
+      cleaned.quotaFailoverTurnId = updated.quotaFailoverTurnId;
+    if (updated.quotaFailoverActorKnown !== undefined)
+      cleaned.quotaFailoverActorKnown = updated.quotaFailoverActorKnown;
+    if (updated.quotaFailoverActor !== undefined)
+      cleaned.quotaFailoverActor = updated.quotaFailoverActor;
+    if (typeof updated.quotaFailoverEnabled === "boolean")
+      cleaned.quotaFailoverEnabled = updated.quotaFailoverEnabled;
     if (updated.creationProvenance) {
       cleaned.creationProvenance = updated.creationProvenance;
     }

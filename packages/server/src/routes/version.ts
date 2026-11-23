@@ -455,6 +455,8 @@ async function getLatestVersion(
 }
 
 export interface VersionInfo {
+  /** Deployment opt-in; absent on older servers. */
+  polzaQuotaRecovery?: boolean;
   experimentalSimpleClientApiRevision?: typeof CONVERSATION_API_REVISION;
   /** Absent on older servers; never implies storage readiness. */
   serverRuntime?: ServerRuntimeInfo;
@@ -986,6 +988,9 @@ export function createVersionRoutes(options?: VersionRouteOptions): Hono {
       latestDeviceBridgeVersion: deviceBridgeStatus.latestVersion ?? null,
       ...(clientDefaults ? { clientDefaults } : {}),
       ...(options?.desktopRuntime ? { desktopRuntime: true } : {}),
+      ...(process.env.POLZA_AUTO_QUOTA_RECOVERY === "1"
+        ? { polzaQuotaRecovery: true }
+        : {}),
       ...(isProviderHostDegraded() ? { providerHostDegraded: true } : {}),
     };
 

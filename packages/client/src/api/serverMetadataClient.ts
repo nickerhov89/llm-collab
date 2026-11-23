@@ -10,6 +10,8 @@ import type {
 import { fetchJSON } from "./sourceApiFetch";
 
 export interface VersionInfo {
+  /** Deployment opt-in; absent on older servers. */
+  polzaQuotaRecovery?: boolean;
   /** Absent on older servers; never implies storage readiness. */
   serverRuntime?: ServerRuntimeInfo;
   /** Storage diagnostic only; absent on older servers. */

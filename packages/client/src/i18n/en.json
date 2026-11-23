@@ -1,4 +1,9 @@
 {
+  "quotaRecoveryStarted": "Quota reached. Continued with {provider} in a new chat.",
+  "quotaRecoveryBlocked": "Automatic quota recovery stopped. Your original task and chat are preserved.",
+  "quotaRecoveryPending": "Quota reached. Preparing an automatic continuation…",
+  "quotaRecoveryOpen": "Open continuation",
+
   "polzaRouterWaitForTurn": "Wait for the current reply and queued messages before switching services.",
   "polzaRouterUnavailable": "OpenRouter could not be applied to this chat. The current chat has been kept.",
   "polzaRouterSwitching": "Switching to OpenRouter…",

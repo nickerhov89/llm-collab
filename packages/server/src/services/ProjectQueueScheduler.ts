@@ -214,6 +214,7 @@ export interface ProjectQueueSchedulerOptions {
     sessionId: string,
     grants: LimitedUserGrants,
   ) => Promise<boolean>;
+  validateAutomaticItem?: (item: ProjectQueueItem) => Promise<string | null>;
   onSessionStarted?: (args: {
     item: ProjectQueueItem;
     process: ProjectQueueProcessSnapshot;
@@ -1008,6 +1009,8 @@ export class ProjectQueueScheduler {
     queuedItem: ProjectQueueItem,
     options: PromoteNowOptions,
   ): Promise<ProjectQueueDispatchOutcome> {
+    const validation = await this.options.validateAutomaticItem?.(queuedItem);
+    if (validation) throw new Error(validation);
     const grants = this.enqueuerGrants(queuedItem);
     const item = grants
       ? this.withinEnqueuerLaunchPolicy(queuedItem, grants)

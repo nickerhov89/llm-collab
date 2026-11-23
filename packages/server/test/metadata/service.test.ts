@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -1619,4 +1619,29 @@ describe("SessionMetadataService", () => {
       expect(service.getMetadata("session-1")).toBeUndefined();
     });
   });
+});
+
+it("persists a quota-routing opt-out and canonical owner actor across a metadata reload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "quota-policy-"));
+  try {
+    const service = createTestSessionMetadataService(root);
+    await service.initialize();
+    await service.updateMetadata("quota-chat", {
+      quotaFailoverEnabled: true,
+      quotaFailoverActor: "marker",
+    });
+    await service.updateMetadata("quota-chat", {
+      quotaFailoverEnabled: false,
+      quotaFailoverActor: null,
+    });
+    const reopened = createTestSessionMetadataService(root);
+    await reopened.initialize();
+    expect(reopened.getMetadata("quota-chat")).toMatchObject({
+      quotaFailoverEnabled: false,
+      quotaFailoverActor: null,
+    });
+  } finally {
+    closeTestDiscoveryDatabases();
+    await rm(root, { recursive: true, force: true });
+  }
 });

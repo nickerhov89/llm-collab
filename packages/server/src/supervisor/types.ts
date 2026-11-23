@@ -326,7 +326,12 @@ export interface ProcessAbortResult {
 export type ProcessEvent =
   | { type: "non-human-user-turn"; turn: NonHumanUserTurn }
   | { type: "message"; message: SDKMessage }
-  | { type: "user-turn-accepted"; startedAtMs: number }
+  | {
+      type: "user-turn-accepted";
+      startedAtMs: number;
+      sentByUser?: string | null;
+      userTurnId?: string;
+    }
   | {
       type: "provider-turn-started";
       startedAtMs: number;

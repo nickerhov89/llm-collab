@@ -3842,6 +3842,7 @@ export class Process {
   }
 
   private acceptRecapResumeSignal(message: UserMessage): UserMessage {
+    message = { ...message, uuid: message.uuid ?? randomUUID() };
     if (message.recapResumeHandled === true) {
       return message;
     }
@@ -3881,6 +3882,8 @@ export class Process {
       this.resumeRecapsAfterUserTurn();
       this.emit({
         type: "user-turn-accepted",
+        sentByUser: message.metadata?.sentByUser ?? null,
+        userTurnId: message.uuid,
         startedAtMs: Number.isFinite(receivedAtMs) ? receivedAtMs : Date.now(),
       });
     }

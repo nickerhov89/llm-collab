@@ -1103,6 +1103,7 @@ export type {
   EffectiveSessionLaunchSettings,
   SessionMetadataPayload,
   SessionMetadataResponse,
+  QuotaRecoveryStatus,
   SessionQueuedMessageKind,
   SessionQueuedMessageStatus,
   SessionQueuedCompactionGate,

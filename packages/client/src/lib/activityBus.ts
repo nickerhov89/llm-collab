@@ -117,6 +117,7 @@ export interface ProviderRuntimeStatusChangedEvent {
 }
 
 export interface SessionMetadataChangedEvent {
+  quotaRecovery?: import("@yep-anywhere/shared").QuotaRecoveryStatus;
   nonHumanUserTurn?: NonHumanUserTurn | null;
   creationProvenance?: SessionCreationProvenance;
   type: "session-metadata-changed";

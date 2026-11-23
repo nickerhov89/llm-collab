@@ -1,3 +1,6 @@
+import { QuotaRecoveryService } from "../services/QuotaRecoveryService.js";
+import type { ProjectQueueService } from "../services/ProjectQueueService.js";
+import { levelFor } from "../auth/limitedUserPolicy.js";
 import { desktopControlOrigin } from "../desktop/machine-control.js";
 import { RETIRED_COMPUTER_CONTROL_ERROR } from "../machine-control/legacy-retirement.js";
 import {
@@ -307,6 +310,15 @@ export interface SessionsDeps {
   /** Records who started each session and who sent each turn. */
   userUsageService?: UserUsageService;
   projectMetadataService?: ProjectMetadataService;
+  projectQueueService?: ProjectQueueService;
+  getLimitedUserGrants?: (
+    username: string,
+  ) => import("@yep-anywhere/shared").LimitedUserGrants | null;
+  enabledProviders?: string[];
+  onQuotaRecoveryCreated?: (
+    service: QuotaRecoveryService,
+    ready: Promise<void>,
+  ) => void;
   projectQueueScheduler?: Pick<
     ProjectQueueScheduler,
     "reserveUserSessionStart" | "sessionProjectChanged" | "setYaCommandRunner"
@@ -431,6 +443,7 @@ interface StartSessionBody {
   routerAccountId?: string;
   routerPoolId?: string;
   routerPolicy?: string;
+  quotaFailoverEnabled?: boolean;
   creationProvenance?: SessionCreationProvenance;
   computerControl?: boolean;
   machineControl?: boolean;
@@ -485,6 +498,7 @@ interface CreateSessionBody {
   routerAccountId?: string;
   routerPoolId?: string;
   routerPolicy?: string;
+  quotaFailoverEnabled?: boolean;
   creationProvenance?: SessionCreationProvenance;
   computerControl?: boolean;
   machineControl?: boolean;
@@ -937,6 +951,22 @@ function messageRole(message: Message): string {
 function messageContent(message: Message): unknown {
   const nested = message.message as { content?: unknown } | undefined;
   return nested?.content ?? (message as { content?: unknown }).content;
+}
+
+function messageText(message: Message): string {
+  const content = messageContent(message);
+  if (typeof content === "string") return content;
+  return Array.isArray(content)
+    ? content
+        .filter(
+          (block) =>
+            block?.type === "text" ||
+            block?.type === "input_text" ||
+            block?.type === "output_text",
+        )
+        .map((block) => (typeof block.text === "string" ? block.text : ""))
+        .join("\n")
+    : "";
 }
 
 function messageId(message: Message | undefined): string | undefined {
@@ -2110,6 +2140,8 @@ function extractContextUsageFromSDKMessages(
 }
 
 export function createSessionsRoutes(deps: SessionsDeps): Hono {
+  let quotaRecovery: QuotaRecoveryService | undefined;
+  let quotaRecoveryReady: Promise<void> | undefined;
   const routes = new Hono();
   // Successors of a router-pinned session would launch without its pin and
   // run on the owner's direct provider login; refuse them up front.
@@ -2517,6 +2549,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     process: Process,
     launch: {
       heartbeatProjectId?: UrlProjectId;
+      quotaFailoverEnabled?: boolean;
       creationProvenance: unknown;
       /** The limited user who started it; absent for the superuser. */
       createdByUser?: string;
@@ -2562,6 +2595,17 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
         projectId: process.projectId,
       },
     );
+    if (quotaRecovery && typeof launch.quotaFailoverEnabled === "boolean") {
+      await quotaRecoveryReady;
+      await deps.sessionMetadataService?.updateMetadata(sessionId, {
+        quotaFailoverEnabled: launch.quotaFailoverEnabled,
+        quotaFailoverActor: launch.createdByUser ?? null,
+        quotaFailoverActorKnown: true,
+      });
+      const failure = process.getProviderRuntimeStatus();
+      if (failure?.kind === "terminal")
+        void quotaRecovery.observe(sessionId, process.projectId, failure);
+    }
   };
 
   const loadProviderSession = async (
@@ -3079,6 +3123,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       ownership,
       processState: process?.state.type ?? null,
       providerRuntimeStatus,
+      quotaRecovery: quotaRecovery?.getStatus(sessionId),
       pendingInputRequest,
       slashCommands,
       ...(deferredMessages.length > 0 ? { deferredMessages } : {}),
@@ -4027,6 +4072,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       transcriptSnapshotUpdatedAt: loadedSession.transcriptSnapshotUpdatedAt,
       ownership,
       providerRuntimeStatus,
+      quotaRecovery: quotaRecovery?.getStatus(sessionId),
       pendingInputRequest,
       slashCommands,
       ...(publicShareCompletedMessageCount !== undefined
@@ -4188,6 +4234,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
         onStarted: (_sessionId, process) =>
           recordNewSessionLaunch(process, {
             heartbeatProjectId: project.id,
+            quotaFailoverEnabled: body.quotaFailoverEnabled,
             creationProvenance: body.creationProvenance,
             createdByUser:
               limitedLaunch.kind === "applied"
@@ -4357,6 +4404,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
         onStarted: (_sessionId, process) =>
           recordNewSessionLaunch(process, {
             heartbeatProjectId: project.id,
+            quotaFailoverEnabled: body.quotaFailoverEnabled,
             creationProvenance: body.creationProvenance,
             createdByUser:
               limitedLaunch.kind === "applied"
@@ -4515,6 +4563,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       {
         onStarted: (_sessionId, process) =>
           recordNewSessionLaunch(process, {
+            quotaFailoverEnabled: body.quotaFailoverEnabled,
             creationProvenance: body.creationProvenance,
             createdByUser: actingUsername(c),
             provider: body.provider,
@@ -4649,6 +4698,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       {
         onStarted: (_sessionId, process) =>
           recordNewSessionLaunch(process, {
+            quotaFailoverEnabled: body.quotaFailoverEnabled,
             creationProvenance: body.creationProvenance,
             createdByUser: actingUsername(c),
             provider: body.provider,
@@ -5506,6 +5556,264 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
     });
   };
 
+  if (
+    process.env.POLZA_AUTO_QUOTA_RECOVERY === "1" &&
+    deps.dataDir &&
+    deps.eventBus &&
+    deps.projectQueueService &&
+    deps.sessionMetadataService
+  ) {
+    const metadataService = deps.sessionMetadataService;
+    const queue = deps.projectQueueService;
+    const eventBus = deps.eventBus;
+    quotaRecovery = new QuotaRecoveryService({
+      dataDir: deps.dataDir,
+      eventBus,
+      enabled: (id) => {
+        const meta = metadataService.getMetadata(id);
+        return meta?.quotaFailoverEnabled === true && !meta.isArchived;
+      },
+      source: async (id, pid, failure) => {
+        const meta = metadataService.getMetadata(id);
+        const project = await deps.scanner.getOrCreateProject(pid);
+        if (!project) throw new Error("Recovery project is unavailable");
+        const old = deps.supervisor.getProcessForSession(id);
+        if (old?.executor || meta?.executor)
+          throw new Error("Remote recovery needs a matching executor");
+        const source = await loadRestartSourceSession(
+          project,
+          id,
+          pid,
+          meta?.provider ?? old?.provider ?? project.provider,
+          old,
+        );
+        if (!source) throw new Error("Recovery source is unavailable");
+        const merged = new Map<string, Message>();
+        for (const row of source.messages)
+          merged.set(messageId(row) ?? `stored-${merged.size}`, row);
+        const latestStoredAt = Math.max(
+          0,
+          ...source.messages
+            .map((m) => Date.parse(m.timestamp ?? ""))
+            .filter(Number.isFinite),
+        );
+        for (const sdk of old?.getMessageHistory() ?? []) {
+          const row = sdk as unknown as Message;
+          if (
+            (row.type === "user" || row.type === "assistant") &&
+            !row.parent_tool_use_id
+          )
+            if (
+              (messageId(row) && merged.has(messageId(row)!)) ||
+              Date.parse(row.timestamp ?? "") >= latestStoredAt
+            )
+              merged.set(messageId(row) ?? `live-${merged.size}`, row);
+        }
+        const rows = [...merged.values()].filter((m) => !m.isSubagent);
+
+        let last = -1;
+        for (let index = rows.length - 1; index >= 0; index--) {
+          const m = rows[index];
+          if (
+            m &&
+            messageRole(m) === "user" &&
+            (messageText(m).trim() ||
+              (Array.isArray(messageContent(m)) &&
+                (messageContent(m) as Array<{ type?: string }>).some((block) =>
+                  ["image", "input_image", "document"].includes(
+                    block.type ?? "",
+                  ),
+                ))) &&
+            !/^\s*<(?:local-command|command-name)/.test(messageText(m)) &&
+            !/^\s*\//.test(messageText(m))
+          ) {
+            last = index;
+            break;
+          }
+        }
+        const user = rows[last];
+        const turnKey = messageId(user);
+        if (
+          failure?.kind === "terminal" &&
+          Date.parse(user?.timestamp ?? "") > Date.parse(failure.occurredAt)
+        )
+          throw new Error("The quota event predates the current user turn");
+        const trusted = old
+          ?.getMessageHistory()
+          .slice()
+          .reverse()
+          .find(
+            (entry) =>
+              entry.type === "user" &&
+              entry.uuid === turnKey &&
+              !!(entry as unknown as Message).messageMetadata,
+          );
+        const trustedMetadata = (trusted as unknown as Message | undefined)
+          ?.messageMetadata as
+          | { serverReceivedAt?: string; sentByUser?: string }
+          | undefined;
+        let actor: string | undefined;
+        if (trustedMetadata?.serverReceivedAt)
+          actor = trustedMetadata.sentByUser;
+        else if (
+          meta?.quotaFailoverActorKnown === true &&
+          meta.quotaFailoverTurnId === turnKey
+        )
+          actor = meta.quotaFailoverActor ?? undefined;
+        else throw new Error("The current source principal is unavailable");
+        if (actor) {
+          const grants = deps.getLimitedUserGrants?.(actor);
+          if (!grants || levelFor(grants, pid) !== "new-session")
+            throw new Error("Recovery launch grant is unavailable");
+        }
+        if (!turnKey) throw new Error("No stable source turn is available");
+        const isQuotaText = (text: string) =>
+          text === failure?.message ||
+          /^(?:API Error:\s*(?:402|429)|You['’]ve hit your .{0,50}limit)/i.test(
+            text.trim(),
+          );
+        const hasPartialActivity = rows.slice(last + 1).some((m) => {
+          if (
+            m.toolUse ||
+            m.toolUseResult ||
+            m.type === "tool" ||
+            m.type === "tool_result"
+          )
+            return true;
+          const content = messageContent(m);
+          if (
+            Array.isArray(content) &&
+            content.some((b: { type?: string }) =>
+              [
+                "tool_use",
+                "tool_result",
+                "function_call",
+                "function_call_output",
+              ].includes(b?.type ?? ""),
+            )
+          )
+            return true;
+          return (
+            messageRole(m) === "assistant" &&
+            !!messageText(m).trim() &&
+            !isQuotaText(messageText(m))
+          );
+        });
+        const content = user ? messageContent(user) : undefined;
+        const hasInlineMedia =
+          Array.isArray(content) &&
+          content.some((b: { type?: string }) =>
+            ["image", "input_image", "document"].includes(b?.type ?? ""),
+          );
+        const projectPath =
+          meta?.sandboxLevel === "project-write"
+            ? (meta.sandboxProjectPath ?? project.path)
+            : project.path;
+        return {
+          turnKey,
+          provider: old?.provider ?? source.provider ?? project.provider,
+          projectPath,
+          actor,
+          hasPartialActivity,
+          hasInlineMedia,
+          handoff: await buildHandoffText({
+            project,
+            projectId: pid,
+            sessionId: id,
+            handoffTitle: meta?.customTitle ?? source.title ?? "Quota recovery",
+            sourceSession: { ...source, messages: rows },
+            sourceProvider: source.provider ?? project.provider,
+            oldProcess: old,
+            projectPath,
+          }),
+          launch: {
+            title: meta?.customTitle ?? source.title ?? "Quota recovery",
+            mode:
+              old?.permissionMode ??
+              meta?.effectiveLaunchSettings?.permissionMode ??
+              "default",
+            sandboxLevel: meta?.sandboxLevel ?? "none",
+            sandboxNetworkFirewall: meta?.sandboxNetworkFirewall,
+            thinking: meta?.effectiveLaunchSettings?.effort
+              ? (`on:${meta.effectiveLaunchSettings.effort}` as ThinkingOption)
+              : meta?.effectiveLaunchSettings?.thinking?.type === "enabled"
+                ? "on:high"
+                : "off",
+          },
+        };
+      },
+      available: async (name) => {
+        if (
+          deps.enabledProviders?.length &&
+          !deps.enabledProviders.includes(name)
+        )
+          return null;
+        const provider = getProvider(name);
+        if (!provider) return null;
+        const auth = await provider.getAuthStatus();
+        if (!auth.installed || !auth.authenticated || !auth.enabled)
+          return null;
+        const models = await provider.getAvailableModels();
+        const ids =
+          name === "claude"
+            ? ["haiku", "sonnet"]
+            : name === "codex"
+              ? ["gpt-6-luna", "gpt-6.1-sol"]
+              : ["openrouter/auto"];
+        return ids.find((id) => models.some((m) => m.id === id)) ?? null;
+      },
+      enqueue: async (record, source, model) => {
+        await deps.supervisor.pauseSessionAutomation(record.sourceSessionId);
+        const item = await queue.createItem({
+          projectId: record.projectId,
+          projectPath: source.projectPath,
+          createdByUser: source.actor,
+          request: {
+            target: {
+              ...source.launch,
+              type: "new-session",
+              provider: record.target,
+              model,
+            },
+            message: {
+              text:
+                source.handoff +
+                "\n\n## Current task after a quota failure\nContinue the latest unresolved user request above. Do not repeat completed actions or treat API errors as requests. The previous provider quota is exhausted; use this continuation rather than retrying that provider.",
+              mode: source.launch.mode,
+              metadata: {
+                origin: "automation",
+                sourceSessionId: record.sourceSessionId,
+              },
+            },
+            createdFrom: {
+              sessionId: record.sourceSessionId,
+              quotaRecoveryId: record.id,
+            },
+          },
+        });
+        return item.id;
+      },
+      changed: (record) =>
+        eventBus.emit({
+          type: "session-metadata-changed",
+          sessionId: record.sourceSessionId,
+          projectId: record.projectId,
+          quotaRecovery: {
+            status: record.status,
+            target: record.target,
+            successorSessionId: record.successorSessionId,
+            reason: record.reason,
+          },
+          timestamp: new Date().toISOString(),
+        }),
+    });
+    quotaRecoveryReady = quotaRecovery.initialize();
+    void quotaRecoveryReady.catch((error) =>
+      getLogger().error({ err: error }, "Quota recovery initialization failed"),
+    );
+    deps.onQuotaRecoveryCreated?.(quotaRecovery, quotaRecoveryReady);
+  }
+
   // GET /api/projects/:projectId/sessions/:sessionId/restart/handoff
   // The handoff text as it stands now, so the client can offer it as an
   // editable draft. Compacts first, exactly as the handoff path does, so the
@@ -6276,6 +6584,7 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
           onStarted: (_sessionId, process) =>
             recordNewSessionLaunch(process, {
               heartbeatProjectId: project.id,
+              quotaFailoverEnabled: body.quotaFailoverEnabled,
               creationProvenance: body.creationProvenance,
               createdByUser: limited ? limitedLaunch.username : undefined,
               provider: providerName,
@@ -9029,8 +9338,11 @@ export function createSessionsRoutes(deps: SessionsDeps): Hono {
       return c.json({ error: parsed.error }, parsed.status);
     }
     const { patch } = parsed;
+    if (patch.quotaFailoverEnabled === true) await quotaRecoveryReady;
 
     await deps.sessionMetadataService.updateMetadata(sessionId, patch);
+    if (patch.quotaFailoverEnabled === false)
+      await quotaRecovery?.cancel(sessionId);
 
     // Archive is a stop boundary, including for older clients that only know
     // the generic metadata route. Provider-owned background jobs can outlive a

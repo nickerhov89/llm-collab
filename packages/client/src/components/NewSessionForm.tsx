@@ -3197,6 +3197,12 @@ export function NewSessionForm({
           ...(!autoRoute && effectiveServiceTier
             ? { serviceTier: effectiveServiceTier }
             : {}),
+          ...(versionInfo?.polzaQuotaRecovery
+            ? {
+                quotaFailoverEnabled:
+                  polzaSimple && autoModel && !routerSelection,
+              }
+            : {}),
           provider: autoRoute?.provider ?? selectedProvider ?? undefined,
           executor: effectiveExecutor ?? undefined,
           ...(supportsSessionSandboxing
@@ -3626,6 +3632,12 @@ export function NewSessionForm({
             : {}),
           thinking: autoRoute ? "off" : thinking,
           showThinking,
+          ...(versionInfo?.polzaQuotaRecovery
+            ? {
+                quotaFailoverEnabled:
+                  polzaSimple && autoModel && !routerSelection,
+              }
+            : {}),
           provider: autoRoute?.provider ?? selectedProvider ?? undefined,
           executor: effectiveExecutor ?? undefined,
           ...(supportsSessionSandboxing

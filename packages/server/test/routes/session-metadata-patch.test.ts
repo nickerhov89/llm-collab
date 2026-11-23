@@ -135,3 +135,12 @@ describe("parseSessionMetadataPatch", () => {
     });
   });
 });
+
+it("accepts an explicit quota-routing opt-out but rejects truthy non-booleans", () => {
+  expect(
+    parseSessionMetadataPatch({ quotaFailoverEnabled: false }),
+  ).toMatchObject({ ok: true, patch: { quotaFailoverEnabled: false } });
+  expect(
+    parseSessionMetadataPatch({ quotaFailoverEnabled: "false" }),
+  ).toMatchObject({ ok: false, status: 400 });
+});

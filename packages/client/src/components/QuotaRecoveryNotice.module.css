@@ -1,0 +1,20 @@
+.notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0.5rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 0.75rem;
+  font-size: 0.9rem;
+}
+
+.notice small {
+  flex-basis: 100%;
+}
+
+.notice a {
+  padding: 0.5rem 0;
+  font-weight: 600;
+}

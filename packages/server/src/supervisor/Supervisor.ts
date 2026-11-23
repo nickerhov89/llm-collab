@@ -6014,6 +6014,21 @@ export class Supervisor {
           event.startedAtMs,
         );
       } else if (event.type === "user-turn-accepted") {
+        if (globalThis.process.env.POLZA_AUTO_QUOTA_RECOVERY === "1") {
+          void this.sessionMetadataService
+            ?.updateMetadata(process.sessionId, {
+              quotaFailoverActor: event.sentByUser ?? null,
+              quotaFailoverActorKnown: event.sentByUser !== undefined,
+              quotaFailoverTurnId: event.userTurnId,
+            })
+            .catch((error) =>
+              getLogger().error(
+                { err: error, sessionId: process.sessionId },
+                "Failed to retain quota recovery principal",
+              ),
+            );
+        }
+
         // Server receipt is the fallback boundary for an older reload-safe
         // worker. A worker that reports provider yield replaces it with the
         // later authoritative boundary before usage arrives.

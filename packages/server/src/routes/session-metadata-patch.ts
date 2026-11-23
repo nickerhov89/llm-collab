@@ -7,6 +7,7 @@ import {
 } from "@yep-anywhere/shared";
 
 export interface SessionMetadataPatch {
+  quotaFailoverEnabled?: boolean;
   title?: string;
   archived?: boolean;
   starred?: boolean;
@@ -23,6 +24,7 @@ export interface SessionMetadataPatch {
 }
 
 interface SessionMetadataPatchBody {
+  quotaFailoverEnabled?: boolean;
   title?: string;
   archived?: boolean;
   starred?: boolean;
@@ -89,6 +91,7 @@ export function parseSessionMetadataPatch(
 
   // At least one field must be provided.
   if (
+    body.quotaFailoverEnabled === undefined &&
     body.title === undefined &&
     body.archived === undefined &&
     body.starred === undefined &&
@@ -104,6 +107,12 @@ export function parseSessionMetadataPatch(
   ) {
     return invalidPatch("At least one session metadata field must be provided");
   }
+
+  if (
+    body.quotaFailoverEnabled !== undefined &&
+    typeof body.quotaFailoverEnabled !== "boolean"
+  )
+    return invalidPatch("quotaFailoverEnabled must be boolean");
 
   const parsedHeartbeatForceAfterMinutes = parseHeartbeatMinutes(
     body.heartbeatForceAfterMinutes,
@@ -211,6 +220,7 @@ export function parseSessionMetadataPatch(
   return {
     ok: true,
     patch: {
+      quotaFailoverEnabled: body.quotaFailoverEnabled,
       title: body.title,
       archived: body.archived,
       starred: body.starred,

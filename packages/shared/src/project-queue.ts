@@ -238,6 +238,8 @@ export type ProjectQueueTarget =
     };
 
 export interface ProjectQueueCreatedFrom {
+  /** Server-generated quota-recovery correlation; never grants authority. */
+  quotaRecoveryId?: string;
   sessionId?: string;
   client?: ProjectQueueClientSource;
 }

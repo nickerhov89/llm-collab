@@ -1,3 +1,4 @@
+import type { QuotaRecoveryService } from "./services/QuotaRecoveryService.js";
 import { DEDICATED_EMPLOYEE_RUNTIME } from "./auth/dedicatedEmployeeRuntime.js";
 import { createPolzaTaskerRoutes } from "./routes/polza-tasker.js";
 import { AgentAuthRouter } from "./services/AgentAuthRouter.js";
@@ -1557,6 +1558,7 @@ export function createApp(options: AppOptions): AppResult {
       draftStore?.close();
       if (ownsDiscoverySqlite) discoverySqlite.close();
       await retainedCollections?.dispose();
+      await quotaRecovery?.dispose();
       await projectQueueScheduler?.dispose();
       artifactPreviews.close();
       await artifactServer.close();
@@ -2278,6 +2280,8 @@ export function createApp(options: AppOptions): AppResult {
         })
       : undefined;
 
+  let quotaRecovery: QuotaRecoveryService | undefined;
+  let quotaRecoveryReady: Promise<void> | undefined;
   let projectQueueScheduler: ProjectQueueScheduler | undefined;
   if (options.eventBus && options.projectQueueService) {
     projectQueueScheduler = new ProjectQueueScheduler({
@@ -2331,6 +2335,13 @@ export function createApp(options: AppOptions): AppResult {
             }))
         );
       },
+      validateAutomaticItem: async (item) => {
+        if (!item.createdFrom?.quotaRecoveryId) return null;
+        await quotaRecoveryReady;
+        return quotaRecovery
+          ? quotaRecovery.validate(item)
+          : "Automatic quota recovery is unavailable";
+      },
       onSessionStarted: async ({ item, process }) => {
         if (item.target.type !== "new-session") return;
         const metadata = options.sessionMetadataService;
@@ -2376,6 +2387,23 @@ export function createApp(options: AppOptions): AppResult {
             ? { recapAfterSeconds: process.recapAfterSeconds }
             : {}),
         });
+        await quotaRecoveryReady;
+        if (await quotaRecovery?.associate(item, process.sessionId)) {
+          await metadata.updateMetadata(process.sessionId, {
+            quotaFailoverEnabled: true,
+            quotaFailoverActor: item.createdByUser ?? null,
+            quotaFailoverActorKnown: true,
+          });
+          const failure = supervisor.getProviderRuntimeStatusForSession(
+            process.sessionId,
+          );
+          if (failure?.kind === "terminal")
+            void quotaRecovery?.observe(
+              process.sessionId,
+              item.projectId,
+              failure,
+            );
+        }
       },
     });
   }
@@ -2737,6 +2765,13 @@ export function createApp(options: AppOptions): AppResult {
   app.route(
     "/api",
     createSessionsRoutes({
+      projectQueueService: options.projectQueueService,
+      getLimitedUserGrants: getActiveLimitedGrants,
+      enabledProviders: options.enabledProviders,
+      onQuotaRecoveryCreated: (service, ready) => {
+        quotaRecovery = service;
+        quotaRecoveryReady = ready;
+      },
       onIssueWindow: (source, messages) =>
         issueIndexer?.observe(source, messages),
       supervisor,

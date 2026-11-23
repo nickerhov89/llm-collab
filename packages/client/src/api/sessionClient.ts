@@ -138,6 +138,7 @@ export function createSessionApi(fetchJSON: typeof FetchJson) {
           thinking: options?.thinking,
           showThinking: options?.showThinking,
           provider: options?.provider,
+          quotaFailoverEnabled: options?.quotaFailoverEnabled,
           executor: options?.executor,
           recapMode: options?.recapMode,
           recapAfterSeconds: options?.recapAfterSeconds,
@@ -157,6 +158,7 @@ export function createSessionApi(fetchJSON: typeof FetchJson) {
       options?: {
         mode?: PermissionMode;
         model?: string;
+        quotaFailoverEnabled?: boolean;
         provider?: ProviderName;
         executor?: string;
         recapAfterSeconds?: number;
@@ -176,6 +178,7 @@ export function createSessionApi(fetchJSON: typeof FetchJson) {
           mode: options?.mode,
           model: options?.model,
           provider: options?.provider,
+          quotaFailoverEnabled: options?.quotaFailoverEnabled,
           executor: options?.executor,
           recapAfterSeconds: options?.recapAfterSeconds,
         }),
@@ -238,6 +241,7 @@ export function createSessionApi(fetchJSON: typeof FetchJson) {
     updateSessionMetadata: (
       sessionId: string,
       updates: {
+        quotaFailoverEnabled?: boolean;
         title?: string;
         archived?: boolean;
         starred?: boolean;

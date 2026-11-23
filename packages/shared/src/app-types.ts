@@ -870,7 +870,14 @@ export interface SessionQueuedMessageSummary {
 /**
  * Lightweight session metadata response used for title/status refreshes.
  */
+export interface QuotaRecoveryStatus {
+  status: "preparing" | "queued" | "started" | "blocked";
+  target?: ProviderName;
+  successorSessionId?: string;
+  reason?: string;
+}
 export interface SessionMetadataResponse {
+  quotaRecovery?: QuotaRecoveryStatus;
   session: SessionMetadataPayload;
   ownership: SessionOwnership;
   processState: AgentActivity | null;

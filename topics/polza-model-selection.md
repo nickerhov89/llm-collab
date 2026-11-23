@@ -208,3 +208,39 @@ route, never the provider's raw error or private input/output.
 This helper does not migrate the running Cowork chat or its process. The native
 chat's model picker still uses the explicit context-handoff contract above;
 request-level Requesty Auto failover is a separate gateway behavior.
+
+## Server-owned quota continuation
+
+`POLZA_AUTO_QUOTA_RECOVERY=1` opts a Cowork deployment into the additive
+`/version.polzaQuotaRecovery` contract; vanilla deployments default off. A
+capable client persists the chat's Auto/manual choice as
+`quotaFailoverEnabled`. Old servers receive no new requirement. Explicit
+manual selection cancels a pending automatic recovery.
+
+Terminal `rate_limit` events use `QuotaRecoveryService`, not a watching tab.
+The route is the other authenticated native CLI first, then Requesty through
+the source-compatible gateway harness. Each accepted task has a durable claim
+in app data and a bounded family-attempt ledger. Repeated events and server
+restarts cannot blindly create another successor. An uncertain queue receipt
+requires review instead of an automatic replay.
+
+Continuations enter the existing Project Queue. It validates the current user
+turn, actual sender, fresh project grants, locked provider/model, plan and
+sandbox boundary before dispatch. Missing sender identity fails closed; the
+chat creator is never a fallback principal. The sender's UUID is retained by
+new workers, while older reload-safe workers can supply trusted buffered user
+metadata. The source automation is paused before handoff. The source chat is
+preserved and its metadata links the successor; no paid compaction request is
+sent to the exhausted provider.
+
+This deliberately stops for employee spending/policy limits, remote executor
+boundaries, inline media, or a failed turn that already produced substantive
+output/tools. Those need an explicit continuation checkpoint, not blind replay.
+See `gaps/polza-full-chat-quota-failover.md` for the remaining boundary.
+
+Verification on 2026-11-23 includes duplicate terminal events, restart-persistent
+family exhaustion, association before queue acknowledgement, cancelled claims,
+actual buffered input reconstruction, image-only input and revoked grants.
+Client picker/new-chat tests cover existing native escape paths. Desktop and
+phone notice captures live in `.artifacts/quota-recovery-20261123/ui/`; these
+are isolated component fixtures, not a live exhausted subscription.

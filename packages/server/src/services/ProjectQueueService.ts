@@ -597,8 +597,15 @@ function normalizeCreatedFrom(
   ) {
     throw new ProjectQueueValidationError("createdFrom.client is invalid");
   }
-  if (!sessionId && !client) return undefined;
+  const quotaRecoveryId = optionalString(
+    raw.quotaRecoveryId,
+    "createdFrom.quotaRecoveryId",
+  );
+  if (quotaRecoveryId && !/^[a-f0-9-]{36}$/i.test(quotaRecoveryId))
+    throw new ProjectQueueValidationError("Invalid quota recovery correlation");
+  if (!sessionId && !client && !quotaRecoveryId) return undefined;
   return {
+    ...(quotaRecoveryId ? { quotaRecoveryId } : {}),
     ...(sessionId ? { sessionId } : {}),
     ...(client ? { client } : {}),
   };

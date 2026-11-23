@@ -197,6 +197,13 @@ export function ModelSwitchModal({
   );
   const [savingServiceTier, setSavingServiceTier] = useState(false);
   const { version } = useVersion();
+  const saveAutoModel = async (enabled: boolean) => {
+    if (version?.polzaQuotaRecovery)
+      await api.updateSessionMetadata(sessionId, {
+        quotaFailoverEnabled: enabled,
+      });
+    setAutoModel(enabled);
+  };
   const supportsServiceTierChange = serverHasCapability(
     version,
     SERVER_CAPABILITIES.processServiceTierChange,
@@ -402,7 +409,7 @@ export function ModelSwitchModal({
         import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
         selectedModel !== currentModelId
       ) {
-        setAutoModel(isPolzaGatewayAuto(selectedModel));
+        await saveAutoModel(isPolzaGatewayAuto(selectedModel));
       }
       setThinkingMode(effectiveThinkingMode);
       setEffortLevel(effectiveEffortLevel);
@@ -578,7 +585,7 @@ export function ModelSwitchModal({
       });
       setThinkingMode(nextMode);
       setEffortLevel(nextEffort);
-      setAutoModel(isPolzaGatewayAuto(model.id));
+      await saveAutoModel(isPolzaGatewayAuto(model.id));
       onModelChanged(result);
       onClose();
     } catch (err) {
@@ -635,15 +642,23 @@ export function ModelSwitchModal({
           className="polza-model-menu-item"
           aria-current={autoModel ? "true" : undefined}
           disabled={switching}
-          onClick={() => {
+          onClick={async () => {
             if (provider === "codex-oss" || provider === "claude-gateway") {
               const auto = models.find((model) => isPolzaGatewayAuto(model.id));
               if (auto) void selectQuickModel(auto);
               else setError(t("modelSwitchLoadFailed"));
               return;
             }
-            setAutoModel(true);
-            onClose();
+            try {
+              await saveAutoModel(true);
+              onClose();
+            } catch (error) {
+              setSwitchError(
+                error instanceof Error
+                  ? error.message
+                  : t("modelSwitchChangeFailed"),
+              );
+            }
           }}
         >
           <span>Авто</span>
@@ -676,7 +691,7 @@ export function ModelSwitchModal({
                   throw new Error(t("polzaRouterUnavailable"));
                 }
                 await onSwitchProvider(target, model.id);
-                setAutoModel(true);
+                await saveAutoModel(true);
                 onClose();
               } catch (err) {
                 setSwitchError(

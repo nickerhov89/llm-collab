@@ -294,6 +294,7 @@ export function isUnchangedGlobalSessionsResponse(
 }
 
 export interface SessionOptions {
+  quotaFailoverEnabled?: boolean;
   routerAccountId?: string;
   routerPoolId?: string;
   routerPolicy?: string;
@@ -872,6 +873,7 @@ export const api = {
         serviceTier: options?.serviceTier,
         thinking: options?.thinking,
         showThinking: options?.showThinking,
+        quotaFailoverEnabled: options?.quotaFailoverEnabled,
         provider: options?.provider,
         computerControl: options?.computerControl,
         machineControl: options?.machineControl,
@@ -916,6 +918,7 @@ export const api = {
         serviceTier: options?.serviceTier,
         thinking: options?.thinking,
         showThinking: options?.showThinking,
+        quotaFailoverEnabled: options?.quotaFailoverEnabled,
         provider: options?.provider,
         computerControl: options?.computerControl,
         machineControl: options?.machineControl,
@@ -960,6 +963,7 @@ export const api = {
         serviceTier: options?.serviceTier,
         thinking: options?.thinking,
         showThinking: options?.showThinking,
+        quotaFailoverEnabled: options?.quotaFailoverEnabled,
         provider: options?.provider,
         computerControl: options?.computerControl,
         machineControl: options?.machineControl,
@@ -999,6 +1003,7 @@ export const api = {
         serviceTier: options?.serviceTier,
         thinking: options?.thinking,
         showThinking: options?.showThinking,
+        quotaFailoverEnabled: options?.quotaFailoverEnabled,
         provider: options?.provider,
         computerControl: options?.computerControl,
         machineControl: options?.machineControl,
@@ -1102,6 +1107,7 @@ export const api = {
         serviceTier: options?.serviceTier,
         thinking: options?.thinking,
         showThinking: options?.showThinking,
+        quotaFailoverEnabled: options?.quotaFailoverEnabled,
         provider: options?.provider,
         executor: options?.executor,
         sandboxLevel: options?.sandboxLevel,

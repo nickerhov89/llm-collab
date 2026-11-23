@@ -196,6 +196,7 @@ export interface SessionQueuePersistenceChangedEvent {
 
 /** Event emitted when session metadata changes (title, archived, starred) */
 export interface SessionMetadataChangedEvent {
+  quotaRecovery?: import("@yep-anywhere/shared").QuotaRecoveryStatus;
   nonHumanUserTurn?: NonHumanUserTurn | null;
   creationProvenance?: SessionCreationProvenance;
   type: "session-metadata-changed";

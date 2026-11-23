@@ -1,3 +1,4 @@
+import { QuotaRecoveryNotice } from "../components/QuotaRecoveryNotice";
 import {
   isPolzaAutoModel,
   autoModelForProvider,
@@ -2961,6 +2962,22 @@ function SessionPageContent({
         updatePendingMessage(tempId, { attachments: uploadedAttachments });
       }
 
+      if (
+        versionInfo?.polzaQuotaRecovery &&
+        !localControl &&
+        !preserveComposer &&
+        !routedSession
+      ) {
+        await api.updateSessionMetadata(actualSessionId, {
+          quotaFailoverEnabled: isPolzaAutoModel(
+            actualSessionId,
+            effectiveProvider,
+            effectiveModelConfig?.requestedModel ??
+              effectiveModelConfig?.model ??
+              effectiveModel,
+          ),
+        });
+      }
       let autoModel: string | undefined;
       if (
         import.meta.env.VITE_POLZA_ADMIN_UI === "true" &&
@@ -7486,6 +7503,13 @@ function SessionPageContent({
                 />
               )}
 
+              {versionInfo?.polzaQuotaRecovery && !routedSession && (
+                <QuotaRecoveryNotice
+                  sessionId={actualSessionId}
+                  projectId={projectId}
+                  basePath={basePath}
+                />
+              )}
               {/* No pending approval: show full message input */}
               {!(
                 pendingInputRequest &&
