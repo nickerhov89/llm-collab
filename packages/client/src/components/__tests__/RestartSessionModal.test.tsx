@@ -201,6 +201,48 @@ describe("RestartSessionModal", () => {
     expect(launch.allowAttachments).toBe(false);
   });
 
+  it.each(["claude", "codex"] as const)(
+    "keeps explicit %s handoffs separate from the source router model",
+    async (target) => {
+      renderModal({
+        provider: target === "claude" ? "codex-oss" : "claude-gateway",
+        preferredTargetProvider: target,
+        currentModel: "openrouter/auto",
+        pendingMessage: "Continue the unfinished task",
+      });
+      await waitFor(() => expect(formProps.current).not.toBeNull());
+      expect(formProps.current).toMatchObject({
+        preferredProvider: target,
+        preferredModel: undefined,
+        launch: { requirePreferredProvider: true },
+      });
+      expect(mockRestartSession).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(screen.getByTestId("seeded-message").textContent).toContain(
+          "Continue the unfinished task",
+        ),
+      );
+    },
+  );
+
+  it("restores the source model if a native handoff is changed to fork", async () => {
+    renderModal({
+      preferredTargetProvider: "codex",
+      currentModel: "sonnet",
+      providers: forkableProviders,
+    });
+    await screen.findByTestId("new-session-form");
+    fireEvent.click(
+      screen.getByRole("button", { name: "sessionRestartModeFork" }),
+    );
+    await waitFor(() =>
+      expect(formProps.current).toMatchObject({
+        preferredProvider: "claude",
+        preferredModel: "sonnet",
+      }),
+    );
+  });
+
   it("mutes the composer for fork and sends no handoff text", async () => {
     renderModal({ providers: forkableProviders });
     await screen.findByTestId("new-session-form");

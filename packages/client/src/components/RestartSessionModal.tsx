@@ -25,6 +25,12 @@ interface RestartSessionModalProps {
   /** The source session's project; the successor always lands in it. */
   project?: Project | null;
   provider: ProviderName;
+  /** Initial destination for a handoff launched from the model picker. */
+  preferredTargetProvider?: ProviderName;
+  /** Unsent source-composer text to include as the latest continuation request. */
+  pendingMessage?: string;
+  /** Separate draft identity when a handoff includes a pending source message. */
+  handoffDraftKey?: string;
   providerDisplayName?: string;
   providers?: ProviderInfo[];
   models?: ModelInfo[];
@@ -70,6 +76,9 @@ export function RestartSessionModal({
   sessionId,
   project,
   provider,
+  preferredTargetProvider,
+  pendingMessage = "",
+  handoffDraftKey,
   providerDisplayName,
   providers = [],
   models = [],
@@ -119,6 +128,19 @@ export function RestartSessionModal({
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
+  const seededHandoff = useMemo(() => {
+    if (draft === null) return "";
+    const pending = pendingMessage.trim();
+    if (!pending || draft.includes(pending)) return draft;
+    return [
+      draft,
+      `## ${t("polzaHandoffPendingTitle")}`,
+      t("polzaHandoffPendingInstructions"),
+      pending,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  }, [draft, pendingMessage, t]);
 
   // A popup must be opened inside the user gesture or the browser blocks it,
   // but the form's submit runs after its own awaits. Claim the window during
@@ -161,6 +183,7 @@ export function RestartSessionModal({
       })
       .catch((err) => {
         if (cancelled) return;
+        setDraft((current) => current ?? "");
         setDraftError(
           err instanceof Error ? err.message : t("sessionRestartFailed"),
         );
@@ -272,19 +295,28 @@ export function RestartSessionModal({
             projectId={projectId}
             selectedProject={project ?? null}
             autoFocus={!isFork}
-            preferredProvider={provider}
-            preferredModel={currentModel}
+            preferredProvider={
+              isFork ? provider : (preferredTargetProvider ?? provider)
+            }
+            preferredModel={
+              isFork ||
+              !preferredTargetProvider ||
+              preferredTargetProvider === provider
+                ? currentModel
+                : undefined
+            }
             preferredThinking={thinking}
             preferredPermissionMode={mode}
             preferredExecutor={executor}
             launch={{
-              draftKey: `draft-handoff:${sessionId}`,
-              initialMessage: draft ?? "",
+              draftKey: handoffDraftKey ?? `draft-handoff:${sessionId}`,
+              initialMessage: seededHandoff,
               fixedProject: true,
               allowAttachments: false,
               allowProjectQueue: false,
               composer: isFork ? "muted" : "editable",
               fixedProviderModel: isFork,
+              requirePreferredProvider: !isFork && !!preferredTargetProvider,
               startLabel: isFork
                 ? t("sessionRestartStartFork")
                 : t("sessionRestartStart"),

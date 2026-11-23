@@ -1527,6 +1527,35 @@ describe("NewSessionForm", () => {
     );
   });
 
+  it("does not replace an explicit native destination with a partial catalog default", async () => {
+    serverSettingsState.isLoading = false;
+    providersState.providers = providersState.providers.filter(
+      (row) => row.name === "claude",
+    );
+    providerRowState.refreshing = true;
+    providerRowState.fresh = false;
+    const submit = vi.fn(async () => {});
+    render(
+      <NewSessionForm
+        projectId="project-1"
+        selectedProject={chooserProjects[0]}
+        preferredProvider="codex"
+        launch={{
+          draftKey: "native-handoff-partial",
+          initialMessage: "Prepared handoff",
+          requirePreferredProvider: true,
+          fixedProject: true,
+          submit,
+        }}
+      />,
+    );
+    await screen.findByDisplayValue("Prepared handoff");
+    await waitFor(() =>
+      expect(selectedDropdownValue("newSessionProviderTitle")).toBe("codex"),
+    );
+    expect(submit).not.toHaveBeenCalled();
+  });
+
   it("reuses new-session selection semantics for a seeded launch", async () => {
     const submit = vi.fn(async () => {});
     const codexProvider = providersState.providers.find(

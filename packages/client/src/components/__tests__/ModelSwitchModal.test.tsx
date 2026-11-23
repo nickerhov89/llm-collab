@@ -88,6 +88,76 @@ describe("ModelSwitchModal", () => {
     mockVersion.current = { capabilities: [] };
   });
 
+  it.each(["claude", "codex"] as const)(
+    "opens %s handoff even while the router catalog never resolves",
+    (target) => {
+      vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+      mockGetProcessModels.mockReturnValue(new Promise(() => {}));
+      const handoff = vi.fn();
+      const close = vi.fn();
+      render(
+        <ModelSwitchModal
+          sessionId="session-1"
+          processId="process-1"
+          sessionProvider="claude-gateway"
+          onModelChanged={vi.fn()}
+          onClose={close}
+          onHandoffProvider={handoff}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name:
+            target === "claude"
+              ? "polzaHandoffToClaude"
+              : "polzaHandoffToCodex",
+        }),
+      );
+      expect(handoff).toHaveBeenCalledWith(target);
+      expect(close).toHaveBeenCalledOnce();
+      expect(mockGetProvider).not.toHaveBeenCalled();
+      expect(mockSetProcessConfig).not.toHaveBeenCalled();
+    },
+  );
+
+  it("abandons a pending router probe when the user chooses a native handoff", async () => {
+    vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
+    let resolve!: (value: unknown) => void;
+    mockGetProvider.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const switchProvider = vi.fn();
+    const handoff = vi.fn();
+    render(
+      <ModelSwitchModal
+        sessionId="session-1"
+        processId="process-1"
+        sessionProvider="claude"
+        onModelChanged={vi.fn()}
+        onClose={vi.fn()}
+        onSwitchProvider={switchProvider}
+        onHandoffProvider={handoff}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "OpenRouter" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "polzaHandoffToCodex" }),
+    );
+    expect(handoff).toHaveBeenCalledWith("codex");
+    resolve({
+      provider: {
+        enabled: true,
+        installed: true,
+        authenticated: true,
+        models: [{ id: "openrouter/auto", name: "Auto" }],
+      },
+    });
+    await waitFor(() => expect(mockGetProvider).toHaveBeenCalledOnce());
+    expect(switchProvider).not.toHaveBeenCalled();
+  });
+
   it("keeps the picker open and the prior routing choice when an in-place switch is rejected", async () => {
     vi.stubEnv("VITE_POLZA_ADMIN_UI", "true");
     localStorage.setItem("polza-model-routing:session-1", "manual");

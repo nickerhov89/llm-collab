@@ -13,6 +13,7 @@ import type {
   EffortLevel,
   PermissionMode,
   PromptSuggestionMode,
+  ProviderInfo,
   ProviderName,
   ProjectQueueItemSummary,
   ProjectQueueStagedAttachments,
@@ -434,6 +435,34 @@ function requiresHandoffAfterClaudeResumeError(
   return (
     message.includes("Start a handoff session") ||
     message.includes("API error: 409")
+  );
+}
+
+/** Prefer an authenticated provider outside the source provider's quota family. */
+function recoveryHandoffProvider(
+  source: ProviderName | undefined,
+  providers: ProviderInfo[],
+): ProviderName | undefined {
+  const sourceFamily: ProviderName | undefined = isClaudeProviderName(source)
+    ? "claude"
+    : source === "codex" || source === "codex-oss"
+      ? "codex"
+      : undefined;
+  const otherFamily: ProviderName =
+    sourceFamily === "claude" ? "codex" : "claude";
+  const candidates: ProviderName[] = [
+    otherFamily,
+    ...(sourceFamily ? [sourceFamily] : []),
+  ];
+  return candidates.find((name) =>
+    providers.some(
+      (provider) =>
+        provider.name === name &&
+        provider.enabled &&
+        provider.installed &&
+        provider.authenticated &&
+        (provider.models?.length ?? 0) > 0,
+    ),
   );
 }
 
@@ -2640,6 +2669,41 @@ function SessionPageContent({
     setShowModelSwitchModal(true);
   }, []);
   const [showHandoffModal, setShowHandoffModal] = useState(false);
+  const [handoffTargetProvider, setHandoffTargetProvider] = useState<
+    ProviderName | undefined
+  >();
+  const [handoffPendingMessage, setHandoffPendingMessage] = useState("");
+  const [handoffDraftKey, setHandoffDraftKey] = useState<string>();
+  const handoffDraftKeyRef = useRef<{
+    sessionId: string;
+    message: string;
+    key: string;
+  } | null>(null);
+  const openHandoffModal = useCallback(
+    (target?: ProviderName, pendingMessage?: string) => {
+      const pending =
+        pendingMessage ?? draftControlsRef.current?.getDraft?.() ?? "";
+      const existing = handoffDraftKeyRef.current;
+      const key = pending.trim()
+        ? existing?.sessionId === actualSessionId &&
+          existing.message === pending
+          ? existing.key
+          : `draft-handoff:${actualSessionId}:${generateUUID()}`
+        : `draft-handoff:${actualSessionId}`;
+      if (pending.trim() && existing?.key !== key) {
+        handoffDraftKeyRef.current = {
+          sessionId: actualSessionId,
+          message: pending,
+          key,
+        };
+      }
+      setHandoffTargetProvider(target);
+      setHandoffPendingMessage(pending);
+      setHandoffDraftKey(key);
+      setShowHandoffModal(true);
+    },
+    [actualSessionId],
+  );
 
   // Track user engagement to mark session as "seen"
   // Only enabled when not in external session (we own or it's idle)
@@ -3187,7 +3251,11 @@ function SessionPageContent({
         requiresHandoffAfterClaudeResumeError(finalError, effectiveProvider)
       ) {
         // A routed session cannot hand off yet, so offer no handoff modal.
-        if (!routedSession) setShowHandoffModal(true);
+        if (!routedSession)
+          openHandoffModal(
+            recoveryHandoffProvider(effectiveProvider, providers),
+            outgoingText,
+          );
         showToast(
           routedSession
             ? t("routedSessionHandoffRequired")
@@ -3730,7 +3798,11 @@ function SessionPageContent({
         requiresHandoffAfterClaudeResumeError(finalError, effectiveProvider)
       ) {
         // A routed session cannot hand off yet, so offer no handoff modal.
-        if (!routedSession) setShowHandoffModal(true);
+        if (!routedSession)
+          openHandoffModal(
+            recoveryHandoffProvider(effectiveProvider, providers),
+            outgoingText,
+          );
         showToast(
           routedSession
             ? t("routedSessionHandoffRequired")
@@ -6721,7 +6793,7 @@ function SessionPageContent({
                   onRestoreWarnings={handleRestorePendingElsewhereWarning}
                   onHandoff={
                     effectiveProvider && !routedSession
-                      ? () => setShowHandoffModal(true)
+                      ? () => openHandoffModal()
                       : undefined
                   }
                   onClear={() => {
@@ -6901,6 +6973,11 @@ function SessionPageContent({
                   }
                 : undefined
             }
+            onHandoffProvider={
+              !routedSession && effectiveProvider
+                ? (target) => openHandoffModal(target)
+                : undefined
+            }
             guardEffortChange={guardEffortChange}
             initialTab={modelPanelInitialTab}
             infoPane={
@@ -6952,6 +7029,9 @@ function SessionPageContent({
             projectId={projectId}
             sessionId={actualSessionId}
             provider={effectiveProvider}
+            preferredTargetProvider={handoffTargetProvider}
+            pendingMessage={handoffPendingMessage}
+            handoffDraftKey={handoffDraftKey}
             providerDisplayName={currentProviderInfo?.displayName}
             providers={providers}
             models={currentProviderInfo?.models}
@@ -6963,6 +7043,9 @@ function SessionPageContent({
             providerRuntimeStatus={providerRuntimeStatus}
             onRestarted={(result, options) => {
               setShowHandoffModal(false);
+              setHandoffTargetProvider(undefined);
+              setHandoffPendingMessage("");
+              setHandoffDraftKey(undefined);
               showToast(t("sessionHandoffStarted"), "success");
               const handoffUrl = `${basePath}/projects/${projectId}/sessions/${result.sessionId}`;
               const handoffHref = toBrowserAppHref(handoffUrl);
@@ -6990,7 +7073,12 @@ function SessionPageContent({
                 }),
               });
             }}
-            onClose={() => setShowHandoffModal(false)}
+            onClose={() => {
+              setShowHandoffModal(false);
+              setHandoffTargetProvider(undefined);
+              setHandoffPendingMessage("");
+              setHandoffDraftKey(undefined);
+            }}
           />
         )}
 

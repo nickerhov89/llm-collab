@@ -30,3 +30,16 @@ checks can run against the existing dependencies with
 The previously recorded full-suite failures/time budget in
 [chat execution validation](polza-chat-execution-validation-20261118.md) remain outside
 this standalone gateway fix; full-suite success is not claimed here.
+
+## Native CLI handoffs — 2026-11-23
+
+Scoped picker, restart form and new-session suites pass (141 tests); client
+TypeScript and the Polza production bundle pass. The scoped Biome check still
+reports existing `NewSessionForm.tsx` accessibility findings: `autoFocus` on the
+project-search input and the decorative hero SVG without a title. Neither
+finding is in a changed line. No baseline or unrelated UI was changed.
+
+Native escape actions no longer wait on router catalogs. A late router probe
+must not apply after a native handoff was chosen; a partial aggregate catalog
+must not silently replace the explicit destination with another provider.
+Native installation, authentication, grant and sandbox checks remain enforced.

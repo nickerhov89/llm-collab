@@ -96,6 +96,8 @@ interface ModelSwitchModalProps {
    */
   onActivate?: () => Promise<void>;
   onSwitchProvider?: (provider: ProviderName, model: string) => Promise<void>;
+  /** Start a new native-provider session seeded with the current chat handoff. */
+  onHandoffProvider?: (provider: ProviderName) => void;
   onClose: () => void;
 }
 
@@ -139,6 +141,7 @@ export function ModelSwitchModal({
   initialTab,
   onActivate,
   onSwitchProvider,
+  onHandoffProvider,
   onClose,
 }: ModelSwitchModalProps) {
   const { t } = useI18n();
@@ -658,6 +661,7 @@ export function ModelSwitchModal({
               setSwitchError(null);
               try {
                 const { provider: info } = await api.getProvider(target);
+                if (dismissedRef.current) return;
                 const model = info.models?.find(
                   (m) =>
                     m.id === "openrouter/auto" ||
@@ -685,7 +689,11 @@ export function ModelSwitchModal({
               }
             }}
           >
-            <span>{switching ? t("polzaRouterSwitching") : "OpenRouter"}</span>
+            <span>
+              {switching
+                ? t("polzaRouterSwitching")
+                : import.meta.env.VITE_POLZA_ROUTER_LABEL || "OpenRouter"}
+            </span>
             <span aria-hidden="true">
               {sessionProvider === "claude-gateway" ||
               sessionProvider === "codex-oss"
@@ -693,6 +701,36 @@ export function ModelSwitchModal({
                 : ""}
             </span>
           </button>
+        )}
+        {onHandoffProvider && (
+          <>
+            <div className="polza-model-menu-heading">
+              {t("polzaDirectProviders")}
+            </div>
+            {(
+              [
+                ["claude", "polzaHandoffToClaude"],
+                ["codex", "polzaHandoffToCodex"],
+              ] as const
+            ).map(([target, labelKey]) => (
+              <button
+                key={target}
+                type="button"
+                className="polza-model-menu-item"
+                onClick={() => {
+                  // Opening a native escape path must not wait for the source
+                  // model catalog or an in-flight router switch. The handoff
+                  // form and server validate the destination before launch.
+                  dismissedRef.current = true;
+                  onHandoffProvider(target);
+                  onClose();
+                }}
+              >
+                <span>{t(labelKey)}</span>
+                <span aria-hidden="true">›</span>
+              </button>
+            ))}
+          </>
         )}
         {switchError && (
           <div className="polza-model-menu-message" role="alert">

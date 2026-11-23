@@ -414,6 +414,8 @@ export interface NewSessionFormProps {
      * the choice would only invite a request the server refuses.
      */
     fixedProviderModel?: boolean;
+    /** Keep an explicit handoff destination visible while its row loads. */
+    requirePreferredProvider?: boolean;
     submit: (request: {
       message: string;
       options: SessionOptions;
@@ -1301,14 +1303,19 @@ export function NewSessionForm({
     fork: t("recapAfterSecondsInlineFork"),
   };
 
-  const providerChoices = (providerDescriptors ?? providers).map(
-    (descriptor) => ({
-      ...descriptor,
-      ...(descriptor.name === selectedProvider
-        ? selectedProviderInfo
-        : providers.find((provider) => provider.name === descriptor.name)),
-    }),
-  );
+  const catalogChoices = providerDescriptors ?? providers;
+  const destinationChoices =
+    launch?.requirePreferredProvider &&
+    selectedProvider &&
+    !catalogChoices.some((row) => row.name === selectedProvider)
+      ? [...catalogChoices, unprobedProviderRow(selectedProvider)]
+      : catalogChoices;
+  const providerChoices = destinationChoices.map((descriptor) => ({
+    ...descriptor,
+    ...(descriptor.name === selectedProvider
+      ? selectedProviderInfo
+      : providers.find((provider) => provider.name === descriptor.name)),
+  }));
   const routerEnabled =
     serverHasCapability(
       versionInfo,
@@ -2056,7 +2063,8 @@ export function NewSessionForm({
       // An explicit caller preference (e.g. "clear" from an existing session)
       // outranks saved new-session defaults.
       const requestedProviderName =
-        preferredProvider && isSelectable(preferredProvider)
+        preferredProvider &&
+        (launch?.requirePreferredProvider || isSelectable(preferredProvider))
           ? preferredProvider
           : null;
       const savedProviderName =
@@ -2066,7 +2074,9 @@ export function NewSessionForm({
           : null);
       const initialProvider =
         providerRows.find((p) => p.name === savedProviderName) ??
-        getDefaultLaunchableProvider(providerRows) ??
+        (launch?.requirePreferredProvider && requestedProviderName
+          ? unprobedProviderRow(requestedProviderName)
+          : getDefaultLaunchableProvider(providerRows)) ??
         (catalogKnown
           ? null
           : unprobedProviderRow(savedProviderName ?? DEFAULT_PROVIDER));
@@ -2163,6 +2173,7 @@ export function NewSessionForm({
       supportsSessionSandboxing,
       getLegacyProviderDefaultSeed,
       preferredProvider,
+      launch?.requirePreferredProvider,
       preferredModel,
       preferredThinking,
       preferredPermissionMode,

@@ -15,6 +15,21 @@ create, fork, hand off, rewrite a transcript, or navigate to a new-session URL.
 Other native transcript families do not offer this action. The connected
 process provider is authoritative in every watching tab.
 
+The Polza model menu always exposes direct Claude and Codex handoff actions,
+independent of source catalog loading/errors or a pending router probe. Opening
+one abandons a pending probe before it can switch the source. The destination
+form retains the explicitly chosen native provider through partial catalogs and
+does not reuse an incompatible source-provider model ID. Installation, auth,
+model availability, permissions and sandbox checks still apply at launch. These
+start a successor chat through the existing handoff flow, seeded with the
+current chat's prepared context; they do not reinterpret or continue the source
+provider's native transcript. OpenRouter remains the same-session gateway path.
+When a Claude/Codex API-error tail blocks resume, recovery opens that handoff
+with an authenticated provider from the other quota family selected when
+available. Any still-unsent composer text is included as the latest request so
+the successor does not lose the task that triggered recovery. Starting it still
+requires the user's explicit submit in the handoff form.
+
 The client requires the existing message-less reactivation capability. Before
 switching it fetches the target provider catalog and requires an authenticated,
 enabled installation advertising `openrouter/auto` (including service-qualified
