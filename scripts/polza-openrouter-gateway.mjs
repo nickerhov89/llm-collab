@@ -12,9 +12,13 @@ import {
 
 import {
   createLimitCooldowns,
+  readCreditBudgetLimit,
+  affordableOutputRetry,
   observeLimitEvents,
   sendLimitResponse,
 } from "./polza-openrouter-limits.mjs";
+
+import { requestyCatalog, requestyRequest } from "./polza-requesty-compat.mjs";
 
 const host = "127.0.0.1";
 const port = Number(process.env.OPENROUTER_GATEWAY_PORT ?? "3451");
@@ -137,12 +141,16 @@ function normalizeNativeResponseHistory(input) {
 
 export function createOpenRouterGateway({
   upstreamBase = "https://openrouter.ai/api",
+  upstreamKind = "openrouter",
   cacheTtlMs = 300000,
   catalogTimeoutMs = 4000,
   autoAllowedModels = [],
   autoImageAllowedModels = [],
+  autoCostTier,
+  autoBudgetModel,
   defaultMaxOutputTokens = 0,
   limitCooldowns = false,
+  adaptOutputBudget = false,
   getCatalogToken,
   refreshIntervalMs = 0,
   now = Date.now,
@@ -152,6 +160,13 @@ export function createOpenRouterGateway({
     defaultMaxOutputTokens < 0
   )
     throw new Error("Invalid default output-token limit");
+  if (
+    autoCostTier !== undefined &&
+    !["low", "medium", "high"].includes(autoCostTier)
+  )
+    throw new Error("Invalid Auto cost tier");
+  const requesty = upstreamKind === "requesty";
+  const providerLabel = requesty ? "Requesty" : "OpenRouter";
   const cooldowns = createLimitCooldowns(now);
   const allowedModels = [
     ...new Set(autoAllowedModels.map((id) => id.trim())),
@@ -172,6 +187,7 @@ export function createOpenRouterGateway({
     attemptedAt,
     lastError,
     source: getCatalogToken ? "account" : "public",
+    provider: providerLabel,
     refreshIntervalMs,
     refreshing: !!refreshing,
   });
@@ -183,14 +199,15 @@ export function createOpenRouterGateway({
       if (getCatalogToken && !token)
         throw new Error("Missing catalog credential");
       const upstream = await fetch(
-        `${upstreamBase}/v1/models${token ? "/user" : ""}`,
+        `${upstreamBase}/v1/models${token && !requesty ? "/user" : ""}`,
         {
           ...(token ? { headers: { authorization: `Bearer ${token}` } } : {}),
           signal: AbortSignal.timeout(catalogTimeoutMs),
         },
       );
       if (!upstream.ok) throw new Error(`Catalog HTTP ${upstream.status}`);
-      const data = (await upstream.json()).data;
+      let data = (await upstream.json()).data;
+      if (requesty && Array.isArray(data)) data = requestyCatalog(data);
       if (!Array.isArray(data)) throw new Error("Invalid model catalog");
       const seen = new Set();
       const next = data
@@ -214,6 +231,14 @@ export function createOpenRouterGateway({
           name: row.name || row.id,
           object: "model",
           owned_by: row.id.split("/")[0],
+          ...(requesty
+            ? {
+                pricing: row.pricing,
+                context_length: row.context_length,
+                architecture: row.architecture,
+                supported_parameters: row.supported_parameters,
+              }
+            : {}),
           ...(Array.isArray(row.architecture?.input_modalities)
             ? {
                 input_modalities: row.architecture.input_modalities.filter(
@@ -231,7 +256,7 @@ export function createOpenRouterGateway({
       if (!seen.has("openrouter/auto"))
         next.unshift({
           id: "openrouter/auto",
-          name: "OpenRouter Auto",
+          name: `${providerLabel} Auto`,
           object: "model",
           owned_by: "openrouter",
         });
@@ -301,7 +326,7 @@ export function createOpenRouterGateway({
         res.end(
           JSON.stringify({
             error: {
-              message: "OpenRouter model catalog temporarily unavailable",
+              message: `${providerLabel} model catalog temporarily unavailable`,
             },
           }),
         );
@@ -320,8 +345,8 @@ export function createOpenRouterGateway({
       // Claude Gateway deliberately sends a dummy local credential. Resolve the
       // operator's existing OpenRouter credential here, never in browser state.
       const token =
-        req.headers.authorization === "Bearer dummy"
-          ? await operatorToken()
+        requesty || req.headers.authorization === "Bearer dummy"
+          ? await (getCatalogToken ?? operatorToken)()
           : req.headers.authorization.slice(7);
       if (!token || token === "dummy")
         throw new Error("Missing gateway credential");
@@ -336,6 +361,11 @@ export function createOpenRouterGateway({
       let body = req;
       let legacyExec = false;
       let requestedModel;
+      let inferenceInput;
+      let requestySource;
+      let requestySelectedModel;
+      let quotaFallbackModel;
+      let autoPolicyInjected = false;
       if (
         (allowedModels.length ||
           imageAllowedModels.length ||
@@ -375,6 +405,7 @@ export function createOpenRouterGateway({
           );
           return;
         }
+        inferenceInput = input;
         requestedModel =
           typeof input.model === "string"
             ? input.model.slice(0, 300)
@@ -382,7 +413,7 @@ export function createOpenRouterGateway({
         if (limitCooldowns && requestedModel) {
           const blocked = cooldowns.get(token, requestedModel);
           if (blocked) {
-            sendLimitResponse(res, blocked);
+            sendLimitResponse(res, blocked, providerLabel);
             return;
           }
         }
@@ -402,6 +433,7 @@ export function createOpenRouterGateway({
         // This is an operator opt-in for Auto only, never an explicit-model
         // fallback. Preserve narrower or otherwise explicit per-request policy.
         if (
+          !requesty &&
           (allowedModels.length || imageAllowedModels.length) &&
           input.model === "openrouter/auto" &&
           !input.plugins?.some((plugin) => plugin.id === "auto-router")
@@ -422,45 +454,208 @@ export function createOpenRouterGateway({
             );
             return;
           }
+          autoPolicyInjected = true;
           input.plugins = [
             ...(input.plugins ?? []),
-            { id: "auto-router", allowed_models: pool },
+            {
+              id: "auto-router",
+              allowed_models: pool,
+              ...(autoCostTier ? { cost_tier: autoCostTier } : {}),
+            },
           ];
+          changed = true;
+        }
+        if (requesty) {
+          if (!models.length) await refreshModels();
+          try {
+            requestySource = input;
+            input = requestyRequest(input, {
+              models: ["openrouter/auto", "requesty/auto"].includes(
+                requestedModel,
+              )
+                ? models.filter((m) => !cooldowns.get(token, m.id))
+                : models,
+              autoModels: allowedModels,
+              imageModels: imageAllowedModels,
+              imageInput: hasImageInput(input),
+            });
+            requestySelectedModel = input.model;
+          } catch (error) {
+            if (["openrouter/auto", "requesty/auto"].includes(requestedModel)) {
+              const pool = hasImageInput(requestySource)
+                ? imageAllowedModels
+                : allowedModels;
+              const blocked = pool
+                .map((id) => cooldowns.get(token, id))
+                .filter(Boolean)
+                .sort((a, b) => a.retryAfter - b.retryAfter)[0];
+              if (blocked) {
+                sendLimitResponse(res, blocked, providerLabel);
+                return;
+              }
+            }
+            res.writeHead(422, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: { message: error.message } }));
+            return;
+          }
           changed = true;
         }
         if (changed) body = JSON.stringify(input);
       }
-      const upstream = await fetch(`${upstreamBase}${req.url}`, {
-        method: req.method,
-        headers,
-        ...(req.method === "GET" || req.method === "HEAD"
-          ? {}
-          : { body, duplex: "half" }),
-        signal: AbortSignal.timeout(300_000),
-      });
+      const forward = () =>
+        fetch(`${upstreamBase}${req.url}`, {
+          method: req.method,
+          headers,
+          ...(req.method === "GET" || req.method === "HEAD"
+            ? {}
+            : { body, duplex: "half" }),
+          signal: AbortSignal.timeout(300_000),
+        });
+      let upstream = await forward();
+      if (
+        requesty &&
+        limitCooldowns &&
+        requestySource &&
+        ["openrouter/auto", "requesty/auto"].includes(requestedModel) &&
+        upstream.status === 429
+      ) {
+        // Only an HTTP rejection before any accepted stream can be retried.
+        // Keep the entire replay and tool declarations; try one other allowed
+        // model, never another account or an explicit manual choice.
+        cooldowns.note(
+          token,
+          requestySelectedModel,
+          429,
+          upstream.headers.get("retry-after"),
+        );
+        let retry;
+        try {
+          retry = requestyRequest(requestySource, {
+            models: models.filter(
+              (m) =>
+                m.id !== requestySelectedModel && !cooldowns.get(token, m.id),
+            ),
+            autoModels: allowedModels,
+            imageModels: imageAllowedModels,
+            imageInput: hasImageInput(requestySource),
+          });
+        } catch {
+          /* No compatible permitted alternative: preserve the refusal. */
+        }
+        if (retry) {
+          await upstream.body?.cancel();
+          console.info(
+            `${providerLabel} quota fallback`,
+            JSON.stringify({
+              from: requestySelectedModel,
+              to: retry.model,
+              status: 429,
+            }),
+          );
+          requestySelectedModel = retry.model;
+          quotaFallbackModel = retry.model;
+          body = JSON.stringify(retry);
+          upstream = await forward();
+        }
+      }
+      let outputBudget = limitCooldowns
+        ? await readCreditBudgetLimit(upstream)
+        : null;
+      let retryInput = adaptOutputBudget
+        ? affordableOutputRetry(inferenceInput, outputBudget)
+        : null;
+      const budgetPool = hasImageInput(inferenceInput ?? {})
+        ? imageAllowedModels
+        : allowedModels;
+      if (
+        adaptOutputBudget &&
+        outputBudget?.canAdapt &&
+        autoPolicyInjected &&
+        autoBudgetModel &&
+        budgetPool.includes(autoBudgetModel)
+      ) {
+        // Auto authorizes a model decision inside the operator's pool. A
+        // rejected preflight may use its explicitly configured cheap route;
+        // manual models and caller-supplied router policies never take this lane.
+        const tokenField = [
+          "max_tokens",
+          "max_output_tokens",
+          "max_completion_tokens",
+        ].filter((name) => Object.hasOwn(inferenceInput, name));
+        if (tokenField.length === 1) {
+          const field = tokenField[0];
+          const cap = Math.min(
+            retryInput?.[field] ?? inferenceInput[field],
+            4096,
+          );
+          if (
+            Number.isSafeInteger(cap) &&
+            cap >= 128 &&
+            !(
+              inferenceInput.thinking?.type === "enabled" &&
+              inferenceInput.thinking.budget_tokens >= cap
+            )
+          )
+            retryInput = {
+              ...inferenceInput,
+              model: autoBudgetModel,
+              [field]: cap,
+              plugins: inferenceInput.plugins.filter(
+                (plugin) => plugin.id !== "auto-router",
+              ),
+            };
+        }
+      }
+      if (upstream.status === 402 && limitCooldowns) {
+        console.info(
+          `${providerLabel} output budget`,
+          JSON.stringify({
+            recognized: Boolean(outputBudget),
+            requested: outputBudget?.requestedTokens,
+            affordable: outputBudget?.affordableTokens,
+            retry: Boolean(retryInput),
+          }),
+        );
+      }
+      if (retryInput) {
+        // HTTP 402 platform preflight produced no model output or tool action.
+        // Resubmit once, changing only the output ceiling; never retry an SSE error.
+        body = JSON.stringify(retryInput);
+        upstream = await forward();
+        outputBudget = await readCreditBudgetLimit(upstream);
+      }
       if (
         limitCooldowns &&
         requestedModel &&
         [402, 429].includes(upstream.status)
       ) {
-        const blocked = cooldowns.note(
-          token,
-          requestedModel,
-          upstream.status,
-          upstream.headers.get("retry-after"),
-        );
+        // An unaffordable reservation is request-specific: smaller requests
+        // can still run. Do not cache it as an account-wide outage.
+        const blocked = outputBudget
+          ? { status: 402, retryAfter: 0, outputBudget }
+          : cooldowns.note(
+              token,
+              requestySelectedModel ?? requestedModel,
+              upstream.status,
+              upstream.headers.get("retry-after"),
+            );
         await upstream.body?.cancel();
-        sendLimitResponse(res, blocked);
+        sendLimitResponse(res, blocked, providerLabel);
         return;
       }
       // Transport metadata only: never log prompts, request headers or tokens.
       console.info(
-        "OpenRouter response",
+        `${providerLabel} response`,
         req.method,
         req.url.split("?")[0],
         upstream.status,
       );
-      const responseHeaders = {};
+      const responseHeaders = quotaFallbackModel
+        ? {
+            "x-polza-route-fallback": "quota",
+            "x-polza-route-model": quotaFallbackModel,
+          }
+        : {};
       for (const name of ["content-type", "cache-control", "x-request-id"]) {
         const value = upstream.headers.get(name);
         if (value) responseHeaders[name] = value;
@@ -499,7 +694,7 @@ export function createOpenRouterGateway({
         res.writeHead(502, { "content-type": "application/json" });
         res.end(
           JSON.stringify({
-            error: { message: "OpenRouter gateway request failed" },
+            error: { message: `${providerLabel} gateway request failed` },
           }),
         );
       } else res.destroy();
@@ -534,7 +729,14 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const server = createOpenRouterGateway({
+    upstreamKind: process.env.POLZA_ROUTER_UPSTREAM_KIND ?? "openrouter",
+    upstreamBase:
+      process.env.POLZA_ROUTER_UPSTREAM_BASE ?? "https://openrouter.ai/api",
     limitCooldowns: true,
+    adaptOutputBudget: process.env.POLZA_OPENROUTER_ADAPT_OUTPUT_BUDGET === "1",
+    autoCostTier: process.env.POLZA_OPENROUTER_AUTO_COST_TIER || undefined,
+    autoBudgetModel:
+      process.env.POLZA_OPENROUTER_AUTO_BUDGET_MODEL || undefined,
     defaultMaxOutputTokens: Number(
       process.env.POLZA_OPENROUTER_DEFAULT_MAX_OUTPUT_TOKENS ?? "8192",
     ),

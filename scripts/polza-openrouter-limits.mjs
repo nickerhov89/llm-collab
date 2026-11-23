@@ -45,7 +45,7 @@ export function createLimitCooldowns(now = Date.now) {
   }
   return { get, note };
 }
-export function sendLimitResponse(res, entry) {
+export function sendLimitResponse(res, entry, providerLabel = "OpenRouter") {
   res.writeHead(entry.status, {
     "content-type": "application/json",
     "cache-control": "no-store",
@@ -59,9 +59,13 @@ export function sendLimitResponse(res, entry) {
         code:
           entry.status === 429 ? "rate_limit_exceeded" : "insufficient_credits",
         message:
-          entry.status === 402
-            ? "OpenRouter: исчерпан доступный баланс или лимит расходов аккаунта. Чат сохранён. Пополните баланс или дождитесь освобождения резерва и повторите сообщение в этом чате."
-            : `OpenRouter: временный лимит запросов. Повторите сообщение в этом чате через ${entry.retryAfter} сек.`,
+          entry.outputBudget?.kind === "input"
+            ? `${providerLabel} отклонил стоимость контекста: ${entry.outputBudget.requestedTokens} токенов при доступном лимите ${entry.outputBudget.affordableTokens} для этого запроса. Выберите более дешёвую модель или пополните баланс. История не обрезана; другие запросы не заблокированы.`
+            : entry.outputBudget
+              ? `${providerLabel} отклонил резерв ответа: запрошено ${entry.outputBudget.requestedTokens} токенов, доступно до ${entry.outputBudget.affordableTokens}. Уменьшите max_tokens или пополните общий баланс. Чат сохранён; другие запросы не заблокированы.`
+              : entry.status === 402
+                ? `${providerLabel}: исчерпан доступный баланс или лимит расходов аккаунта. Чат сохранён. Пополните баланс или дождитесь освобождения резерва и повторите сообщение в этом чате.`
+                : `${providerLabel}: временный лимит запросов. Повторите сообщение в этом чате через ${entry.retryAfter} сек.`,
         retry_after: entry.retryAfter,
       },
     }),
@@ -107,4 +111,79 @@ export function observeLimitEvents(onLimit) {
       callback();
     },
   });
+}
+
+/** Read only a bounded pre-generation credit error; never retain its text or URLs. */
+export async function readCreditBudgetLimit(response) {
+  if (response.status !== 402 || !response.body) return null;
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  let complete = false;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        complete = true;
+        break;
+      }
+      size += value.byteLength;
+      if (size > 65536) return null;
+      chunks.push(Buffer.from(value));
+    }
+    const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    const message = data.error?.message;
+    if (typeof message !== "string") return null;
+    const match = message.match(
+      /requested up to (\d+) tokens, but can only afford (\d+)/i,
+    );
+    const inputMatch = message.match(
+      /Prompt tokens limit exceeded:\s*(\d+)\s*>\s*(\d+)/i,
+    );
+    if (!match && !inputMatch) return null;
+    const counts = match ?? inputMatch;
+    const requestedTokens = Number(counts[1]);
+    const affordableTokens = Number(counts[2]);
+    if (
+      !Number.isSafeInteger(requestedTokens) ||
+      !Number.isSafeInteger(affordableTokens) ||
+      requestedTokens <= affordableTokens ||
+      affordableTokens < 0
+    )
+      return null;
+    return {
+      requestedTokens,
+      affordableTokens,
+      kind: match ? "output" : "input",
+      // Only this platform preflight is safe for a single automatic resubmit.
+      canAdapt: data.metadata?.limit_source === "openrouter_credits",
+    };
+  } catch {
+    return null;
+  } finally {
+    if (!complete) void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
+
+export function affordableOutputRetry(input, limit) {
+  if (!input || !limit?.canAdapt || limit.kind === "input") return null;
+  const fields = [
+    "max_tokens",
+    "max_output_tokens",
+    "max_completion_tokens",
+  ].filter((name) => Object.hasOwn(input, name));
+  if (fields.length !== 1) return null;
+  const field = fields[0];
+  const original = input[field];
+  const capped = Math.floor((limit.affordableTokens * 0.95) / 128) * 128;
+  if (!Number.isSafeInteger(original) || capped < 128 || capped >= original)
+    return null;
+  // Do not silently change an explicit reasoning budget to make it fit.
+  if (
+    input.thinking?.type === "enabled" &&
+    input.thinking.budget_tokens >= capped
+  )
+    return null;
+  return { ...input, [field]: capped };
 }
