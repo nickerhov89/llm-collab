@@ -1,4 +1,10 @@
 import { test } from "node:test";
+import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import {
   chooseRoute,
@@ -293,4 +299,128 @@ test("a failed external review can escalate once and preserve the task identity"
   assert.equal(result.selected.model, "gpt-6.1-sol");
   assert.equal(result.events[0].reason, "explicit-escalation-after-review");
   assert.equal(result.events[0].routeStep, 2);
+});
+
+for (const [task, source, target] of [
+  ["writing", "claude", "codex"],
+  ["analysis", "claude", "codex"],
+  ["code", "codex", "claude"],
+]) {
+  test(`${task} quota recovery leaves the exhausted ${source} family`, async () => {
+    const calls = [];
+    const result = await routeTask(
+      { task, prompt: "synthetic unchanged context" },
+      {
+        run: async (selected, prompt) => {
+          calls.push({ ...selected, prompt });
+          return calls.length === 1
+            ? { exitCode: 1, answer: "", failureCode: "rate-limit" }
+            : { exitCode: 0, answer: "recovered" };
+        },
+      },
+    );
+    assert.deepEqual(
+      calls.map((c) => c.provider),
+      [source, target],
+    );
+    assert(calls.every((c) => c.prompt === "synthetic unchanged context"));
+    assert.equal(result.answer, "recovered");
+    assert.equal(result.events[1].reason, "previous-attempt-failed");
+  });
+}
+test("all subscription quotas stop after two attempts without a public or paid gateway fallback", async () => {
+  const calls = [];
+  const result = await routeTask(
+    { task: "writing", prompt: "private fixture" },
+    {
+      run: async (selected) => {
+        calls.push(selected.provider);
+        return { exitCode: 1, failureCode: "rate-limit" };
+      },
+    },
+  );
+  assert.deepEqual(calls, ["claude", "codex"]);
+  assert.equal(result.selected, null);
+  assert.equal(result.answer, "");
+});
+test("provider policy refusals and employee budgets are not recoverable quota routes", async () => {
+  for (const [text, code] of [
+    ["403 Terms Of Service quota restriction", "policy-blocked"],
+    ["daily employee budget exceeded", "budget-policy"],
+  ]) {
+    assert.equal(classifyFailure(text), code);
+    const result = await routeTask(
+      { task: "code", prompt: "fixture" },
+      { run: async () => ({ exitCode: 1, failureCode: code }) },
+    );
+    assert.equal(result.events.length, 1);
+  }
+  for (const text of [
+    "You've hit your 5-hour limit",
+    "usageLimitExceeded",
+    "402 insufficient credits",
+    "429 quota exceeded",
+  ])
+    assert.equal(classifyFailure(text), "rate-limit");
+});
+
+test("real CLI child envelopes recover quota failures even when the failed CLI exits zero", async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), "polza-quota-cli-"));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const prompt = "synthetic private bridge context";
+  await writeFile(path.join(dir, "input"), prompt);
+  for (const source of ["claude", "codex"]) {
+    for (const provider of ["claude", "codex"]) {
+      const failure =
+        provider === "claude"
+          ? JSON.stringify({
+              is_error: true,
+              result: "You've hit your 5-hour limit",
+            })
+          : JSON.stringify({ type: "error", message: "usageLimitExceeded" });
+      const success =
+        provider === "claude"
+          ? JSON.stringify({ result: "CLI_QUOTA_RECOVERED" })
+          : JSON.stringify({
+              type: "item.completed",
+              item: { type: "agent_message", text: "CLI_QUOTA_RECOVERED" },
+            });
+      await writeFile(
+        path.join(dir, provider),
+        "#!/usr/bin/env node\nprocess.stdin.resume();process.stdin.on('end',()=>{process.stdout.write(" +
+          JSON.stringify(provider === source ? failure : success) +
+          ")});\n",
+        { mode: 0o700 },
+      );
+    }
+    const state = path.join(dir, "state-" + source);
+    const result = await promisify(execFile)(
+      process.execPath,
+      [
+        fileURLToPath(new URL("./polza-model-router.mjs", import.meta.url)),
+        "--task",
+        source === "claude" ? "writing" : "code",
+        "--input-file",
+        path.join(dir, "input"),
+      ],
+      {
+        env: {
+          ...process.env,
+          POLZA_CLAUDE_CLI_BIN: path.join(dir, "claude"),
+          POLZA_CODEX_CLI_BIN: path.join(dir, "codex"),
+          POLZA_ROUTER_STATE_DIR: state,
+        },
+        timeout: 10000,
+      },
+    );
+    assert.equal(result.stdout.trim(), "CLI_QUOTA_RECOVERED");
+    const raw = await readFile(path.join(state, "events.jsonl"), "utf8");
+    const records = raw.trim().split("\n").map(JSON.parse);
+    assert.deepEqual(
+      records.map((r) => r.provider),
+      [source, source === "claude" ? "codex" : "claude"],
+    );
+    assert.equal(records[0].failureCode, "rate-limit");
+    assert(!raw.includes(prompt));
+  }
 });

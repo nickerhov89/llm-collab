@@ -189,3 +189,22 @@ pool, return an explicit 422 instead of sending it to known-incompatible text
 models. The pool configuration contains model IDs only, not credentials. This
 repair neither hides upstream failures nor makes a text-only manual model able
 to process an image.
+
+## Subscription quota recovery in the bounded task helper
+
+The task helper treats recognized subscription exhaustion as a provider-family
+failure, not a reason to try another model on that subscription. Its remaining
+eligible attempt switches Claude to Codex or Codex to Claude; exhausted families
+are not revisited. When both fail, it returns failure with no fabricated answer.
+Ordinary failed content checks retain the configured quality-escalation chain.
+An explicit one-attempt/forced route is never expanded. Private helper input
+stays on the permitted native CLIs and is never sent to an API router by quota
+recovery. Employee spending limits and provider-policy refusals stop the chain.
+
+Provider error envelopes are failures even when the CLI exits with code zero.
+The metadata journal records only the bounded failure category and selected
+route, never the provider's raw error or private input/output.
+
+This helper does not migrate the running Cowork chat or its process. The native
+chat's model picker still uses the explicit context-handoff contract above;
+request-level Requesty Auto failover is a separate gateway behavior.

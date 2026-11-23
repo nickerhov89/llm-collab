@@ -17,7 +17,7 @@ import {
   tokenCostUsd,
 } from "../packages/shared/dist/model-prices.js";
 
-export const POLICY_VERSION = "2026-11-10.3";
+export const POLICY_VERSION = "2026-11-23.1";
 const model = (provider, id) => ({ provider, model: id });
 const haiku = model("claude", "haiku");
 const luna = model("codex", "gpt-6-luna");
@@ -38,7 +38,21 @@ export function chooseRoute({ task = "general", publicData = false }) {
 
 export function classifyFailure(text) {
   if (
-    /429|quota|rate.limit|usage.limit|resource.exhausted|capacity/i.test(text)
+    /terms.of.service|content.policy|content.filter|safety.policy|request.is.prohibited/i.test(
+      text,
+    )
+  )
+    return "policy-blocked";
+  if (
+    /employee.*(?:budget|limit)|daily.*(?:budget|spend)|sessionBudgetExceeded/i.test(
+      text,
+    )
+  )
+    return "budget-policy";
+  if (
+    /\b(?:402|429)\b|quota|rate.limit|usage.limit|resource.exhausted|capacity|insufficient.credits|you.ve.hit.your.{0,30}limit|usageLimitExceeded/i.test(
+      text,
+    )
   )
     return "rate-limit";
   if (/401|403|unauth|not.logged.in|api.key|authentication|oauth/i.test(text))
@@ -78,6 +92,8 @@ export function parseAnswer(provider, stdout) {
           return [];
         }
       });
+    if (rows.some((row) => row.type === "error" || row.type === "turn.failed"))
+      throw new Error("Provider returned an error");
     return rows
       .filter(
         (row) =>
@@ -276,7 +292,9 @@ export async function routeTask(options, { run, record = async () => {} }) {
   const taskId = options.taskId ?? randomUUID();
   const promptHash = createHash("sha256").update(options.prompt).digest("hex");
   const events = [];
+  const exhaustedProviders = new Set();
   for (const [index, selected] of chain.entries()) {
+    if (exhaustedProviders.has(selected.provider)) continue;
     const start = Date.now();
     let result;
     try {
@@ -347,6 +365,24 @@ export async function routeTask(options, { run, record = async () => {} }) {
     events.push(event);
     await record(event);
     if (accepted) return { taskId, selected, answer: result.answer, events };
+    if (["policy-blocked", "budget-policy"].includes(event.failureCode)) break;
+    // A subscription quota is shared by that CLI's models. Spending the sole
+    // retry on a stronger model in the same exhausted family cannot recover.
+    // Quality failures keep the original escalation chain. Private input never
+    // moves to Gemini or an API gateway through this fallback.
+    if (event.failureCode === "rate-limit") {
+      exhaustedProviders.add(selected.provider);
+      const backup =
+        selected.provider === "claude"
+          ? luna
+          : selected.provider === "codex"
+            ? options.task === "code"
+              ? model("claude", "sonnet")
+              : haiku
+            : chain[index + 1];
+      if (backup && exhaustedProviders.has(backup.provider)) break;
+      if (backup && index + 1 < chain.length) chain[index + 1] = backup;
+    }
   }
   return { taskId, selected: null, answer: "", events };
 }
@@ -481,7 +517,13 @@ async function runCli(selected, prompt, directory, requiredKeys) {
           answer: code === 0 ? parseAnswer(selected.provider, stdout) : "",
         });
       } catch {
-        finish({ exitCode: 1, answer: "" });
+        // Claude can exit successfully with an is_error JSON envelope. Keep
+        // the quota category without writing raw provider output to the log.
+        finish({
+          exitCode: 1,
+          answer: "",
+          failureCode: classifyFailure(stdout + stderr),
+        });
       }
     });
     child.stdin.end(input);
