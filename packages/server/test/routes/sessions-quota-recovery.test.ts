@@ -188,4 +188,34 @@ it("reconstructs buffered input with its actual sender and sandbox; rechecks gra
     occurredAt: new Date().toISOString(),
   });
   expect(queue.listAll()).toHaveLength(1);
+  // Project Queue echoes have no human serverReceivedAt. Only a private
+  // binding to that exact accepted UUID may supply their launch principal.
+  await metadata.updateMetadata("source", {
+    quotaFailoverActor: "marker",
+    quotaFailoverActorKnown: true,
+    quotaFailoverTurnId: "queued-turn",
+  });
+  history.push({
+    type: "user",
+    uuid: "queued-turn",
+    timestamp: new Date().toISOString(),
+    message: { role: "user", content: "Continue the queued task" },
+  } as unknown as (typeof history)[number]);
+  await service.observe("source", pid, {
+    ...failure,
+    occurredAt: new Date().toISOString(),
+  });
+  expect(queue.listAll()).toHaveLength(2);
+  expect(queue.listAll()[1]?.createdByUser).toBe("marker");
+  history.push({
+    type: "user",
+    uuid: "unbound-later-turn",
+    timestamp: new Date().toISOString(),
+    message: { role: "user", content: "A different unverified sender" },
+  } as unknown as (typeof history)[number]);
+  await service.observe("source", pid, {
+    ...failure,
+    occurredAt: new Date().toISOString(),
+  });
+  expect(queue.listAll()).toHaveLength(2);
 });

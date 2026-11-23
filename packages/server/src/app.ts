@@ -2389,10 +2389,18 @@ export function createApp(options: AppOptions): AppResult {
         });
         await quotaRecoveryReady;
         if (await quotaRecovery?.associate(item, process.sessionId)) {
+          // Project Queue input is automatic, so it has no human-turn receipt.
+          // Bind the scheduler-authorized actor to this exact initial echo;
+          // a later human turn receives its own server-stamped binding.
+          const initialTurn = supervisor
+            .getProcessForSession(process.sessionId)
+            ?.getMessageHistory()
+            .find((message) => message.type === "user" && message.uuid);
           await metadata.updateMetadata(process.sessionId, {
             quotaFailoverEnabled: true,
             quotaFailoverActor: item.createdByUser ?? null,
             quotaFailoverActorKnown: true,
+            quotaFailoverTurnId: initialTurn?.uuid,
           });
           const failure = supervisor.getProviderRuntimeStatusForSession(
             process.sessionId,
