@@ -296,3 +296,14 @@ Google conversion reference:
 https://developers.google.com/workspace/drive/api/guides/manage-uploads
 Tab response reference:
 https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/response
+
+### Provider-neutral Google skill
+
+The maintained skill is `scripts/polza-agent-skills/google-workspace/SKILL.md`.
+It replaces historical Claude copies that incorrectly require a Codex chat.
+Install the same content in an account's existing Google skill locations;
+back up the previous file and preserve its UID/mode. No grant, MCP credential,
+mail permission or provider execution permission is changed by this update.
+Existing conversations must re-read the updated skill before retrying their
+original request. Use their real scoped connector to verify access, not an
+administrator's Google credentials. Reconcile any prior write before retrying.
