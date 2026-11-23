@@ -28,3 +28,32 @@ to hide it is outside this Git cleanup. No warning filter or timeout increase
 was added, and neither the full test suite nor full lint is reported green.
 
 Found 2026-11-18 while cleaning and publishing the Cowork source backlog.
+
+20 November 2026, first-turn Claude billing-error recovery: full format and
+TypeScript checks passed; the server build and 130 focused resume/metadata
+cases passed. Full lint still fails at the same three CSS ownership boundaries
+above. Full workspace tests were attempted and stopped after about 200 seconds
+once unrelated failures appeared (auth/setup timing, provider-host replacement,
+projectFileCompletion, new-session bootstrap, client seeded model selection,
+and Codex goal streaming). Shared (964), relay (139), and push-broker (45) cases
+completed. Full workspace success is not claimed. The resume repair edits no
+client/CSS/auth/provider-host/Codex code, and this shared checkout contains
+other client edits; folding their fixes into this recovery change would not
+be an isolated cleanup. A real Claude SDK loopback test additionally verified
+two billing failures followed by same-ID recovery retaining both user prompts,
+without provider credit usage.
+
+The later 20 November output-budget repair passed 21 focused gateway checks,
+full TypeScript and formatter checks. Full lint hits the same CSS debt. A new
+full test attempt was stopped after roughly 150 seconds when unrelated
+MessageInput client, provider-host-system and new-session-bootstrap failures
+appeared. No changes to those surfaces are part of the gateway repair.
+
+23 November 2026, Requesty migration: 27 gateway/compatibility cases, 16 client
+selector/sidebar cases, direct client TypeScript check and Polza production
+build passed. Full formatter check passed. The CSS architecture entry gate still
+fails on the same three global-style ownership limits above, before full lint
+can proceed. Console scan also reports the existing 61 warn sites against a
+limit of 60; the migration adds no warn sites. No full workspace test pass is
+claimed. Native same-chat Claude continuation with remembered context and
+scoped Codex tool execution both succeeded through real Requesty requests.

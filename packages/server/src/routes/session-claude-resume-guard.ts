@@ -12,9 +12,10 @@ export interface ClaudeResumeApiErrorBlocker {
   messageId?: string;
   apiErrorStatus?: unknown;
   /**
-   * Transcript UUID of the last assistant message before the API-error tail.
+   * Transcript UUID of a safe prefix entry before the API-error tail.
    * When present, the session is recoverable by resuming up to this message
-   * (SDK `resumeSessionAt`) instead of requiring a handoff.
+   * (SDK `resumeSessionAt`) instead of requiring a handoff. A first-turn
+   * failure can resume at its user entry without a successful assistant reply.
    */
   resumeAtMessageId?: string;
 }
@@ -50,6 +51,19 @@ function getClaudeResumeApiErrorBlocker(
       }
       resumeAtMessageId = prior.uuid;
       break;
+    }
+    // A failed first turn has no successful assistant to anchor to. The SDK
+    // also accepts user UUIDs and excludes synthetic API errors from model
+    // context. Keep every submitted user turn by anchoring to the latest one,
+    // rather than treating a recoverable billing failure as a new-chat boundary.
+    if (!resumeAtMessageId) {
+      for (let j = i - 1; j >= 0; j--) {
+        const prior = activeBranch[j]?.raw;
+        if (prior?.type === "user") {
+          resumeAtMessageId = prior.uuid;
+          break;
+        }
+      }
     }
     return {
       error: CLAUDE_RESUME_API_ERROR_MESSAGE,

@@ -5,6 +5,8 @@ import { useProviderSubscriptionUsage } from "../hooks/useProviderSubscriptionUs
 import { useModelUsage } from "../hooks/useModelUsage";
 import styles from "./PolzaSidebarUsage.module.css";
 
+const routerLabel = import.meta.env.VITE_POLZA_ROUTER_LABEL || "OpenRouter";
+
 function ProviderUsage({
   provider,
   label: providerLabel,
@@ -34,7 +36,7 @@ function ProviderUsage({
   const percent = hasQuota
     ? Math.round(Math.max(...windows.map((window) => window.usedPercent)))
     : null;
-  const label = `${providerLabel}: ${percent === null ? (stats ? `${stats.requests} запросов через OpenRouter` : "данные подписки недоступны") : `использовано до ${percent}%`}`;
+  const label = `${providerLabel}: ${percent === null ? (stats ? `${stats.requests} запросов через ${routerLabel}` : "данные подписки недоступны") : `использовано до ${percent}%`}`;
 
   return (
     <div className={styles.root}>
@@ -83,7 +85,7 @@ function ProviderUsage({
           {!hasQuota && (
             <p>
               {summary?.account
-                ? "Работает через OpenRouter. Лимиты подписки здесь не используются."
+                ? `Работает через ${routerLabel}. Лимиты подписки здесь не используются.`
                 : "Провайдер не сообщил лимиты подписки. Это не нулевой расход."}
             </p>
           )}
@@ -144,7 +146,7 @@ function RouterCounter({
         <span className={styles.meter} aria-hidden="true">
           R
         </span>
-        <span>OpenRouter</span>
+        <span>{routerLabel}</span>
         <span className={styles.percent}>
           {billing ? dollars(billing.spentToday) : loading ? "…" : "Нет данных"}
         </span>
@@ -152,7 +154,7 @@ function RouterCounter({
       {open && (
         <div className={styles.popover}>
           <div className={styles.heading}>
-            <strong>Расходы OpenRouter</strong>
+            <strong>Расходы {routerLabel}</strong>
             <button
               type="button"
               disabled={loading}

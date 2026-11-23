@@ -278,7 +278,6 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
       setStatus(t("taskerOrderChanged"));
     },
   );
-  const profile = data.profile;
   async function importData(importFile: File) {
     try {
       if (importFile.size > 5000000) throw new Error("size");
@@ -369,17 +368,6 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
               </button>
             ),
           )}
-          {workProfile && (
-            <div className={styles.workGoals}>
-              <strong>{t(`workRole_${workProfile.role}`)}</strong>
-              {workProfile.kpis.map((k) => (
-                <p key={k.id}>
-                  {t(`workKpi_${k.id}`)}
-                  {k.target ? `: ${k.target} · ${workProfile.period}` : ""}
-                </p>
-              ))}
-            </div>
-          )}
           <p className={styles.caption}>{t("taskerAreas")}</p>
           <div className={styles.areaList}>
             {groups.map((group) => (
@@ -415,38 +403,6 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
             unlocked={parseBadges(data.badges)}
             celebration={celebration}
           />
-          {profile && (
-            <details>
-              <summary>{t("taskerHabiticaSnapshot")}</summary>
-              <div className={styles.character}>
-                <span>{profile.level}</span>
-                <div>
-                  {t("taskerCharacter")}
-                  <small>Habitica</small>
-                </div>
-              </div>
-              <progress
-                value={profile.xp}
-                max={Math.max(profile.maxXp, 1)}
-                aria-label={t("taskerExperience")}
-              />
-              <p>
-                {profile.xp} / {profile.maxXp} XP
-                <br />
-                {profile.hp} / {profile.maxHp} HP · {profile.gold}{" "}
-                {t("taskerGold")}
-              </p>
-            </details>
-          )}
-          <p>{t("taskerServerStorage")}</p>
-          <div className={styles.fileActions}>
-            <button type="button" onClick={() => file.current?.click()}>
-              {t("taskerImport")}
-            </button>
-            <button type="button" onClick={exportData}>
-              {t("taskerExport")}
-            </button>
-          </div>
           <input
             ref={file}
             type="file"
@@ -653,6 +609,9 @@ function TaskerWorkspace({ storageKey }: { storageKey: string }) {
                 <>
                   <button type="button" onClick={retry}>
                     {t("taskerServerRetry")}
+                  </button>
+                  <button type="button" onClick={exportData}>
+                    {t("taskerExport")}
                   </button>
                   <button type="button" onClick={reload}>
                     {t("taskerServerReload")}

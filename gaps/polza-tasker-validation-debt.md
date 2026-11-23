@@ -20,3 +20,9 @@ The artifact capture command against the authenticated public URL timed out
 waiting for network idle (exit 3). Visual fallback used the authenticated CUA
 browser at 1000x600 and 375x812. The first mobile capture exposed excessive
 navigation and offscreen task details; the follow-up corrects those layouts.
+
+2026-11-23 sidebar cleanup: exact TSX Biome check, client TypeScript and production
+build pass. Console scan still reports the existing 61 warn sites against the
+60-site budget; the changed Tasker page adds no console calls. No baseline was
+increased. Removed only sidebar role/KPI summary and Habitica/import/storage
+footer; conflict-recovery export remains available.

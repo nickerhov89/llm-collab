@@ -217,14 +217,23 @@ Three observations grounded in the text above:
     YA parses that boundary only when the payload code is `quota_exceeded` and
     records terminal `rate_limit` status without terminating the retained
     process.
-- **Read/resume path** — `packages/server/src/routes/sessions.ts`
-  `getClaudeResumeApiErrorBlocker()` (L143) reads the persisted jsonl (where the
-  fields exist), detects a trailing API-error assistant row, and returns a
-  blocker carrying `apiErrorStatus` plus a **`resumeAtMessageId`** (uuid of the
-  last good assistant message before the error tail, a prefix-resume point).
-  Recovery is `"handoff-required"` (`CLAUDE_RESUME_API_ERROR_RECOVERY`) and
-  user-triggered. This is the contract noted in [`claude.md`](claude.md): an
-  SDK API-error row blocks normal resume.
+- **Read/resume path** — the persisted transcript guard detects a trailing
+  synthetic API-error assistant. If there is a successful assistant prefix,
+  the existing `resumeSessionAt` recovery is used. When every assistant so far
+  is an API error (including a first request rejected for billing), the latest
+  preceding user UUID is a valid SDK prefix anchor. A retry stays in the same
+  YA and provider session; submitted user context remains available and native
+  error rows are not manually deleted or rewritten. The SDK excludes synthetic
+  errors from outgoing model context. This path is user-initiated: it does not
+  replay tools, switch models, create a handoff, or retry billing failures in a
+  background loop. An orphan error with no usable preceding entry still fails
+  closed with the existing explicit recovery response.
+
+  Verified 20.11.2026 with the installed Agent SDK 0.3.309 against a loopback
+  Anthropic-compatible fixture: two billing-error turns, then a successful
+  resume anchored at the latest user, with the same session ID. Both original
+  user instructions reached the recovered request and synthetic API-error text
+  did not. This fixture spends no provider credits.
 
 The read/resume guard remains necessary for old transcripts, external Claude
 processes, and explicit launch overrides that allow the finite retry budget to

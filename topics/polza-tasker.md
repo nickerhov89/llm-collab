@@ -61,7 +61,10 @@ on that task. Reopening, checking again, moving to Trash and restoring do not
 award more XP or erase the first reward. Previously completed/imported tasks
 without this ledger are not credited automatically. JSON export/import preserves
 completion markers and unlocked badge IDs; duplicate task IDs are still skipped.
-An imported Habitica profile is a separate, collapsed static snapshot.
+Imported Habitica profile data remains stored but is not displayed. The sidebar
+shows navigation, areas and current Tasker progress, without the role/KPI
+summary or import/storage footer. Empty accounts can still import tasks; export
+is available when resolving a storage conflict.
 
 At phone widths, the area list becomes a select control. Selecting a task
 opens its detail view in place of the list, with an explicit Back to tasks

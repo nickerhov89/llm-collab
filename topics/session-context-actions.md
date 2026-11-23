@@ -50,10 +50,11 @@ inactivity; what dies is the *process* and the *cache warmth*.
   uncached prices. That cost asymmetry is the whole motivation for
   [resume-compaction](resume-compaction.md): offer compact-first resume
   instead of full replay for old or context-heavy sessions.
-- Claude edge case: a session whose latest assistant message is a
-  recorded API error is treated as not safely resumable
-  (`handoff-required` in `packages/server/src/routes/sessions.ts`); the
-  validated recovery there is the template handoff.
+- Claude API-error tails recover in the same session through the SDK's
+  prefix resume: the last successful assistant is the normal anchor, while
+  first-turn/repeated failures with no successful assistant use the latest
+  preceding user UUID. Only an orphan error without a usable prefix still
+  requires explicit recovery. See [Claude API failures](claude-api-failures-and-retries.md).
 - Reaping a Claude process is therefore not purely a loss of cache warmth.
   `claude --resume` rebuilds context by walking `parentUuid` from one chosen
   tip, so a transcript carrying a falsely-dead segment (api_error
